@@ -1,0 +1,41 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+env/
+
+# Environment
+.env
+*.db
+*.sqlite3
+
+# Uploads / generated
+backend/temp_uploads/
+backend/reports/
+backend/deepshield.db
+
+# Datasets (large binary files — download separately)
+backend/data/
+
+# Node
+node_modules/
+dist/
+.vite/
+
+# Model cache (do not commit HuggingFace models)
+*.pt
+*.bin
+*.safetensors
+*.onnx
+*.h5
+
+# OS / IDE
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+
+# Claude Code
+.claude/
