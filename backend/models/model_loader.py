@@ -64,7 +64,9 @@ class ModelLoader:
             logger.info("Loading EasyOCR reader (en, hi)")
             import easyocr  # type: ignore
 
-            self._ocr_reader = easyocr.Reader(["en", "hi"], gpu=(settings.DEVICE == "cuda"))
+            self._ocr_reader = easyocr.Reader(
+                ["en"], gpu=(settings.DEVICE == "cuda"), verbose=False, download_enabled=True,
+            )
             logger.info("EasyOCR loaded")
         return self._ocr_reader
 

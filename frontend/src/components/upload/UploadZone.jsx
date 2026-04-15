@@ -4,11 +4,13 @@ import { useDropzone } from 'react-dropzone';
 const ACCEPT = {
   image: { 'image/jpeg': [], 'image/png': [], 'image/webp': [] },
   video: { 'video/mp4': [], 'video/webm': [], 'video/quicktime': [], 'video/x-msvideo': [] },
+  screenshot: { 'image/jpeg': [], 'image/png': [], 'image/webp': [] },
 };
 
 const HINT = {
   image: 'JPEG · PNG · WebP',
   video: 'MP4 · WebM · MOV · AVI',
+  screenshot: 'JPEG · PNG · WebP (news/social screenshot)',
 };
 
 export default function UploadZone({ mediaType = 'image', maxSizeMB = 20, onFileAccepted, disabled = false }) {
@@ -66,7 +68,7 @@ export default function UploadZone({ mediaType = 'image', maxSizeMB = 20, onFile
         </div>
       </div>
 
-      {preview && mediaType === 'image' && (
+      {preview && (mediaType === 'image' || mediaType === 'screenshot') && (
         <div style={{ marginTop: 'var(--space-4)', textAlign: 'center' }}>
           <img
             src={preview}

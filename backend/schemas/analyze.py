@@ -13,19 +13,87 @@ from schemas.common import (
 )
 
 
+class SensationalismBreakdown(BaseModel):
+    score: int = 0
+    level: str = "Low"
+    exclamation_count: int = 0
+    caps_word_count: int = 0
+    clickbait_matches: int = 0
+    emotional_word_count: int = 0
+    superlative_count: int = 0
+
+
+class ManipulationIndicatorOut(BaseModel):
+    pattern_type: str
+    matched_text: str
+    start_pos: int
+    end_pos: int
+    severity: str
+    description: str
+
+
 class TextExplainability(BaseModel):
     fake_probability: float
     top_label: str
     all_scores: dict = {}
     keywords: List[str] = []
+    sensationalism: SensationalismBreakdown = SensationalismBreakdown()
+    manipulation_indicators: List[ManipulationIndicatorOut] = []
 
 
 class TextAnalysisResponse(BaseModel):
     analysis_id: str
+    record_id: int = 0
     media_type: str = "text"
     timestamp: str
     verdict: Verdict
     explainability: TextExplainability
+    trusted_sources: List[TrustedSource] = []
+    contradicting_evidence: List[ContradictingEvidence] = []
+    processing_summary: ProcessingSummary
+    responsible_ai_notice: str = (
+        "AI-based analysis may not be 100% accurate. Cross-check with trusted sources before sharing."
+    )
+
+
+class OCRBoxOut(BaseModel):
+    text: str
+    bbox: List[List[int]]
+    confidence: float
+
+
+class SuspiciousPhraseOut(BaseModel):
+    text: str
+    bbox: List[List[int]]
+    pattern_type: str
+    severity: str
+    description: str
+
+
+class LayoutAnomalyOut(BaseModel):
+    type: str
+    severity: str
+    description: str
+    confidence: float
+
+
+class ScreenshotExplainability(BaseModel):
+    extracted_text: str = ""
+    ocr_boxes: List[OCRBoxOut] = []
+    fake_probability: float = 0.0
+    sensationalism: SensationalismBreakdown = SensationalismBreakdown()
+    suspicious_phrases: List[SuspiciousPhraseOut] = []
+    layout_anomalies: List[LayoutAnomalyOut] = []
+    keywords: List[str] = []
+
+
+class ScreenshotAnalysisResponse(BaseModel):
+    analysis_id: str
+    record_id: int = 0
+    media_type: str = "screenshot"
+    timestamp: str
+    verdict: Verdict
+    explainability: ScreenshotExplainability
     trusted_sources: List[TrustedSource] = []
     contradicting_evidence: List[ContradictingEvidence] = []
     processing_summary: ProcessingSummary
@@ -64,6 +132,7 @@ class VideoExplainability(BaseModel):
 
 class VideoAnalysisResponse(BaseModel):
     analysis_id: str
+    record_id: int = 0
     media_type: str = "video"
     timestamp: str
     verdict: Verdict
@@ -78,6 +147,7 @@ class VideoAnalysisResponse(BaseModel):
 
 class ImageAnalysisResponse(BaseModel):
     analysis_id: str
+    record_id: int = 0
     media_type: str = "image"
     timestamp: str
     verdict: Verdict

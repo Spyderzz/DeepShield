@@ -121,3 +121,54 @@ a:hover { color: var(--color-primary-700); }
 button {
   font-family: inherit;
 }
+
+/* === Skeleton + toast animations === */
+@keyframes skeleton-pulse {
+  0%   { background-position: 200% 0; }
+  100% { background-position: -200% 0; }
+}
+.skeleton-pulse {
+  animation: skeleton-pulse 1.4s linear infinite;
+}
+
+@keyframes toast-in {
+  from { opacity: 0; transform: translateY(8px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
+/* === Responsive === */
+@media (max-width: 900px) {
+  main {
+    padding: var(--space-4) !important;
+  }
+}
+
+@media (max-width: 640px) {
+  :root {
+    --font-size-4xl: 1.875rem;
+    --font-size-3xl: 1.5rem;
+    --font-size-2xl: 1.25rem;
+  }
+  nav {
+    padding: var(--space-3) var(--space-4) !important;
+    flex-wrap: wrap;
+    gap: var(--space-2);
+  }
+  nav > div {
+    flex-wrap: wrap;
+  }
+  /* Force single-column grids on narrow screens */
+  section [style*="grid-template-columns"] {
+    grid-template-columns: 1fr !important;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .skeleton-pulse {
+    animation: none;
+  }
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    transition-duration: 0.01ms !important;
+  }
+}

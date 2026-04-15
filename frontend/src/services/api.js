@@ -5,6 +5,15 @@ export const api = axios.create({
   timeout: 120000,
 });
 
+api.interceptors.request.use((config) => {
+  const token = localStorage.getItem('deepshield.token');
+  if (token) {
+    config.headers = config.headers || {};
+    config.headers.Authorization = `Bearer ${token}`;
+  }
+  return config;
+});
+
 api.interceptors.response.use(
   (r) => r,
   (err) => {

@@ -20,13 +20,17 @@ class Settings(BaseSettings):
 
     # AI Models
     IMAGE_MODEL_ID: str = "prithivMLmods/Deep-Fake-Detector-v2-Model"
-    TEXT_MODEL_ID: str = "GonzaloA/fake-news-detection-small"
+    TEXT_MODEL_ID: str = "jy46604790/Fake-News-Bert-Detect"
     DEVICE: str = "cpu"
     PRELOAD_MODELS: bool = True  # preload models at startup
 
     # News API
     NEWS_API_KEY: str = ""
     NEWS_API_BASE_URL: str = "https://newsdata.io/api/1/news"
+
+    # Reports
+    REPORT_DIR: str = "./temp_reports"
+    REPORT_TTL_SECONDS: int = 3600  # 1h expiry
 
     # Auth
     JWT_SECRET_KEY: str = "change-me-in-production"

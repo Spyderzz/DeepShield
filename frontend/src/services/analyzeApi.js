@@ -18,3 +18,18 @@ export async function analyzeVideo(file) {
   });
   return data;
 }
+
+export async function analyzeText(text) {
+  const { data } = await api.post('/analyze/text', { text });
+  return data;
+}
+
+export async function analyzeScreenshot(file) {
+  const fd = new FormData();
+  fd.append('file', file);
+  const { data } = await api.post('/analyze/screenshot', fd, {
+    headers: { 'Content-Type': 'multipart/form-data' },
+    timeout: 180000,
+  });
+  return data;
+}
