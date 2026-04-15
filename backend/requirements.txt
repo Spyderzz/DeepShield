@@ -19,3 +19,7 @@ Pillow>=10.4.0
 numpy>=1.26,<3
 opencv-python==4.10.0.84
 grad-cam==1.5.4
+mediapipe==0.10.14
+
+# === Phase 3: Text / News ===
+httpx==0.27.2

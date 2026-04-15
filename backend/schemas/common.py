@@ -2,10 +2,12 @@ from __future__ import annotations
 
 from typing import List, Optional
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 
 
 class Verdict(BaseModel):
+    model_config = ConfigDict(protected_namespaces=())
+
     label: str
     severity: str
     authenticity_score: int = Field(ge=0, le=100)
@@ -36,6 +38,8 @@ class ContradictingEvidence(BaseModel):
 
 
 class ProcessingSummary(BaseModel):
+    model_config = ConfigDict(protected_namespaces=())
+
     stages_completed: List[str]
     total_duration_ms: int
     model_used: str

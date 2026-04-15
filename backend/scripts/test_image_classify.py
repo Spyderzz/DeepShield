@@ -11,6 +11,10 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
+import base64
+
+from models.heatmap_generator import generate_heatmap_base64
+from services.artifact_detector import scan_artifacts
 from services.image_service import preprocess_and_classify
 from utils.scoring import compute_authenticity_score, get_verdict_label
 
@@ -35,6 +39,18 @@ def main() -> int:
     verdict_label, severity = get_verdict_label(score)
     print(f"\n  authenticity_score: {score}")
     print(f"  verdict: {verdict_label} ({severity})")
+
+    print("\nScanning artifact indicators\u2026")
+    for ind in scan_artifacts(pil, data):
+        print(f"  [{ind.severity.upper():6s}] {ind.type}: {ind.description} (conf {ind.confidence:.2f})")
+
+    print("\nGenerating Grad-CAM heatmap\u2026")
+    heatmap_url = generate_heatmap_base64(pil)
+    header, b64 = heatmap_url.split(",", 1)
+    out_path = Path(__file__).resolve().parent.parent / "heatmap_smoketest.png"
+    out_path.write_bytes(base64.b64decode(b64))
+    print(f"  saved: {out_path}")
+    print(f"  data URL length: {len(heatmap_url)} chars")
     return 0
 
 

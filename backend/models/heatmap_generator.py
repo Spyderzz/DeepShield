@@ -16,6 +16,19 @@ from config import settings
 from models.model_loader import get_model_loader
 
 
+class _HFLogitsWrapper(torch.nn.Module):
+    """Wrap a HuggingFace image classification model so forward() returns logits
+    as a plain tensor (pytorch_grad_cam expects tensor outputs, not dicts/dataclasses).
+    """
+
+    def __init__(self, model: torch.nn.Module) -> None:
+        super().__init__()
+        self.model = model
+
+    def forward(self, pixel_values: torch.Tensor) -> torch.Tensor:  # type: ignore[override]
+        return self.model(pixel_values=pixel_values).logits
+
+
 def _vit_reshape_transform(tensor: torch.Tensor, height: int = 14, width: int = 14) -> torch.Tensor:
     """Grad-CAM expects (B, C, H, W); ViT hidden states are (B, 1+H*W, C).
     Drop the CLS token and reshape tokens into a spatial grid.
@@ -64,6 +77,7 @@ def generate_heatmap_base64(
     # ViT base/16/224: 14x14 patch grid
     grid = int(model.config.image_size / model.config.patch_size)
     target_layers = [model.vit.encoder.layer[-1].layernorm_before]
+    wrapped = _HFLogitsWrapper(model)
 
     from pytorch_grad_cam.utils.model_targets import ClassifierOutputTarget
 
@@ -72,7 +86,7 @@ def generate_heatmap_base64(
         targets = [ClassifierOutputTarget(int(target_class_idx))]
 
     with GradCAM(
-        model=model,
+        model=wrapped,
         target_layers=target_layers,
         reshape_transform=lambda t: _vit_reshape_transform(t, grid, grid),
     ) as cam:

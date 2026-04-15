@@ -3,12 +3,22 @@
 > **Derived from:** [prd.md](file:///c:/Users/athar/Desktop/minor2/prd.md)
 > **Version:** 1.0
 > **Date:** 2026-04-14
-> **Status:** In Progress — Phase 0 complete; starting Phase 1
+> **Status:** In Progress — Phase 3 backend scaffolded (text + news lookup); frontend + smoke test pending
 >
 > **Build Log:**
+> - 2026-04-15 — Phase 2.1 face-gating. Video pipeline now runs MediaPipe FaceMesh per sampled frame; only face-containing frames contribute to `mean/max suspicious_prob` and `suspicious_ratio`. `MIN_FACE_FRAMES = 3`; below that, verdict becomes **"Insufficient face content"** (severity warning, score 50) instead of a spurious deepfake label. Schema adds `num_face_frames`, `insufficient_faces`, per-frame `has_face` / `scored`. Frontend `FrameTimeline` dims/greys no-face frames with a pill tag; `AnalyzePage` shows an amber "insufficient faces" banner. Addresses model bias: `prithivMLmods/Deep-Fake-Detector-v2-Model` is face-centric and over-predicts "Deepfake" on scenic/no-face content.
+> - 2026-04-15 — Phase 3 backend started. `services/text_service.py` (HF BERT fake-news pipeline via `GonzaloA/fake-news-detection-small`, `fake_prob` via label scan + `extract_keywords` frequency-based). `services/news_lookup.py` (newsdata.io, trusted-domain allowlist → relevance boost). Added `httpx==0.27.2`. Schemas: `TextExplainability`, `TextAnalysisResponse`. `POST /api/v1/analyze/text` accepts JSON `{text}`, returns verdict + keywords + trusted sources (empty if `NEWS_API_KEY` unset); persists `AnalysisRecord`.
+> - 2026-04-15 — Phase 2 complete (video pipeline); ready for browser verification → Phase 3
+>
+> **Build Log:**
+> - 2026-04-15 — Phase 2 done. Video detection pipeline: `services/video_service.py` (OpenCV uniform frame sampling, 16 frames default; per-frame ViT classification reusing `classify_image`; aggregation → mean/max suspicious prob, suspicious ratio, timestamps). Added `save_upload_to_tempfile` streaming helper in `utils/file_handler.py` (1 MB chunks, size-capped). `POST /api/v1/analyze/video` endpoint registered; maps `1 − mean_suspicious_prob` through the trust scale and persists an `AnalysisRecord`. Frontend: UploadZone now accepts `mediaType="video"` (MP4/WebM/MOV/AVI) with a `<video>` preview; new `FrameTimeline` component renders a colored strip along time axis + per-frame cards; `AnalyzePage` got an Image/Video tab switcher and video result layout (timeline + playback). curl smoke: 16-frame synthetic MP4 → HTTP 200 in ~5.5s, verdict "Possibly Manipulated" (mean 0.584).
+> - 2026-04-15 — Phase 1.6–1.7 done. Built full image-analysis UI: `services/api.js` (axios, 120s timeout, error interceptor), `services/analyzeApi.js`, `utils/constants.js` (severity colors + linear score→RGB interp). Components: `UploadZone` (react-dropzone, MIME+size validation, thumbnail), `ScoreMeter` (animated 270° SVG arc), `VerdictCard`, `HeatmapOverlay` (side-by-side + opacity slider), `IndicatorCards` (severity pills), `ProcessingSummary` (collapsible), `ResponsibleAIBanner`, `LoadingSpinner`. `AnalyzePage.jsx` wires full flow: upload → POST /analyze/image → render dashboard. Backend (:8000) + frontend (:5173) both returning HTTP 200. Browser verification pending.
 > - 2026-04-14 — Phase 0 started. Backend scaffolded (FastAPI + config + SQLAlchemy models + `/health`). Python 3.11 venv at `backend/.venv`. Core deps installed. `/api/v1/health` verified.
 > - 2026-04-14 — Phase 0 finished. Frontend Vite+React 18+Router scaffolded. Design tokens (`index.css`) per §6.1. Navbar/Footer + placeholder pages for all routes (`/`, `/analyze`, `/results/:id`, `/history`, `/login`, `/register`, `/about`, 404). `npm install` clean (135 pkgs). Dev server boots on :5173 (HTTP 200). Vite proxies `/api` → backend :8000.
 > - 2026-04-14 — Phase 1 started. AI deps installed: torch 2.4.1+cpu, torchvision 0.19.1+cpu, transformers 4.44.2, opencv-python 4.10, grad-cam 1.5.4, pillow, numpy, scipy. Model loader singleton built (`backend/models/model_loader.py`) with lazy init for image/text/OCR/face models; wired into FastAPI lifespan with `PRELOAD_MODELS` env flag. Import smoke test passed.
+> - 2026-04-15 — Phase 1.5 done. Built `api/v1/analyze.py` with `POST /api/v1/analyze/image` (multipart, field `file`). Orchestrates validate → classify → scan_artifacts → heatmap → `ImageAnalysisResponse`, persists an `AnalysisRecord` row (heatmap excluded from stored JSON). Registered in `api/router.py`. curl verified HTTP 200 in ~4.8s end-to-end on a 30 KB JPEG; DB row id=1 persisted. Fixed pydantic `protected_namespaces=()` on Verdict/ProcessingSummary to silence `model_*` field warnings.
+> - 2026-04-15 — Phase 1.4 done. Built `services/artifact_detector.py` with four deterministic signals: (1) GAN/diffusion HF artifact via FFT high-freq ratio, (2) JPEG Q-table anomaly via PIL `img.quantization`, (3) MediaPipe FaceMesh jaw-contour jitter, (4) per-quadrant luminance imbalance. Added MediaPipe 0.10.14. Smoke output on Picsum: GAN_HF=MEDIUM(0.67), compression=LOW(0.00). No face in sample → no facial/lighting indicators (expected).
+> - 2026-04-15 — Phase 1.3 done. Built `models/heatmap_generator.py` with `_HFLogitsWrapper` (Grad-CAM needs tensor output, HF returns `ImageClassifierOutput`), `_vit_reshape_transform` (drop CLS token, reshape 196 tokens → 14×14 grid), target layer = `model.vit.encoder.layer[-1].layernorm_before`. Returns `data:image/png;base64,…` data URL. Smoke test saved `backend/heatmap_smoketest.png` (224×224, ~51 KB).
 > - 2026-04-14 — Phase 1.2 done. Built `services/image_service.py` (classify_image via ViT), `schemas/common.py` + `schemas/analyze.py` (Verdict, ArtifactIndicator, etc.), `utils/scoring.py` (TRUST_SCALE, authenticity score, verdict labels, color interp), `utils/file_handler.py` (MIME+size+magic-byte validation). Model id2label is `{0:Realism, 1:Deepfake}`. Smoke script `scripts/test_image_classify.py` passes: random Picsum image → Deepfake @ 0.508 → score 49 → "Possibly Manipulated". First-run model download cached to `~/.cache/huggingface/`.
 
 ---
@@ -2243,9 +2253,9 @@ volumes:
 |:-----|:-------|:------------|:-------|
 | Model loader singleton | 2h | Models preloaded at startup | ✅ Done |
 | Image detection service | 3h | Classification plus confidence | ✅ Done |
-| Heatmap generator GradCAM | 3h | Base64 heatmap overlay | ⏳ Pending |
-| Artifact detection indicators | 2h | GAN boundary compression signals | ⏳ Pending |
-| Upload API endpoint /analyze/image | 2h | Working image analysis API | ⏳ Pending |
+| Heatmap generator GradCAM | 3h | Base64 heatmap overlay | ✅ Done |
+| Artifact detection indicators | 2h | GAN boundary compression signals | ✅ Done |
+| Upload API endpoint /analyze/image | 2h | Working image analysis API | ✅ Done |
 | UploadZone component drag-drop | 2h | File upload UI | ⏳ Pending |
 | Results dashboard VerdictCard plus ScoreMeter | 2h | Results display for image | ⏳ Pending |
 

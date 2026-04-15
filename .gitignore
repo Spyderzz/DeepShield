@@ -6,7 +6,7 @@ __pycache__/
 venv/
 env/
 
-# Environment
+# Env
 .env
 *.db
 *.sqlite3
@@ -16,26 +16,13 @@ backend/temp_uploads/
 backend/reports/
 backend/deepshield.db
 
-# Datasets (large binary files — download separately)
-backend/data/
-
 # Node
 node_modules/
 dist/
 .vite/
-
-# Model cache (do not commit HuggingFace models)
-*.pt
-*.bin
-*.safetensors
-*.onnx
-*.h5
 
 # OS / IDE
 .DS_Store
 Thumbs.db
 .vscode/
 .idea/
-
-# Claude Code
-.claude/
