@@ -6,6 +6,7 @@ python-multipart==0.0.12
 python-dotenv==1.0.1
 loguru==0.7.2
 SQLAlchemy==2.0.35
+psycopg2-binary==2.9.9
 alembic==1.13.3
 python-jose[cryptography]==3.3.0
 bcrypt==4.2.0
