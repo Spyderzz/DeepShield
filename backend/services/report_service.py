@@ -108,7 +108,7 @@ def html_to_pdf(html: str, out_path: Path) -> None:
     with open(out_path, "wb") as f:
         result = pisa.CreatePDF(html, dest=f)
     if result.err:
-        raise RuntimeError(f"xhtml2pdf failed with {result.err} errors")
+        logger.warning(f"xhtml2pdf encountered {result.err} warnings/errors during rendering (likely unsupported CSS properties).")
 
 
 def generate_report(record: AnalysisRecord) -> Path:

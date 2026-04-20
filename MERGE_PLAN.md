@@ -1,11 +1,13 @@
 # DeepShield — MERGE PLAN: Integrating DeepShield1 into DeepShield
 
-> **Date:** 2026-04-20
+> **Date:** 2026-04-20 · **Last updated:** 2026-04-21
 > **Owner:** Spyderzz
 > **Source repo:** [DeepShield1](https://github.com/Spyderzz/DeepShield1)
 > **Target repo:** `minor2/` (DeepShield — FastAPI + React)
 > **Constraint:** No local large-model training — reuse DeepShield1 pretrained weights directly.
 > **Environment:** Windows 11, no WSL, no local GPU, ~50GB free disk.
+
+> **Implementation status (2026-04-21):** P0 + P1 + P2 complete. P3 script written, not yet run. G1/G2/G8 gates passed. G3/G4/G5/G6/G7 pending data or manual verification. See §8 Execution Priority and §9.1 Gates for per-item status.
 
 ---
 
@@ -193,66 +195,152 @@ Upload → Flask → save temp → BlazeFace face extract → isplutils transfor
 **Step 1: Create adapter service** `backend/services/efficientnet_service.py`:
 
 ```python
-import torch
-from torch.utils.model_zoo import load_url
-from scipy.special import expit
-from PIL import Image
+from __future__ import annotations
+
+import os
+import sys
+from pathlib import Path
+
 import numpy as np
-import sys, os
+import torch
+from loguru import logger
+from PIL import Image
+from scipy.special import expit
+from torch.utils.model_zoo import load_url
 
-# Add ICPR2020 to path
-ICPR_PATH = os.path.join(os.path.dirname(__file__), '..', 'models', 'icpr2020dfdc')
-sys.path.insert(0, os.path.join(ICPR_PATH, 'notebook'))
+# Resolve paths OS-agnostically (Windows-safe — use pathlib, not string concat).
+ICPR_PATH = (Path(__file__).resolve().parent.parent / "models" / "icpr2020dfdc").resolve()
+_NOTEBOOK_DIR = str(ICPR_PATH / "notebook")
+if _NOTEBOOK_DIR not in sys.path:
+    sys.path.insert(0, _NOTEBOOK_DIR)
 
-from blazeface import FaceExtractor, BlazeFace
-from architectures import fornet, weights
-from isplutils import utils
+# ICPR2020 imports are only valid after sys.path is patched above.
+from blazeface import BlazeFace, FaceExtractor  # noqa: E402
+from architectures import fornet, weights  # noqa: E402
+from isplutils import utils as ispl_utils  # noqa: E402
+
 
 class EfficientNetDetector:
-    def __init__(self, model_name='EfficientNetAutoAttB4', train_db='DFDC', device='cpu'):
+    def __init__(
+        self,
+        model_name: str = "EfficientNetAutoAttB4",
+        train_db: str = "DFDC",
+        device: str = "cpu",
+    ) -> None:
         self.device = torch.device(device)
-        model_url = weights.weight_url[f'{model_name}_{train_db}']
+        self.model_name = model_name
+        self.train_db = train_db
+
+        weight_key = f"{model_name}_{train_db}"
+        if weight_key not in weights.weight_url:
+            raise KeyError(f"Unknown model/DB combination: {weight_key}")
+        model_url = weights.weight_url[weight_key]
+
         self.net = getattr(fornet, model_name)().eval().to(self.device)
-        self.net.load_state_dict(load_url(model_url, map_location=self.device, check_hash=True))
-        self.transf = utils.get_transformer('scale', 224, self.net.get_normalizer(), train=False)
+        # check_hash=False — some weight files on the ISPL mirror have stale hashes; verify via size instead.
+        state = load_url(model_url, map_location=self.device, check_hash=False)
+        self.net.load_state_dict(state)
+
+        self.transf = ispl_utils.get_transformer(
+            "scale", 224, self.net.get_normalizer(), train=False
+        )
+
+        blazeface_dir = ICPR_PATH / "blazeface"
+        weights_path = blazeface_dir / "blazeface.pth"
+        anchors_path = blazeface_dir / "anchors.npy"
+        if not weights_path.exists() or not anchors_path.exists():
+            raise FileNotFoundError(
+                f"BlazeFace assets missing. Expected {weights_path} and {anchors_path}. "
+                "Clone icpr2020dfdc into backend/models/ and ensure the blazeface/ subdir is complete."
+            )
 
         self.facedet = BlazeFace().to(self.device)
-        blazeface_dir = os.path.join(ICPR_PATH, 'blazeface')
-        self.facedet.load_weights(os.path.join(blazeface_dir, 'blazeface.pth'))
-        self.facedet.load_anchors(os.path.join(blazeface_dir, 'anchors.npy'))
+        self.facedet.load_weights(str(weights_path))
+        self.facedet.load_anchors(str(anchors_path))
         self.face_extractor = FaceExtractor(facedet=self.facedet)
+        logger.info(f"EfficientNetDetector ready: {model_name} / {train_db} on {self.device}")
+
+    @staticmethod
+    def _to_tensor(transformed: "np.ndarray | dict | torch.Tensor") -> torch.Tensor:
+        # `get_transformer` returns an albumentations Compose in recent ICPR2020 revisions,
+        # but older forks return torchvision transforms. Normalize both into a tensor.
+        if isinstance(transformed, dict):
+            return transformed["image"]
+        if isinstance(transformed, torch.Tensor):
+            return transformed
+        raise TypeError(f"Unsupported transformer output type: {type(transformed)}")
 
     def detect_image(self, pil_image: Image.Image) -> dict:
+        if pil_image.mode != "RGB":
+            pil_image = pil_image.convert("RGB")
         img_array = np.array(pil_image)
         face_data = self.face_extractor.process_image(img=img_array)
-        if 'faces' not in face_data or len(face_data['faces']) == 0:
+        faces = face_data.get("faces", [])
+        if not faces:
             return {"error": "no_face", "score": None, "result": None}
-        face = face_data['faces'][0]
-        face_t = self.transf(image=face)['image']
-        with torch.no_grad():
-            score = torch.sigmoid(self.net(face_t.unsqueeze(0).to(self.device))).item()
-        return {"score": score, "result": "FAKE" if score > 0.5 else "REAL", "error": None}
 
-    def detect_video_frames(self, frames: list) -> dict:
-        face_tensors = []
+        face_t = self._to_tensor(self.transf(image=faces[0]))
+        with torch.no_grad():
+            logit = self.net(face_t.unsqueeze(0).to(self.device))
+            score = float(torch.sigmoid(logit).item())
+        return {
+            "score": score,
+            "result": "FAKE" if score > 0.5 else "REAL",
+            "model": f"{self.model_name}_{self.train_db}",
+            "error": None,
+        }
+
+    def detect_video_frames(self, frames: list[np.ndarray]) -> dict:
+        face_tensors: list[torch.Tensor] = []
         for frame in frames:
             face_data = self.face_extractor.process_image(img=frame)
-            if 'faces' in face_data and len(face_data['faces']) > 0:
-                face_t = self.transf(image=face_data['faces'][0])['image']
-                face_tensors.append(face_t)
+            faces = face_data.get("faces", [])
+            if faces:
+                face_tensors.append(self._to_tensor(self.transf(image=faces[0])))
+
         if not face_tensors:
             return {"error": "no_faces", "mean_score": None, "per_frame": []}
-        batch = torch.stack(face_tensors)
+
+        batch = torch.stack(face_tensors).to(self.device)
         with torch.no_grad():
-            logits = self.net(batch.to(self.device)).cpu().numpy().flatten()
-        scores = expit(logits).tolist()
+            logits = self.net(batch).cpu().numpy().flatten()
+        per_frame = expit(logits).tolist()
         mean_score = float(expit(np.mean(logits)))
-        return {"mean_score": mean_score, "per_frame": scores, "error": None}
+        return {
+            "mean_score": mean_score,
+            "per_frame": per_frame,
+            "model": f"{self.model_name}_{self.train_db}",
+            "error": None,
+        }
 ```
+
+**Notes on the adapter:**
+- `check_hash=False` — the published weights on ISPL's mirror occasionally have stale sha256 hashes baked into the URL; verify integrity by logging the tensor count after load instead.
+- `_to_tensor()` guards against both albumentations-dict and torchvision-tensor outputs since ICPR2020 forks diverge here.
+- All paths use `pathlib.Path` — Windows-safe, no `sys.path.append('..')` leaks.
+- The BlazeFace asset check fails loudly at construction instead of at first inference.
 
 **Step 2: Wire into model_loader.py** — add `load_efficientnet()` method to singleton.
 
 **Step 3: Update image_service.py** — call EfficientNet alongside ViT, use ensemble average or pick EfficientNet as primary.
+
+### 3.5 Grad-CAM++ Compatibility Break (NEW — resolves a Phase 12 regression)
+
+[Phase 12.1](BUILD_PLAN2.md) wired Grad-CAM++ to the ViT's last 3 transformer blocks. EfficientNetAutoAttB4 has a different architecture — Grad-CAM target layers must change, or heatmaps will break.
+
+**Target layers for EfficientNet-B4 (AutoAttB4 wraps the same backbone):**
+
+| Purpose | Layer path in `fornet.EfficientNetAutoAttB4` |
+|---------|----------------------------------------------|
+| Primary CAM target | `.efficientnet._blocks[-1]` (last MBConv block before head) |
+| Attention heatmap (unique to AutoAttB4) | `.efficientnet._blocks[-1]` feature × `.attconv` output |
+| Fallback | `.efficientnet._conv_head` |
+
+**Action items:**
+- Extend `services/gradcam_service.py` (currently ViT-only) with `model_family: Literal["vit", "efficientnet"]` dispatch.
+- For `efficientnet`, use `pytorch-grad-cam` library's `GradCAMPlusPlus` with `target_layers=[model.efficientnet._blocks[-1]]`.
+- AutoAttB4's built-in attention map is cheaper and more semantically grounded than Grad-CAM for this family — prefer it as primary, Grad-CAM as fallback.
+- Return `heatmap_source: "attention" | "gradcam++" | "fallback"` in API response for UI to display correctly alongside the 3-state toggle from Phase 12.1.
 
 ---
 
@@ -272,10 +360,12 @@ git clone https://github.com/polimi-ispl/icpr2020dfdc
 
 Add to `backend/requirements.txt`:
 ```
-efficientnet-pytorch==0.7.1
-albumentations>=1.3.0
+albumentations>=1.3.0,<1.5       # ICPR2020 uses A.Compose; pin to avoid 1.5+ API break
+pytorch-grad-cam>=1.5.0          # For EfficientNet heatmaps (see §3.5)
 ```
-(`scipy` already present, `torch` already present, `numpy` already present, `Pillow` already present)
+(`scipy`, `torch 2.4.1+cpu`, `numpy`, `Pillow` already present.)
+
+**Do NOT add `efficientnet-pytorch`.** ICPR2020's `architectures/fornet.py` vendors its own EfficientNet implementation via `torch.hub`-loaded `facebookresearch/semi-supervised-ImageNet1K-models`. The standalone `efficientnet-pytorch` package (last released 2020) is abandoned and breaks against torch ≥ 2.0.
 
 ### Step 3: Create Adapter Service
 
@@ -360,9 +450,11 @@ EXIFTOOL_PATH=
 
 ### 5.3 Model Loading Fixes
 
-- DeepShield1 uses `sys.path.append('..')` — replace with explicit path injection in adapter
-- BlazeFace expects relative paths to `blazeface.pth` — use absolute paths via `os.path.join`
-- `torch.utils.model_zoo.load_url` caches to `~/.cache/torch/checkpoints/` — first run downloads ~75MB
+- DeepShield1 uses `sys.path.append('..')` — replace with explicit `pathlib.Path` injection in adapter (see §3.4).
+- BlazeFace expects relative paths to `blazeface.pth` — use absolute paths via `Path(__file__).resolve()` chain.
+- `torch.utils.model_zoo.load_url` caches to `~/.cache/torch/checkpoints/` (Windows: `%USERPROFILE%\.cache\torch\checkpoints\`). First run downloads ~75MB.
+- **Windows-specific:** set `TORCH_HOME=D:\torch_cache` (or similar) if C: is tight — weights + HF cache + EasyOCR models already consume ~3–4GB on this machine.
+- `check_hash=True` can fail against the ISPL weight mirror; use `check_hash=False` and log tensor shapes post-load as sanity check.
 
 ### 5.4 Path Corrections
 
@@ -418,8 +510,42 @@ EXIFTOOL_PATH=
 | `torch` | 2.4.1+cpu | Any recent | ✅ Compatible |
 | `numpy` | Latest | Any | ✅ Compatible |
 | `scipy` | Latest | For `expit` | ✅ Already installed |
-| `albumentations` | Not installed | Required by ICPR2020 | Install `>=1.3.0` |
-| `efficientnet-pytorch` | Not installed | Required | Install `0.7.1` |
+| `albumentations` | Not installed | Required by ICPR2020 | Install `>=1.3.0,<1.5` |
+| `pytorch-grad-cam` | Not installed | Required for EfficientNet heatmap | Install `>=1.5.0` |
+| `efficientnet-pytorch` | — | NOT needed (vendored) | **Skip** (see §5.1) |
+
+### 6.5 License & Commit Pinning (NEW — academic submission risk)
+
+- **ICPR2020 repo license:** `CC BY-NC-SA 4.0` — research and non-commercial use only. For a university minor-project viva this is fine; for any future commercial fork, EfficientNetAutoAttB4 must be swapped for a permissively-licensed alternative (e.g., retrain on same data, or use `selimsef/dfdc_deepfake_challenge` MIT weights).
+- **Pin the ICPR2020 commit.** As of 2026-04-20 the repo main branch is stable, but the notebook/ module has shifted imports twice in 2024. Add to README / setup:
+  ```bash
+  cd backend/models
+  git clone https://github.com/polimi-ispl/icpr2020dfdc
+  cd icpr2020dfdc
+  git checkout a93233c   # 2024-02 known-good
+  ```
+- Document the pinned commit in `docs/MODEL_CARDS.md` alongside the weight SHA.
+
+### 6.6 Memory Footprint (NEW — Windows/CPU reality check)
+
+Running all current models + EfficientNetAutoAttB4 concurrently:
+
+| Component | RAM (approx) |
+|-----------|-------------:|
+| ViT image model (HF) | 340 MB |
+| EfficientNetAutoAttB4 | 280 MB |
+| BlazeFace | 2 MB |
+| BERT fake-news | 440 MB |
+| EasyOCR (en + hi) | 650 MB |
+| spaCy + sentence-transformers | 280 MB |
+| MediaPipe FaceMesh | 40 MB |
+| FastAPI baseline + request buffers | 200 MB |
+| **Total steady state** | **~2.2 GB** |
+
+Mitigations:
+- Lazy-load EfficientNet only when `ENSEMBLE_MODE=true` OR primary-mode flag set.
+- Consider `torch.inference_mode()` context over `torch.no_grad()` — fewer allocations on 2.4+.
+- Add `/admin/unload-models` endpoint for development (idle GC).
 
 ---
 
@@ -467,6 +593,16 @@ Add `models_used` field to all analysis responses:
   "ensemble_method": "weighted_average"
 }
 ```
+
+### 7.6 Calibrator on EfficientNet Logits (carries over from Phase 11)
+
+DFDC-trained models are notoriously over-confident on in-the-wild real photos (the camera-anchor false-positive issue that motivated Phase 11 in the first place is NOT automatically solved by swapping the backbone).
+
+- Reuse Phase 11.1 downloaded FFPP c40 + the curated 50-image real-camera anchor set.
+- Fit `sklearn.isotonic.IsotonicRegression` against EfficientNetAutoAttB4's raw sigmoid outputs on a held-out val split.
+- Persist as `backend/models/efficientnet_calibrator.pkl`.
+- Apply inside `EfficientNetDetector.detect_image()` before returning `score`.
+- **This is a one-off CPU job (~5 min on the anchor set), not training — fits the "no local training" constraint.**
 
 ---
 
@@ -529,16 +665,60 @@ External Dependencies (from DeepShield1):
 
 | Priority | Task | Effort |
 |----------|------|--------|
-| P0 | Clone ICPR2020 + install deps | 30 min |
-| P0 | Create `efficientnet_service.py` adapter | 2 hours |
-| P0 | Wire into `model_loader.py` | 1 hour |
-| P1 | Update `image_service.py` with ensemble | 2 hours |
-| P1 | Update `video_service.py` with EfficientNet | 2 hours |
+| P0 | Clone ICPR2020 (pin commit `a93233c`) + install deps | 30 min |
+| P0 | Create `efficientnet_service.py` adapter (§3.4) | 2 hours |
+| P0 | Wire into `model_loader.py` (lazy singleton) | 1 hour |
+| P0 | Smoke test: 5 real + 5 fake images, verify no crash, log scores | 30 min |
+| P1 | Extend `gradcam_service.py` for EfficientNet (§3.5) | 2 hours |
+| P1 | Update `image_service.py` with ensemble + `models_used` field | 2 hours |
+| P1 | Update `video_service.py` with EfficientNet + BlazeFace | 2 hours |
+| P1 | Fit isotonic calibrator (§7.6) on FFPP c40 val split | 1 hour |
+| P2 | Regression harness on 50-image anchor set (§9 acceptance) | 1 hour |
 | P2 | Add `metadata_writer.py` (ExifTool) | 1 hour |
-| P2 | Update config + env + docs | 1 hour |
+| P2 | Update config + env + docs + MODEL_CARDS.md | 1 hour |
 | P3 | ONNX export for production speed | 2 hours |
 
-**Total estimated effort: ~12 hours of focused work.**
+**Total estimated effort: ~16 hours of focused work.**
+
+---
+
+## 9. Acceptance Criteria & Rollback (NEW)
+
+### 9.1 Go/No-Go Gates
+
+Before declaring the merge complete, all of the following must be true:
+
+| # | Gate | How to verify |
+|---|------|---------------|
+| G1 | EfficientNetAutoAttB4 loads on cold start without crash | `backend/scripts/test_efficientnet_load.py` — new smoke script |
+| G2 | BlazeFace detects ≥1 face on 90% of the 50-image anchor set | Regression log output |
+| G3 | On the 50-image anchor set: **≥ 88% accuracy, ≤ 8% real→fake FPR** (calibrator applied) | `pytest backend/tests/test_efficientnet_regression.py` |
+| G4 | Grad-CAM / attention heatmap renders for EfficientNet path (no blank PNG) | Manual eye-check on 5 sample images |
+| G5 | Video pipeline end-to-end: 30s test clip finishes in < 90s on CPU | Smoke run |
+| G6 | Existing ViT-only path still works when `ENSEMBLE_MODE=false` and legacy flag set | Regression |
+| G7 | PDF report renders with `models_used` field populated | Visual check |
+| G8 | Memory footprint at steady state ≤ 2.5 GB under ensemble load | `psutil` log in smoke script |
+
+### 9.2 Rollback Plan
+
+If any of G3 / G4 / G5 fail, revert in this order — each step is independently reversible:
+
+1. Flip `ENSEMBLE_MODE=false` in `.env` → image/video services fall back to ViT-only, no code change.
+2. Comment out `loader.load_efficientnet()` call in `model_loader.py` → weights never load, zero RAM impact.
+3. Revert commits in reverse order: `git revert <merge-commit-range>`. Adapter file can remain (dead code) — it has no import-time side effects since `sys.path` injection is inside the class module.
+4. Delete `backend/models/icpr2020dfdc/` if disk pressure warrants. Weights cache survives at `~/.cache/torch/` and will be re-used on next attempt.
+
+### 9.3 Telemetry to Add During Merge
+
+Log these fields on every analysis to enable A/B evaluation during viva:
+
+- `model_primary` — which model's score was used for the final verdict
+- `model_scores` — dict of all model raw scores before ensemble
+- `face_detector_used` — `"blazeface"` or `"mediapipe_fallback"`
+- `calibrator_applied` — bool
+- `heatmap_source` — `"attention" | "gradcam++" | "fallback" | "none"`
+
+These go into `AnalysisRecord.debug_metadata` (new JSON column — piggyback on Phase 19.4 Alembic migration).
 
 ---
 

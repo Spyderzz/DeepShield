@@ -40,3 +40,6 @@ graphify-out/
 
 # Deployment
 hf_space_deploy/
+
+# ICPR2020 DFDC model repo (large, reference-only — clone separately)
+backend/models/icpr2020dfdc/

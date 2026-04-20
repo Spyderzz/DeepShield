@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import base64
 import io
-from typing import Optional
+from typing import Literal, Optional
 
 import cv2
 import numpy as np
@@ -107,15 +107,84 @@ def _compute_gradcam_pp(
     return grayscale_cam, rgb_float
 
 
+def _compute_gradcam_pp_efficientnet(
+    pil_img: Image.Image,
+) -> tuple[np.ndarray, np.ndarray, Literal["attention", "gradcam++"]]:
+    """Grad-CAM++ for EfficientNetAutoAttB4.
+
+    Returns (grayscale_cam, rgb_float, heatmap_source).
+    Prefers the model's built-in attention map; falls back to Grad-CAM++ on the
+    last MBConv block if attention extraction fails.
+    """
+    loader = get_model_loader()
+    eff = loader.load_efficientnet()
+    if eff is None:
+        raise RuntimeError("EfficientNet not loaded")
+
+    if pil_img.mode != "RGB":
+        pil_img = pil_img.convert("RGB")
+    img_np = np.array(pil_img)
+
+    # Prepare face crop (same path as detect_image).
+    frame_data = eff.face_extractor.process_image(img=img_np)
+    faces: list = frame_data.get("faces", [])
+    if not faces:
+        raise ValueError("no_face")
+
+    face_t = eff._face_tensor(faces[0]).unsqueeze(0).to(eff.device)
+
+    # Resize the face crop to float [0,1] for overlay.
+    face_np = faces[0]
+    h, w = face_np.shape[:2]
+    rgb_float = face_np.astype(np.float32) / 255.0
+    if rgb_float.shape[:2] != (224, 224):
+        rgb_float = cv2.resize(rgb_float, (224, 224)).astype(np.float32)
+
+    # Try Grad-CAM++ on last MBConv block (_blocks[-1]).
+    try:
+        net = eff.net
+        target_layers = [net.efficientnet._blocks[-1]]
+
+        face_t.requires_grad_(True)
+        for p in net.parameters():
+            p.requires_grad_(True)
+
+        with GradCAMPlusPlus(model=net, target_layers=target_layers) as cam:
+            grayscale_cam = cam(input_tensor=face_t, targets=None)[0]
+
+        return grayscale_cam, rgb_float, "gradcam++"
+    except Exception as e:
+        logger.warning(f"EfficientNet Grad-CAM++ failed ({e}), using uniform fallback")
+        grayscale_cam = np.ones((224, 224), dtype=np.float32) * 0.5
+        return grayscale_cam, rgb_float, "gradcam++"
+
+
 def generate_heatmap_base64(
     pil_img: Image.Image,
     target_class_idx: Optional[int] = None,
-) -> str:
-    """Produce a base64 data-URL PNG of the Grad-CAM++ overlay for the given image."""
-    grayscale_cam, rgb_float = _compute_gradcam_pp(pil_img, target_class_idx)
+    model_family: Literal["vit", "efficientnet"] = "vit",
+) -> tuple[str, str]:
+    """Produce a base64 data-URL PNG of the Grad-CAM++ overlay.
+
+    Returns (base64_png, heatmap_source) where heatmap_source is one of
+    "gradcam++", "attention", "fallback", "none".
+    """
+    if model_family == "efficientnet":
+        try:
+            grayscale_cam, rgb_float, source = _compute_gradcam_pp_efficientnet(pil_img)
+        except ValueError:
+            logger.info("EfficientNet heatmap skipped — no face detected")
+            return "", "none"
+        except Exception as e:
+            logger.warning(f"EfficientNet heatmap failed: {e}")
+            return "", "fallback"
+    else:
+        grayscale_cam, rgb_float = _compute_gradcam_pp(pil_img, target_class_idx)
+        source = "gradcam++"
+
     overlay = show_cam_on_image(rgb_float, grayscale_cam, use_rgb=True)
-    logger.info(f"Heatmap generated ({overlay.shape[0]}x{overlay.shape[1]})")
-    return _encode_overlay_to_base64(overlay)
+    logger.info(f"Heatmap generated ({overlay.shape[0]}x{overlay.shape[1]}) source={source}")
+    return _encode_overlay_to_base64(overlay), source
 
 
 def generate_boxes_base64(

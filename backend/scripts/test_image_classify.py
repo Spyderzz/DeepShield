@@ -45,7 +45,11 @@ def main() -> int:
         print(f"  [{ind.severity.upper():6s}] {ind.type}: {ind.description} (conf {ind.confidence:.2f})")
 
     print("\nGenerating Grad-CAM heatmap\u2026")
-    heatmap_url = generate_heatmap_base64(pil)
+    heatmap_url, heatmap_source = generate_heatmap_base64(pil)
+    print(f"  heatmap source: {heatmap_source}")
+    if not heatmap_url:
+        print("  no heatmap (no face or fallback)")
+        return 0
     header, b64 = heatmap_url.split(",", 1)
     out_path = Path(__file__).resolve().parent.parent / "heatmap_smoketest.png"
     out_path.write_bytes(base64.b64decode(b64))

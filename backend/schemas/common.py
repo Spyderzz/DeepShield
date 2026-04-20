@@ -86,3 +86,4 @@ class ProcessingSummary(BaseModel):
     stages_completed: List[str]
     total_duration_ms: int
     model_used: str
+    models_used: List[str] = []  # all models that contributed (ensemble)

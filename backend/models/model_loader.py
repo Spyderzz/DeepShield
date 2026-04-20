@@ -27,6 +27,7 @@ class ModelLoader:
                     cls._instance._face_detector = None
                     cls._instance._spacy_nlp = None
                     cls._instance._sentence_transformer = None
+                    cls._instance._efficientnet_detector = None
         return cls._instance
 
     @classmethod
@@ -145,6 +146,23 @@ class ModelLoader:
             )
             logger.info("MediaPipe FaceMesh loaded")
         return self._face_detector
+
+    # ---------- EfficientNetAutoAttB4 (ICPR2020 / DeepShield1 merge) ----------
+    def load_efficientnet(self):
+        """Lazy-load EfficientNetAutoAttB4 detector. Returns None if deps are missing."""
+        if self._efficientnet_detector is None:
+            try:
+                from services.efficientnet_service import EfficientNetDetector
+
+                self._efficientnet_detector = EfficientNetDetector(
+                    model_name=settings.EFFICIENTNET_MODEL,
+                    train_db=settings.EFFICIENTNET_TRAIN_DB,
+                    device=settings.DEVICE,
+                )
+            except Exception as e:
+                logger.warning(f"EfficientNet load failed (continuing without it): {e}")
+                return None
+        return self._efficientnet_detector
 
     # ---------- Preload ----------
     def preload_phase1(self) -> None:
