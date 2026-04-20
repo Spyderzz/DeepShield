@@ -37,3 +37,6 @@ backend/training/weights/
 
 # Logs & Tool Outputs
 graphify-out/
+
+# Deployment
+hf_space_deploy/
