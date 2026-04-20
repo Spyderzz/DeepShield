@@ -15,7 +15,7 @@ from api.deps import optional_current_user
 from config import settings
 from db.database import get_db
 from db.models import AnalysisRecord, User
-from models.heatmap_generator import generate_heatmap_base64
+from models.heatmap_generator import generate_heatmap_base64, generate_boxes_base64
 from schemas.analyze import (
     FrameAnalysisOut,
     ImageAnalysisResponse,
@@ -38,12 +38,22 @@ from services.screenshot_service import (
     map_phrases_to_boxes,
     run_ocr,
 )
+from services.ela_service import generate_ela_base64
+from services.exif_service import extract_exif
 from services.image_service import load_image_from_bytes
+from services.llm_explainer import generate_llm_summary
 from schemas.common import ProcessingSummary, Verdict
 from services.artifact_detector import scan_artifacts
 from services.image_service import preprocess_and_classify
 from services.news_lookup import search_news_full
-from services.text_service import classify_text, detect_manipulation_indicators, extract_keywords, score_sensationalism
+from services.vlm_breakdown import generate_vlm_breakdown
+from services.text_service import (
+    classify_text,
+    detect_language,
+    detect_manipulation_indicators,
+    extract_entities,
+    score_sensationalism,
+)
 from services.video_service import analyze_video
 from utils.file_handler import read_upload_bytes, save_upload_to_tempfile
 from utils.scoring import compute_authenticity_score, get_verdict_label
@@ -75,19 +85,53 @@ async def analyze_image(
     indicators = scan_artifacts(pil, raw)
     stages.append("artifact_scanning")
 
+    # ── Phase 12: Grad-CAM++ heatmap ──
+    heatmap_status = "success"
+    heatmap = ""
     try:
         heatmap = generate_heatmap_base64(pil)
         stages.append("heatmap_generation")
     except Exception as e:  # noqa: BLE001
         logger.warning(f"Heatmap generation failed, continuing: {e}")
-        heatmap = ""
+        heatmap_status = "failed"
+
+    # ── Phase 12: ELA (Error Level Analysis) ──
+    ela_b64 = ""
+    try:
+        ela_b64 = generate_ela_base64(pil)
+        stages.append("ela_generation")
+    except Exception as e:  # noqa: BLE001
+        logger.warning(f"ELA generation failed, continuing: {e}")
+
+    # ── Phase 12: Bounding box mode ──
+    boxes_b64 = ""
+    try:
+        boxes_b64 = generate_boxes_base64(pil)
+        stages.append("boxes_generation")
+    except Exception as e:  # noqa: BLE001
+        logger.warning(f"Bounding box generation failed, continuing: {e}")
+
+    # ── Phase 12: EXIF extraction + trust adjustment ──
+    exif_summary = None
+    try:
+        exif_summary = extract_exif(pil, raw)
+        stages.append("exif_extraction")
+    except Exception as e:  # noqa: BLE001
+        logger.warning(f"EXIF extraction failed, continuing: {e}")
 
     score = compute_authenticity_score(clf.confidence, clf.label)
+
+    # Apply EXIF trust adjustment to the score
+    if exif_summary and exif_summary.trust_adjustment != 0:
+        score = int(round(max(0, min(100, score + exif_summary.trust_adjustment))))
+
     label, severity = get_verdict_label(score)
     duration_ms = int((time.perf_counter() - start) * 1000)
 
+    analysis_id = str(uuid.uuid4())
+
     response = ImageAnalysisResponse(
-        analysis_id=str(uuid.uuid4()),
+        analysis_id=analysis_id,
         media_type="image",
         timestamp=datetime.now(timezone.utc).isoformat(),
         verdict=Verdict(
@@ -99,7 +143,11 @@ async def analyze_image(
         ),
         explainability=ImageExplainability(
             heatmap_base64=heatmap,
+            ela_base64=ela_b64,
+            boxes_base64=boxes_b64,
+            heatmap_status=heatmap_status,
             artifact_indicators=indicators,
+            exif=exif_summary,
         ),
         trusted_sources=[],
         contradicting_evidence=[],
@@ -115,13 +163,37 @@ async def analyze_image(
         media_type="image",
         verdict=label,
         authenticity_score=float(score),
-        result_json=json.dumps(response.model_dump(exclude={"explainability": {"heatmap_base64"}})),
+        result_json=json.dumps(response.model_dump(
+            exclude={"explainability": {"heatmap_base64", "ela_base64", "boxes_base64"}}
+        )),
     )
     db.add(record)
     db.commit()
     db.refresh(record)
     response.record_id = record.id
     logger.info(f"Saved AnalysisRecord id={record.id} score={score} verdict={label}")
+
+    # ── Phase 12: LLM explainability card (runs after DB save so we have record_id) ──
+    try:
+        llm_summary = generate_llm_summary(
+            payload=response.model_dump(
+                exclude={"explainability": {"heatmap_base64", "ela_base64", "boxes_base64"}}
+            ),
+            record_id=str(record.id),
+        )
+        response.explainability.llm_summary = llm_summary
+        stages.append("llm_explanation")
+    except Exception as e:  # noqa: BLE001
+        logger.warning(f"LLM explainer failed, continuing: {e}")
+
+    # ── Phase 14: VLM detailed breakdown (vision LLM scores 6 perceptual components) ──
+    try:
+        vlm_bd = generate_vlm_breakdown(pil, record_id=str(record.id))
+        if vlm_bd:
+            response.explainability.vlm_breakdown = vlm_bd
+            stages.append("vlm_breakdown")
+    except Exception as e:  # noqa: BLE001
+        logger.warning(f"VLM breakdown failed, continuing: {e}")
 
     return response
 
@@ -218,6 +290,14 @@ async def analyze_video_endpoint(
         f"frames={agg.num_frames_sampled} susp={agg.num_suspicious_frames}"
     )
 
+    # Phase 12: LLM explainability card
+    try:
+        response.llm_summary = generate_llm_summary(
+            payload=response.model_dump(), record_id=str(record.id),
+        )
+    except Exception as e:  # noqa: BLE001
+        logger.warning(f"LLM explainer failed for video: {e}")
+
     return response
 
 
@@ -234,7 +314,11 @@ async def analyze_text_endpoint(
     start = time.perf_counter()
     stages: list[str] = []
 
-    clf = classify_text(body.text)
+    # Phase 13: language detection — routes to multilang model when non-English
+    lang = detect_language(body.text)
+    stages.append("language_detection")
+
+    clf = classify_text(body.text, language=lang)
     stages.append("classification")
 
     sens = score_sensationalism(body.text)
@@ -243,19 +327,36 @@ async def analyze_text_endpoint(
     manip = detect_manipulation_indicators(body.text)
     stages.append("manipulation_detection")
 
-    keywords = extract_keywords(body.text)
-    stages.append("keyword_extraction")
+    # Phase 13.1: NER-based keyword extraction (spaCy entities first, frequency fallback)
+    keywords = extract_entities(body.text)
+    stages.append("ner_keyword_extraction")
 
-    news = await search_news_full(keywords)
+    # Phase 13.2: pass original text + current fake_prob for truth-override computation
+    news = await search_news_full(
+        keywords,
+        original_text=body.text,
+        current_fake_prob=clf.fake_prob,
+    )
     stages.append("news_lookup")
 
+    # Apply truth-override to fake_prob before scoring
+    effective_fake_prob = clf.fake_prob
+    if news.truth_override and news.truth_override.applied:
+        effective_fake_prob = news.truth_override.fake_prob_after
+        stages.append("truth_override_applied")
+
     # Weighted score: 70% classifier + 20% inverse sensationalism + 10% manipulation penalty
-    manip_penalty = min(len(manip) * 5, 30)  # up to 30 points penalty
-    raw_score = (1.0 - clf.fake_prob) * 100.0
+    manip_penalty = min(len(manip) * 5, 30)
+    raw_score = (1.0 - effective_fake_prob) * 100.0
     weighted = raw_score * 0.70 + max(0, 100 - sens.score) * 0.20 + max(0, 100 - manip_penalty) * 0.10
     score = int(round(max(0.0, min(100.0, weighted))))
     label, severity = get_verdict_label(score)
     duration_ms = int((time.perf_counter() - start) * 1000)
+
+    model_used = (
+        settings.TEXT_MULTILANG_MODEL_ID if (lang != "en" and settings.TEXT_MULTILANG_MODEL_ID)
+        else settings.TEXT_MODEL_ID
+    )
 
     response = TextAnalysisResponse(
         analysis_id=str(uuid.uuid4()),
@@ -269,7 +370,7 @@ async def analyze_text_endpoint(
             model_label=clf.label,
         ),
         explainability=TextExplainability(
-            fake_probability=clf.fake_prob,
+            fake_probability=effective_fake_prob,
             top_label=clf.label,
             all_scores=clf.all_scores,
             keywords=keywords,
@@ -293,13 +394,15 @@ async def analyze_text_endpoint(
                 )
                 for m in manip
             ],
+            detected_language=lang,
+            truth_override=news.truth_override,
         ),
         trusted_sources=news.trusted_sources,
         contradicting_evidence=news.contradicting_evidence,
         processing_summary=ProcessingSummary(
             stages_completed=stages,
             total_duration_ms=duration_ms,
-            model_used=settings.TEXT_MODEL_ID,
+            model_used=model_used,
         ),
     )
 
@@ -315,6 +418,14 @@ async def analyze_text_endpoint(
     db.refresh(record)
     response.record_id = record.id
     logger.info(f"Saved AnalysisRecord id={record.id} text score={score} verdict={label}")
+
+    # Phase 12: LLM explainability card
+    try:
+        response.llm_summary = generate_llm_summary(
+            payload=response.model_dump(), record_id=str(record.id),
+        )
+    except Exception as e:  # noqa: BLE001
+        logger.warning(f"LLM explainer failed for text: {e}")
 
     return response
 
@@ -339,7 +450,11 @@ async def analyze_screenshot_endpoint(
 
     full_text = extract_full_text(ocr_boxes)
 
-    clf = classify_text(full_text) if full_text else None
+    # Phase 13: language detection on extracted OCR text
+    lang = detect_language(full_text) if full_text else "en"
+    stages.append("language_detection")
+
+    clf = classify_text(full_text, language=lang) if full_text else None
     stages.append("classification")
 
     sens = score_sensationalism(full_text)
@@ -354,19 +469,30 @@ async def analyze_screenshot_endpoint(
     layout = detect_layout_anomalies(ocr_boxes)
     stages.append("layout_anomaly_detection")
 
-    keywords = extract_keywords(full_text)
-    stages.append("keyword_extraction")
-
-    news = await search_news_full(keywords)
-    stages.append("news_lookup")
+    # Phase 13.1: NER-based keyword extraction
+    keywords = extract_entities(full_text)
+    stages.append("ner_keyword_extraction")
 
     fake_prob = clf.fake_prob if clf else 0.0
     model_conf = clf.confidence if clf else 0.0
     model_lbl = clf.label if clf else "no_text"
 
+    # Phase 13.2: truth-override via cosine similarity
+    news = await search_news_full(
+        keywords,
+        original_text=full_text,
+        current_fake_prob=fake_prob,
+    )
+    stages.append("news_lookup")
+
+    effective_fake_prob = fake_prob
+    if news.truth_override and news.truth_override.applied:
+        effective_fake_prob = news.truth_override.fake_prob_after
+        stages.append("truth_override_applied")
+
     manip_penalty = min(len(manip) * 5, 30)
     layout_penalty = min(len(layout) * 5, 15)
-    raw_score = (1.0 - fake_prob) * 100.0
+    raw_score = (1.0 - effective_fake_prob) * 100.0
     weighted = (
         raw_score * 0.65
         + max(0, 100 - sens.score) * 0.20
@@ -378,6 +504,12 @@ async def analyze_screenshot_endpoint(
     score = int(round(max(0.0, min(100.0, weighted))))
     label, severity = get_verdict_label(score)
     duration_ms = int((time.perf_counter() - start) * 1000)
+
+    model_used_str = (
+        f"{settings.TEXT_MULTILANG_MODEL_ID} + EasyOCR"
+        if (lang != "en" and settings.TEXT_MULTILANG_MODEL_ID)
+        else f"{settings.TEXT_MODEL_ID} + EasyOCR"
+    )
 
     response = ScreenshotAnalysisResponse(
         analysis_id=str(uuid.uuid4()),
@@ -393,7 +525,7 @@ async def analyze_screenshot_endpoint(
         explainability=ScreenshotExplainability(
             extracted_text=full_text,
             ocr_boxes=[OCRBoxOut(text=b.text, bbox=b.bbox, confidence=b.confidence) for b in ocr_boxes],
-            fake_probability=fake_prob,
+            fake_probability=effective_fake_prob,
             sensationalism=SensationalismBreakdown(
                 score=sens.score, level=sens.level,
                 exclamation_count=sens.exclamation_count, caps_word_count=sens.caps_word_count,
@@ -413,13 +545,15 @@ async def analyze_screenshot_endpoint(
                 ) for la in layout
             ],
             keywords=keywords,
+            detected_language=lang,
+            truth_override=news.truth_override,
         ),
         trusted_sources=news.trusted_sources,
         contradicting_evidence=news.contradicting_evidence,
         processing_summary=ProcessingSummary(
             stages_completed=stages,
             total_duration_ms=duration_ms,
-            model_used=f"{settings.TEXT_MODEL_ID} + EasyOCR",
+            model_used=model_used_str,
         ),
     )
 
@@ -435,5 +569,13 @@ async def analyze_screenshot_endpoint(
     db.refresh(record)
     response.record_id = record.id
     logger.info(f"Saved AnalysisRecord id={record.id} screenshot score={score} verdict={label}")
+
+    # Phase 12: LLM explainability card
+    try:
+        response.llm_summary = generate_llm_summary(
+            payload=response.model_dump(), record_id=str(record.id),
+        )
+    except Exception as e:  # noqa: BLE001
+        logger.warning(f"LLM explainer failed for screenshot: {e}")
 
     return response

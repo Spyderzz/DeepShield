@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import re
 from dataclasses import dataclass, field
-from typing import List
+from typing import List, Optional
 
 from loguru import logger
 
@@ -70,6 +70,9 @@ MANIPULATION_PATTERNS = [
      "Assertion of fact without evidence"),
 ]
 
+# NER entity labels to prefer for keyword extraction
+_NER_PREFERRED = {"PERSON", "ORG", "GPE", "EVENT", "PRODUCT", "NORP"}
+
 
 @dataclass
 class TextClassification:
@@ -100,25 +103,64 @@ class ManipulationIndicator:
     description: str
 
 
-def classify_text(text: str) -> TextClassification:
-    pipe = get_model_loader().load_text_model()
-    text = (text or "").strip()
-    if not text:
-        return TextClassification("unknown", 0.0, 0.0, {})
-    out = pipe(text[:2000], truncation=True, top_k=None)
-    items = out[0] if isinstance(out[0], list) else out
+def detect_language(text: str) -> str:
+    """Detect the primary language of text using langdetect.
+    Returns ISO 639-1 code (e.g. 'en', 'hi'). Falls back to 'en' on failure.
+    """
+    if not text or len(text.strip()) < 10:
+        return "en"
+    try:
+        from langdetect import detect  # type: ignore
+        lang = detect(text.strip())
+        logger.info(f"Language detected: {lang}")
+        return lang
+    except ImportError:
+        logger.debug("langdetect not installed — defaulting to 'en'")
+        return "en"
+    except Exception as e:
+        logger.debug(f"Language detection failed: {e} — defaulting to 'en'")
+        return "en"
+
+
+def _scores_to_classification(items) -> TextClassification:
+    """Convert pipeline output to TextClassification."""
     scores = {i["label"]: float(i["score"]) for i in items}
     top_label, top_conf = max(scores.items(), key=lambda kv: kv[1])
-    
-    # Extract fake probability: check mapping for LABEL_0 (fake) or literal fake tokens
+    # Extract fake probability
     fake_prob = 0.0
     if "LABEL_0" in scores:
         fake_prob = scores["LABEL_0"]
     else:
-        fake_prob = max((p for lbl, p in scores.items() if any(t in lbl.lower() for t in FAKE_TOKENS)), default=0.0)
-        
-    logger.info(f"Text classify → {top_label} @ {top_conf:.3f} fake_p={fake_prob:.3f}")
+        fake_prob = max(
+            (p for lbl, p in scores.items() if any(t in lbl.lower() for t in FAKE_TOKENS)),
+            default=0.0,
+        )
     return TextClassification(top_label, top_conf, fake_prob, scores)
+
+
+def classify_text(text: str, language: Optional[str] = None) -> TextClassification:
+    """Classify text as fake/real.
+    Routes to multilingual model when language is non-English and the model is configured.
+    """
+    text = (text or "").strip()
+    if not text:
+        return TextClassification("unknown", 0.0, 0.0, {})
+
+    loader = get_model_loader()
+
+    if language and language != "en":
+        pipe = loader.load_multilang_text_model()
+    else:
+        pipe = loader.load_text_model()
+
+    out = pipe(text[:2000], truncation=True, top_k=None)
+    items = out[0] if isinstance(out[0], list) else out
+    clf = _scores_to_classification(items)
+    logger.info(
+        f"Text classify [{language or 'en'}] → {clf.label} @ {clf.confidence:.3f} "
+        f"fake_p={clf.fake_prob:.3f}"
+    )
+    return clf
 
 
 def score_sensationalism(text: str) -> SensationalismResult:
@@ -129,7 +171,6 @@ def score_sensationalism(text: str) -> SensationalismResult:
     words = text.split()
     total_words = max(len(words), 1)
 
-    # Count signals
     excl = text.count("!")
     caps = sum(1 for w in words if w.isupper() and len(w) > 2)
     clickbait = sum(
@@ -139,7 +180,6 @@ def score_sensationalism(text: str) -> SensationalismResult:
     emotional = sum(1 for w in words if w.lower().strip(".,!?;:") in EMOTIONAL_WORDS)
     superlative = sum(1 for w in words if w.lower().strip(".,!?;:") in SUPERLATIVES)
 
-    # Weighted score (each normalized to ~0-25 range, sum capped at 100)
     raw = (
         min(excl * 8, 25)
         + min(caps / total_words * 200, 25)
@@ -169,13 +209,62 @@ def detect_manipulation_indicators(text: str) -> List[ManipulationIndicator]:
                 severity=severity,
                 description=description,
             ))
-    # Sort by position
     indicators.sort(key=lambda i: i.start_pos)
     logger.info(f"Manipulation indicators → {len(indicators)} found")
     return indicators
 
 
-def extract_keywords(text: str, max_k: int = 6) -> List[str]:
+def extract_entities(text: str, max_k: int = 6) -> List[str]:
+    """Extract keywords via spaCy NER (PERSON, ORG, GPE, EVENT preferred).
+    Falls back to frequency-based extraction when spaCy is unavailable or text is too short.
+    """
+    if not text or len(text.strip()) < 20:
+        return _extract_keywords_freq(text, max_k)
+
+    loader = get_model_loader()
+    nlp = loader.load_spacy_nlp()
+
+    if nlp is None:
+        # spaCy not available — use frequency fallback
+        return _extract_keywords_freq(text, max_k)
+
+    try:
+        doc = nlp(text[:5000])  # cap for performance
+
+        # Collect named entities, preferring high-value types
+        preferred: List[str] = []
+        other: List[str] = []
+        seen: set[str] = set()
+
+        for ent in doc.ents:
+            norm = ent.text.strip()
+            norm_lower = norm.lower()
+            if not norm or norm_lower in seen or len(norm) < 2:
+                continue
+            seen.add(norm_lower)
+            if ent.label_ in _NER_PREFERRED:
+                preferred.append(norm)
+            else:
+                other.append(norm)
+
+        entities = preferred + other
+
+        if len(entities) >= 2:
+            logger.info(f"NER extracted {len(entities)} entities: {entities[:max_k]}")
+            return entities[:max_k]
+
+        # Not enough entities — supplement with frequency keywords
+        freq_kws = _extract_keywords_freq(text, max_k)
+        combined = entities + [k for k in freq_kws if k.lower() not in seen]
+        return combined[:max_k]
+
+    except Exception as e:
+        logger.warning(f"spaCy NER failed: {e} — falling back to frequency extraction")
+        return _extract_keywords_freq(text, max_k)
+
+
+def _extract_keywords_freq(text: str, max_k: int = 6) -> List[str]:
+    """Frequency-based keyword extraction (original implementation, kept as fallback)."""
     stop = {
         "the","a","an","is","are","was","were","be","been","being","to","of","and","or","but",
         "in","on","at","for","with","by","from","as","that","this","it","its","has","have","had",
@@ -190,3 +279,7 @@ def extract_keywords(text: str, max_k: int = 6) -> List[str]:
             continue
         freq[wl] = freq.get(wl, 0) + 1
     return [w for w, _ in sorted(freq.items(), key=lambda kv: (-kv[1], kv[0]))[:max_k]]
+
+
+# Back-compat alias: routes that still call extract_keywords get NER-first behaviour
+extract_keywords = extract_entities

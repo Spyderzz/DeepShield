@@ -8,7 +8,7 @@ import httpx
 from loguru import logger
 
 from config import settings
-from schemas.common import ContradictingEvidence, TrustedSource
+from schemas.common import ContradictingEvidence, TrustedSource, TruthOverride
 
 # Trusted news domains — higher relevance boost
 TRUSTED_DOMAINS = {
@@ -26,12 +26,21 @@ FACTCHECK_DOMAINS = {
     "factly.in", "altnews.in", "boomlive.in", "vishvasnews.com",
 }
 
+# Domains eligible for truth-override (weight >= 0.9 per BUILD_PLAN spec)
+_HIGH_TRUST_DOMAINS = {d for d, w in TRUSTED_DOMAINS.items() if w >= 0.9}
+
+# Thresholds per BUILD_PLAN §13.2
+_OVERRIDE_SIMILARITY_THRESHOLD = 0.6
+_OVERRIDE_FAKE_PROB_CAP = 0.15
+_OVERRIDE_FAKE_PROB_MULTIPLIER = 0.3
+
 
 @dataclass
 class NewsLookupResult:
     trusted_sources: List[TrustedSource]
     contradicting_evidence: List[ContradictingEvidence]
     total_articles: int
+    truth_override: Optional[TruthOverride] = None
 
 
 def _domain_of(url: str) -> str:
@@ -57,8 +66,93 @@ def _relevance(url: str) -> float:
     return 0.5
 
 
+def _is_high_trust(url: str) -> bool:
+    dom = _domain_of(url)
+    return any(ht in dom for ht in _HIGH_TRUST_DOMAINS)
+
+
+def _compute_truth_override(
+    input_text: str,
+    trusted_sources: List[TrustedSource],
+    current_fake_prob: float,
+) -> Optional[TruthOverride]:
+    """Check if any high-trust source corroborates the input text at >= 0.6 cosine similarity.
+
+    Per BUILD_PLAN §13.2:
+    - Compute cosine similarity between input_text and each trusted-source headline+description
+    - If ≥ 1 high-trust source (weight ≥ 0.9) has similarity ≥ 0.6 → apply fake_prob *= 0.3, cap at 0.15
+    """
+    if not input_text or not trusted_sources:
+        return None
+
+    # Filter to high-trust sources only
+    high_trust = [s for s in trusted_sources if _is_high_trust(s.url)]
+    if not high_trust:
+        return None
+
+    # Lazy-load sentence-transformer
+    from models.model_loader import get_model_loader
+    st_model = get_model_loader().load_sentence_transformer()
+    if st_model is None:
+        return None
+
+    try:
+        import numpy as np
+
+        # Encode input text and all high-trust headlines
+        source_texts = [
+            f"{s.title}" for s in high_trust
+        ]
+        all_texts = [input_text[:512]] + source_texts
+
+        embeddings = st_model.encode(all_texts, convert_to_numpy=True, normalize_embeddings=True)
+        query_vec = embeddings[0]       # (D,)
+        source_vecs = embeddings[1:]    # (N, D)
+
+        # Cosine similarity — already normalized, so dot product = cosine similarity
+        similarities = np.dot(source_vecs, query_vec)
+
+        best_idx = int(np.argmax(similarities))
+        best_sim = float(similarities[best_idx])
+        best_source = high_trust[best_idx]
+
+        logger.info(
+            f"Truth-override: best similarity={best_sim:.3f} "
+            f"source={best_source.source_name} url={best_source.url}"
+        )
+
+        if best_sim >= _OVERRIDE_SIMILARITY_THRESHOLD:
+            new_fake_prob = min(
+                current_fake_prob * _OVERRIDE_FAKE_PROB_MULTIPLIER,
+                _OVERRIDE_FAKE_PROB_CAP,
+            )
+            logger.info(
+                f"Truth-override APPLIED: fake_prob {current_fake_prob:.3f} → {new_fake_prob:.3f}"
+            )
+            return TruthOverride(
+                applied=True,
+                source_url=best_source.url,
+                source_name=best_source.source_name,
+                similarity=round(best_sim, 4),
+                fake_prob_before=round(current_fake_prob, 4),
+                fake_prob_after=round(new_fake_prob, 4),
+            )
+
+        return TruthOverride(
+            applied=False,
+            source_url=best_source.url,
+            source_name=best_source.source_name,
+            similarity=round(best_sim, 4),
+            fake_prob_before=round(current_fake_prob, 4),
+            fake_prob_after=round(current_fake_prob, 4),
+        )
+
+    except Exception as e:
+        logger.warning(f"Truth-override computation failed: {e}")
+        return None
+
+
 async def _fetch(q: str, country: Optional[str]) -> list[dict]:
-    # Default to India ('in') if not specified, since project targets Indian news
     target_country = country or "in"
     params = {"apikey": settings.NEWS_API_KEY, "q": q, "language": "en", "size": 10, "country": "in"}
 
@@ -86,7 +180,18 @@ async def search_news_full(
     keywords: List[str],
     limit: int = 6,
     country: Optional[str] = None,
+    original_text: Optional[str] = None,
+    current_fake_prob: float = 0.5,
 ) -> NewsLookupResult:
+    """Full news lookup with truth-override support.
+
+    Args:
+        keywords: NER-extracted or frequency-extracted keywords to search.
+        limit: Max sources to return.
+        country: Country code for newsdata.io.
+        original_text: Input text to compare against headlines for truth-override.
+        current_fake_prob: Current fake probability — may be adjusted by truth-override.
+    """
     if not settings.NEWS_API_KEY or not keywords:
         return NewsLookupResult([], [], 0)
 
@@ -122,8 +227,16 @@ async def search_news_full(
         ))
 
     trusted.sort(key=lambda s: -s.relevance_score)
+    trusted = trusted[:limit]
+
+    # ── Phase 13.2: Truth-override ──
+    truth_override = None
+    if original_text and trusted:
+        truth_override = _compute_truth_override(original_text, trusted, current_fake_prob)
+
     return NewsLookupResult(
-        trusted_sources=trusted[:limit],
+        trusted_sources=trusted,
         contradicting_evidence=contradictions[:limit],
         total_articles=len(articles),
+        truth_override=truth_override,
     )

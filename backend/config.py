@@ -21,8 +21,13 @@ class Settings(BaseSettings):
     # AI Models
     IMAGE_MODEL_ID: str = "prithivMLmods/Deep-Fake-Detector-v2-Model"
     TEXT_MODEL_ID: str = "jy46604790/Fake-News-Bert-Detect"
+    # Multilingual text model for non-English (Hindi etc.). Leave empty to fall back to TEXT_MODEL_ID.
+    TEXT_MULTILANG_MODEL_ID: str = ""
     DEVICE: str = "cpu"
     PRELOAD_MODELS: bool = True  # preload models at startup
+
+    # Phase 13: OCR language list (comma-separated ISO codes, e.g. "en,hi")
+    OCR_LANGS: str = "en,hi"
 
     # News API
     NEWS_API_KEY: str = ""
@@ -31,6 +36,11 @@ class Settings(BaseSettings):
     # Reports
     REPORT_DIR: str = "./temp_reports"
     REPORT_TTL_SECONDS: int = 3600  # 1h expiry
+
+    # LLM Explainability (Phase 12)
+    LLM_PROVIDER: str = "gemini"  # "gemini" | "openai"
+    LLM_API_KEY: str = ""
+    LLM_MODEL: str = "gemini-1.5-flash"  # or "gpt-4o-mini"
 
     # Auth
     JWT_SECRET_KEY: str = "change-me-in-production"

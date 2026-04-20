@@ -21,6 +21,20 @@ opencv-python==4.10.0.84
 grad-cam==1.5.4
 mediapipe==0.10.14
 
+# === Phase 12: Explainability v2 ===
+exifread==3.0.0
+google-generativeai>=0.3.0    # Gemini provider for LLM explainability
+openai>=1.0.0                 # OpenAI provider (alternative to Gemini)
+
+# === Phase 14: PDF v2 donut chart ===
+matplotlib>=3.9.0
+
+# === Phase 13: Text Pipeline Hardening ===
+# After installing, run: python -m spacy download en_core_web_sm
+spacy>=3.7.0,<4.0.0
+sentence-transformers>=2.7.0  # for truth-override cosine similarity (all-MiniLM-L6-v2)
+langdetect==1.0.9             # lightweight language detection
+
 # === Phase 3: Text / News ===
 httpx==0.27.2
 

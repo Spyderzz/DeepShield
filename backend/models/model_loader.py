@@ -22,8 +22,11 @@ class ModelLoader:
                     cls._instance._image_model = None
                     cls._instance._image_processor = None
                     cls._instance._text_pipeline = None
+                    cls._instance._multilang_text_pipeline = None
                     cls._instance._ocr_reader = None
                     cls._instance._face_detector = None
+                    cls._instance._spacy_nlp = None
+                    cls._instance._sentence_transformer = None
         return cls._instance
 
     @classmethod
@@ -44,7 +47,7 @@ class ModelLoader:
             logger.info("Image model loaded")
         return self._image_model, self._image_processor
 
-    # ---------- Text (BERT fake-news classifier) ----------
+    # ---------- Text (BERT fake-news classifier — English) ----------
     def load_text_model(self):
         if self._text_pipeline is None:
             logger.info(f"Loading text model: {settings.TEXT_MODEL_ID}")
@@ -58,14 +61,73 @@ class ModelLoader:
             logger.info("Text model loaded")
         return self._text_pipeline
 
-    # ---------- OCR (EasyOCR) ----------
+    # ---------- Multilingual text model (Phase 13) ----------
+    def load_multilang_text_model(self):
+        """Load multilingual fake-news classifier. Falls back to English model if not configured."""
+        model_id = settings.TEXT_MULTILANG_MODEL_ID
+        if not model_id:
+            logger.debug("TEXT_MULTILANG_MODEL_ID not set — falling back to English text model")
+            return self.load_text_model()
+
+        if self._multilang_text_pipeline is None:
+            logger.info(f"Loading multilingual text model: {model_id}")
+            from transformers import pipeline
+
+            self._multilang_text_pipeline = pipeline(
+                "text-classification",
+                model=model_id,
+                device=0 if settings.DEVICE == "cuda" else -1,
+            )
+            logger.info("Multilingual text model loaded")
+        return self._multilang_text_pipeline
+
+    # ---------- spaCy NLP (Phase 13 NER) ----------
+    def load_spacy_nlp(self):
+        """Lazy-load spaCy English NLP model. Returns None if spaCy is not installed."""
+        if self._spacy_nlp is None:
+            try:
+                import spacy  # type: ignore
+                try:
+                    self._spacy_nlp = spacy.load("en_core_web_sm")
+                    logger.info("spaCy en_core_web_sm loaded")
+                except OSError:
+                    logger.warning(
+                        "spaCy model 'en_core_web_sm' not found. "
+                        "Run: python -m spacy download en_core_web_sm"
+                    )
+                    return None
+            except ImportError:
+                logger.warning("spaCy not installed — NER keyword extraction disabled")
+                return None
+        return self._spacy_nlp
+
+    # ---------- Sentence-Transformer (Phase 13 truth-override) ----------
+    def load_sentence_transformer(self):
+        """Lazy-load sentence-transformers/all-MiniLM-L6-v2. Returns None if not installed."""
+        if self._sentence_transformer is None:
+            try:
+                from sentence_transformers import SentenceTransformer  # type: ignore
+                self._sentence_transformer = SentenceTransformer("sentence-transformers/all-MiniLM-L6-v2")
+                logger.info("Sentence-transformer (all-MiniLM-L6-v2) loaded")
+            except ImportError:
+                logger.warning("sentence-transformers not installed — truth-override disabled")
+                return None
+            except Exception as e:
+                logger.warning(f"Sentence-transformer load failed: {e}")
+                return None
+        return self._sentence_transformer
+
+    # ---------- OCR (EasyOCR) — Phase 13: use OCR_LANGS from config ----------
     def load_ocr_engine(self):
         if self._ocr_reader is None:
-            logger.info("Loading EasyOCR reader (en, hi)")
+            langs = [l.strip() for l in settings.OCR_LANGS.split(",") if l.strip()]
+            if not langs:
+                langs = ["en"]
+            logger.info(f"Loading EasyOCR reader (langs: {langs})")
             import easyocr  # type: ignore
 
             self._ocr_reader = easyocr.Reader(
-                ["en"], gpu=(settings.DEVICE == "cuda"), verbose=False, download_enabled=True,
+                langs, gpu=(settings.DEVICE == "cuda"), verbose=False, download_enabled=True,
             )
             logger.info("EasyOCR loaded")
         return self._ocr_reader

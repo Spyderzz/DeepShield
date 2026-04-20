@@ -16,6 +16,10 @@ import ResponsibleAIBanner from '../components/common/ResponsibleAIBanner.jsx';
 import ReportDownload from '../components/results/ReportDownload.jsx';
 import LoadingSpinner from '../components/common/LoadingSpinner.jsx';
 import PipelineVisualizer from '../components/common/PipelineVisualizer.jsx';
+import LLMExplainCard from '../components/results/LLMExplainCard.jsx';
+import EXIFCard from '../components/results/EXIFCard.jsx';
+import LanguageBadge from '../components/results/LanguageBadge.jsx';
+import DetailedBreakdownCards from '../components/results/DetailedBreakdownCards.jsx';
 import { analyzeImage, analyzeVideo, analyzeText, analyzeScreenshot } from '../services/analyzeApi.js';
 import { useToast } from '../contexts/ToastContext.jsx';
 
@@ -174,17 +178,33 @@ export default function AnalyzePage() {
             </div>
           </div>
 
+          {/* ── Phase 12: LLM Explain Card — first card for ALL media types ─��� */}
+          {(result.llm_summary || result.explainability?.llm_summary) && (
+            <LLMExplainCard llmSummary={result.llm_summary || result.explainability?.llm_summary} />
+          )}
+
           {/* ── Image results ── */}
           {result.media_type === 'image' && (
             <>
+              {result.explainability?.exif && (
+                <EXIFCard exif={result.explainability.exif} />
+              )}
               <div style={{ background: 'var(--color-surface)', padding: 'var(--space-6)', borderRadius: 'var(--radius-md)', boxShadow: 'var(--shadow-sm)' }}>
                 <h3 style={{ marginTop: 0 }}>Explainability</h3>
-                <HeatmapOverlay originalUrl={originalUrl} heatmapBase64={result.explainability.heatmap_base64} />
+                <HeatmapOverlay
+                  originalUrl={originalUrl}
+                  heatmapBase64={result.explainability.heatmap_base64}
+                  elaBase64={result.explainability.ela_base64}
+                  boxesBase64={result.explainability.boxes_base64}
+                />
               </div>
               <div>
                 <h3>Artifact indicators</h3>
                 <IndicatorCards indicators={result.explainability.artifact_indicators} />
               </div>
+              {result.explainability?.vlm_breakdown && (
+                <DetailedBreakdownCards breakdown={result.explainability.vlm_breakdown} />
+              )}
             </>
           )}
 
@@ -219,6 +239,12 @@ export default function AnalyzePage() {
           {/* ── Text results ── */}
           {result.media_type === 'text' && (
             <>
+              {/* Phase 13: Language + truth-override badges */}
+              <LanguageBadge
+                language={result.explainability.detected_language}
+                truthOverride={result.explainability.truth_override}
+              />
+
               {/* Sensationalism */}
               <div style={{ background: 'var(--color-surface)', padding: 'var(--space-6)', borderRadius: 'var(--radius-md)', boxShadow: 'var(--shadow-sm)' }}>
                 <h3 style={{ marginTop: 0 }}>Sensationalism Analysis</h3>
@@ -269,6 +295,12 @@ export default function AnalyzePage() {
           {/* ── Screenshot results ── */}
           {result.media_type === 'screenshot' && (
             <>
+              {/* Phase 13: Language + truth-override badges */}
+              <LanguageBadge
+                language={result.explainability.detected_language}
+                truthOverride={result.explainability.truth_override}
+              />
+
               <div style={{ background: 'var(--color-surface)', padding: 'var(--space-6)', borderRadius: 'var(--radius-md)', boxShadow: 'var(--shadow-sm)' }}>
                 <h3 style={{ marginTop: 0 }}>Overlay — OCR + suspicious phrases</h3>
                 <div style={{ color: 'var(--color-text-secondary)', fontSize: 'var(--font-size-sm)', marginBottom: 'var(--space-3)' }}>

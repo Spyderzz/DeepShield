@@ -7,9 +7,13 @@ from pydantic import BaseModel
 from schemas.common import (
     ArtifactIndicator,
     ContradictingEvidence,
+    ExifSummary,
+    LLMExplainabilitySummary,
     ProcessingSummary,
     TrustedSource,
+    TruthOverride,
     Verdict,
+    VLMBreakdown,
 )
 
 
@@ -39,6 +43,8 @@ class TextExplainability(BaseModel):
     keywords: List[str] = []
     sensationalism: SensationalismBreakdown = SensationalismBreakdown()
     manipulation_indicators: List[ManipulationIndicatorOut] = []
+    detected_language: str = "en"       # ISO 639-1 code, e.g. "en", "hi"
+    truth_override: TruthOverride | None = None
 
 
 class TextAnalysisResponse(BaseModel):
@@ -48,6 +54,7 @@ class TextAnalysisResponse(BaseModel):
     timestamp: str
     verdict: Verdict
     explainability: TextExplainability
+    llm_summary: LLMExplainabilitySummary | None = None
     trusted_sources: List[TrustedSource] = []
     contradicting_evidence: List[ContradictingEvidence] = []
     processing_summary: ProcessingSummary
@@ -85,6 +92,8 @@ class ScreenshotExplainability(BaseModel):
     suspicious_phrases: List[SuspiciousPhraseOut] = []
     layout_anomalies: List[LayoutAnomalyOut] = []
     keywords: List[str] = []
+    detected_language: str = "en"
+    truth_override: TruthOverride | None = None
 
 
 class ScreenshotAnalysisResponse(BaseModel):
@@ -94,6 +103,7 @@ class ScreenshotAnalysisResponse(BaseModel):
     timestamp: str
     verdict: Verdict
     explainability: ScreenshotExplainability
+    llm_summary: LLMExplainabilitySummary | None = None
     trusted_sources: List[TrustedSource] = []
     contradicting_evidence: List[ContradictingEvidence] = []
     processing_summary: ProcessingSummary
@@ -104,7 +114,13 @@ class ScreenshotAnalysisResponse(BaseModel):
 
 class ImageExplainability(BaseModel):
     heatmap_base64: str = ""
+    ela_base64: str = ""
+    boxes_base64: str = ""
+    heatmap_status: str = "success"  # success | failed | degraded
     artifact_indicators: List[ArtifactIndicator] = []
+    exif: ExifSummary | None = None
+    llm_summary: LLMExplainabilitySummary | None = None
+    vlm_breakdown: VLMBreakdown | None = None
 
 
 class FrameAnalysisOut(BaseModel):
@@ -137,6 +153,7 @@ class VideoAnalysisResponse(BaseModel):
     timestamp: str
     verdict: Verdict
     explainability: VideoExplainability
+    llm_summary: LLMExplainabilitySummary | None = None
     trusted_sources: List[TrustedSource] = []
     contradicting_evidence: List[ContradictingEvidence] = []
     processing_summary: ProcessingSummary

@@ -26,3 +26,14 @@ dist/
 Thumbs.db
 .vscode/
 .idea/
+
+# AI Models & Datasets
+*.pth
+*.pt
+*.h5
+*.onnx
+backend/training/datasets/
+backend/training/weights/
+
+# Logs & Tool Outputs
+graphify-out/
