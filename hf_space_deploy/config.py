@@ -40,7 +40,7 @@ class Settings(BaseSettings):
     # LLM Explainability (Phase 12)
     LLM_PROVIDER: str = "gemini"  # "gemini" | "openai"
     LLM_API_KEY: str = ""
-    LLM_MODEL: str = "gemini-1.5-flash"  # or "gpt-4o-mini"
+    LLM_MODEL: str = "gemini-2.5-pro"  # or "gpt-4o"
 
     # Auth
     JWT_SECRET_KEY: str = "change-me-in-production"

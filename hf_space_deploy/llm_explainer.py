@@ -130,11 +130,20 @@ def generate_llm_summary(
 
     # Guard: no API key configured
     if not settings.LLM_API_KEY:
-        logger.warning("LLM_API_KEY not set — skipping LLM explainability card")
+        logger.warning("LLM_API_KEY not set — using deterministic fallback summary")
+        
+        verdict_data = payload.get("verdict", {})
+        label = verdict_data.get("label", "Unknown")
+        score = verdict_data.get("authenticity_score", 50)
+        
         return LLMExplainabilitySummary(
-            paragraph="LLM explanation unavailable (no API key configured).",
-            bullets=[],
-            model_used="none",
+            paragraph=f"The DeepShield AI engine has analyzed this media and determined it is '{label}' with an authenticity score of {score}/100. We arrived at this conclusion by passing the file through our deepfake detection algorithms, artifact scanners, and metadata analyzers.",
+            bullets=[
+                f"Overall Authenticity Score: {score}/100",
+                f"Primary Verdict: {label}",
+                "Note: Configure an LLM API key for deeper contextual analysis."
+            ],
+            model_used="static-fallback",
         )
 
     # Strip heavy base64 fields to reduce token usage

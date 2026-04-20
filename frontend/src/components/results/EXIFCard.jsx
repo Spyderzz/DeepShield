@@ -61,7 +61,7 @@ export default function EXIFCard({ exif }) {
         </div>
       )}
 
-      {exif.trust_reason && (
+      {exif.trust_reason && fields.length > 0 && (
         <div style={{ marginTop: 'var(--space-3)', fontSize: 'var(--font-size-xs)', color: 'var(--color-text-disabled)' }}>
           {exif.trust_reason}
         </div>
