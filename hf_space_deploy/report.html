@@ -1,0 +1,367 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8" />
+  <title>DeepShield Analysis Report — {{ analysis_id }}</title>
+  <style>
+    @page { size: A4; margin: 16mm 18mm; }
+    body { font-family: Helvetica, Arial, sans-serif; color: #1A202C; font-size: 10pt; line-height: 1.45; }
+
+    /* ── Typography ── */
+    h1 { color: #4F46E5; margin: 0 0 2pt 0; font-size: 18pt; letter-spacing: -0.3pt; }
+    h2 { color: #4F46E5; margin: 14pt 0 5pt 0; font-size: 12pt; border-bottom: 1pt solid #E5E7EB; padding-bottom: 2pt; }
+    h3 { margin: 10pt 0 4pt 0; font-size: 10.5pt; color: #374151; }
+    .muted { color: #6B7280; font-size: 8.5pt; }
+
+    /* ── Header / logo row ── */
+    .header-table { width: 100%; border-collapse: collapse; border-bottom: 2pt solid #4F46E5; padding-bottom: 6pt; margin-bottom: 10pt; }
+    .logo-cell { font-size: 22pt; font-weight: bold; color: #4F46E5; width: 1%; white-space: nowrap; padding-right: 8pt; }
+    .logo-shield { color: #6366F1; }
+    .meta-cell { font-size: 8.5pt; color: #6B7280; vertical-align: bottom; }
+
+    /* ── Verdict row ── */
+    .verdict-table { width: 100%; border-collapse: collapse; margin: 6pt 0 10pt 0; background: #F9FAFB; }
+    .verdict-score-cell { width: 90pt; text-align: center; vertical-align: middle; padding: 8pt; }
+    .score-num { font-size: 26pt; font-weight: bold; }
+    .score-denom { font-size: 9pt; color: #6B7280; }
+    .score.real { color: #43A047; }
+    .score.warn { color: #FB8C00; }
+    .score.fake { color: #E53935; }
+    .verdict-detail-cell { padding: 8pt 10pt; vertical-align: middle; }
+    .verdict-label { font-size: 13pt; font-weight: bold; color: #1A202C; }
+    .verdict-sub { font-size: 8.5pt; color: #6B7280; margin-top: 2pt; }
+    .donut-cell { width: 75pt; text-align: center; vertical-align: middle; padding: 4pt; }
+    .donut-cell img { width: 72pt; }
+
+    /* ── LLM card ── */
+    .llm-box { background: #EEF2FF; border-left: 3pt solid #4F46E5; padding: 7pt 9pt; margin: 6pt 0; border-radius: 2pt; }
+    .llm-para { font-size: 9.5pt; color: #1A202C; margin: 0 0 5pt 0; }
+    .llm-bullets { margin: 0; padding-left: 14pt; }
+    .llm-bullets li { font-size: 9pt; color: #374151; margin-bottom: 2pt; }
+
+    /* ── Tables ── */
+    table.data { width: 100%; border-collapse: collapse; margin: 5pt 0; }
+    table.data th { background: #F3F4F6; color: #374151; font-size: 8.5pt; text-align: left; padding: 3pt 6pt; border-bottom: 1pt solid #E5E7EB; }
+    table.data td { font-size: 9pt; padding: 3pt 6pt; border-bottom: 1pt solid #F3F4F6; vertical-align: top; }
+    table.data tr:last-child td { border-bottom: none; }
+
+    /* ── VLM breakdown ── */
+    .vlm-score-bar-wrap { background: #E5E7EB; border-radius: 3pt; height: 5pt; width: 70pt; display: inline-block; vertical-align: middle; overflow: hidden; }
+    .vlm-score-bar { height: 5pt; border-radius: 3pt; }
+    .vlm-real { background: #43A047; }
+    .vlm-warn { background: #FB8C00; }
+    .vlm-fake { background: #E53935; }
+
+    /* ── Badges ── */
+    .badge { display: inline-block; padding: 1pt 5pt; border-radius: 3pt; font-size: 8pt; font-weight: bold; }
+    .sev-high { background: #FEE2E2; color: #B91C1C; }
+    .sev-medium { background: #FEF3C7; color: #92400E; }
+    .sev-low { background: #DBEAFE; color: #1E40AF; }
+    .badge-green { background: #DCFCE7; color: #166534; }
+    .badge-red   { background: #FEE2E2; color: #991B1B; }
+
+    /* ── Keywords ── */
+    .keyword { display: inline-block; background: #EEF2FF; color: #4F46E5; padding: 1pt 6pt; border-radius: 3pt; margin: 1pt; font-size: 8.5pt; }
+
+    /* ── Truth-override ── */
+    .truth-box { background: #DCFCE7; border-left: 3pt solid #16A34A; padding: 5pt 8pt; margin: 5pt 0; font-size: 9pt; border-radius: 2pt; }
+
+    /* ── Footer ── */
+    .footer { margin-top: 16pt; padding-top: 5pt; border-top: 1pt solid #E5E7EB; color: #9CA3AF; font-size: 8pt; }
+  </style>
+</head>
+<body>
+
+  {# ── Header ── #}
+  <table class="header-table">
+    <tr>
+      <td class="logo-cell"><span class="logo-shield">&#9646;</span> DeepShield</td>
+      <td class="meta-cell">
+        Analysis Report &nbsp;·&nbsp; ID: {{ analysis_id }}<br />
+        Media: <b>{{ media_type | upper }}</b> &nbsp;·&nbsp; Generated: {{ generated_at }}
+      </td>
+    </tr>
+  </table>
+
+  {# ── Verdict ── #}
+  <h2>Verdict</h2>
+  <table class="verdict-table">
+    <tr>
+      <td class="verdict-score-cell">
+        <div class="score-num score {{ score_class }}">{{ verdict.authenticity_score }}</div>
+        <div class="score-denom">/ 100</div>
+      </td>
+      <td class="verdict-detail-cell">
+        <div class="verdict-label">{{ verdict.label }}</div>
+        <div class="verdict-sub">Severity: {{ verdict.severity }}</div>
+        <div class="verdict-sub">Model: {{ verdict.model_label }} &nbsp;({{ '%.1f' | format(verdict.model_confidence * 100) }}% confidence)</div>
+      </td>
+      {% if donut_b64 %}
+      <td class="donut-cell">
+        <img src="data:image/png;base64,{{ donut_b64 }}" alt="score donut" />
+      </td>
+      {% endif %}
+    </tr>
+  </table>
+
+  {# ── LLM Explanation ── #}
+  {% if llm_summary and llm_summary.paragraph %}
+  <h2>AI Explanation</h2>
+  <div class="llm-box">
+    <p class="llm-para">{{ llm_summary.paragraph }}</p>
+    {% if llm_summary.bullets %}
+    <ul class="llm-bullets">
+      {% for b in llm_summary.bullets %}<li>{{ b }}</li>{% endfor %}
+    </ul>
+    {% endif %}
+    {% if llm_summary.model_used %}
+    <div class="muted" style="margin-top:4pt;">via {{ llm_summary.model_used }}</div>
+    {% endif %}
+  </div>
+  {% endif %}
+
+  {# ══════════ IMAGE ══════════ #}
+  {% if media_type == 'image' %}
+
+    {# EXIF #}
+    {% if explainability.exif %}
+    <h2>EXIF Metadata</h2>
+    <table class="data">
+      <tr><th>Field</th><th>Value</th><th>Trust Signal</th></tr>
+      {% if explainability.exif.make %}
+      <tr><td>Camera Make</td><td>{{ explainability.exif.make }}</td><td><span class="badge badge-green">+real</span></td></tr>
+      {% endif %}
+      {% if explainability.exif.model %}
+      <tr><td>Camera Model</td><td>{{ explainability.exif.model }}</td><td></td></tr>
+      {% endif %}
+      {% if explainability.exif.datetime_original %}
+      <tr><td>Date Taken</td><td>{{ explainability.exif.datetime_original }}</td><td><span class="badge badge-green">+real</span></td></tr>
+      {% endif %}
+      {% if explainability.exif.software %}
+      <tr><td>Software</td><td>{{ explainability.exif.software }}</td>
+        <td>{% if 'photoshop' in explainability.exif.software | lower %}<span class="badge badge-red">+fake</span>{% endif %}</td></tr>
+      {% endif %}
+      {% if explainability.exif.lens_model %}
+      <tr><td>Lens Model</td><td>{{ explainability.exif.lens_model }}</td><td></td></tr>
+      {% endif %}
+      {% if explainability.exif.gps_info %}
+      <tr><td>GPS</td><td>{{ explainability.exif.gps_info }}</td><td></td></tr>
+      {% endif %}
+      <tr>
+        <td colspan="2"><b>Trust adjustment</b></td>
+        <td>
+          {% if explainability.exif.trust_adjustment > 0 %}
+            <span class="badge badge-red">+{{ explainability.exif.trust_adjustment }} (fake signal)</span>
+          {% elif explainability.exif.trust_adjustment < 0 %}
+            <span class="badge badge-green">{{ explainability.exif.trust_adjustment }} (real signal)</span>
+          {% else %}
+            neutral
+          {% endif %}
+        </td>
+      </tr>
+    </table>
+    {% endif %}
+
+    {# Artifact indicators #}
+    {% if explainability.artifact_indicators %}
+    <h2>Artifact Indicators</h2>
+    <table class="data">
+      <tr><th>Type</th><th>Severity</th><th>Confidence</th><th>Description</th></tr>
+      {% for ind in explainability.artifact_indicators %}
+      <tr>
+        <td>{{ ind.type }}</td>
+        <td><span class="badge sev-{{ ind.severity }}">{{ ind.severity }}</span></td>
+        <td>{{ '%.0f' | format(ind.confidence * 100) }}%</td>
+        <td>{{ ind.description }}</td>
+      </tr>
+      {% endfor %}
+    </table>
+    {% else %}
+    <h2>Artifact Indicators</h2>
+    <div class="muted">No artifacts detected.</div>
+    {% endif %}
+
+    {# VLM Detailed Breakdown #}
+    {% if explainability.vlm_breakdown %}
+    <h2>Detailed Breakdown</h2>
+    {% if explainability.vlm_breakdown.model_used %}
+    <div class="muted" style="margin-bottom:5pt;">Scored by {{ explainability.vlm_breakdown.model_used }}</div>
+    {% endif %}
+    <table class="data">
+      <tr><th>Component</th><th>Score</th><th>Bar</th><th>Notes</th></tr>
+      {% set bd = explainability.vlm_breakdown %}
+      {% for comp_key, comp_label in [
+          ('facial_symmetry',      'Facial Symmetry'),
+          ('skin_texture',         'Skin Texture'),
+          ('lighting_consistency', 'Lighting Consistency'),
+          ('background_coherence', 'Background Coherence'),
+          ('anatomy_hands_eyes',   'Anatomy / Hands & Eyes'),
+          ('context_objects',      'Context & Objects')
+      ] %}
+        {% set comp = bd[comp_key] %}
+        {% set sc2 = comp.score if comp else 75 %}
+        {% set bar_cls = 'vlm-real' if sc2 >= 70 else ('vlm-warn' if sc2 >= 40 else 'vlm-fake') %}
+      <tr>
+        <td>{{ comp_label }}</td>
+        <td><b>{{ sc2 }}</b>/100</td>
+        <td>
+          <span class="vlm-score-bar-wrap">
+            <span class="vlm-score-bar {{ bar_cls }}" style="width:{{ sc2 }}%;display:block;"></span>
+          </span>
+        </td>
+        <td class="muted">{{ comp.notes if comp else '' }}</td>
+      </tr>
+      {% endfor %}
+    </table>
+    {% endif %}
+
+  {% endif %}{# end image #}
+
+  {# ══════════ VIDEO ══════════ #}
+  {% if media_type == 'video' %}
+  <h2>Frame-Level Analysis</h2>
+  <table class="data">
+    <tr><th>Metric</th><th>Value</th></tr>
+    <tr><td>Frames sampled</td><td>{{ explainability.num_frames_sampled }}</td></tr>
+    <tr><td>Frames with face</td><td>{{ explainability.num_face_frames }}</td></tr>
+    <tr><td>Suspicious frames</td><td>{{ explainability.num_suspicious_frames }}</td></tr>
+    <tr><td>Mean suspicious prob</td><td>{{ '%.1f' | format(explainability.mean_suspicious_prob * 100) }}%</td></tr>
+    <tr><td>Max suspicious prob</td><td>{{ '%.1f' | format(explainability.max_suspicious_prob * 100) }}%</td></tr>
+    <tr><td>Insufficient faces</td><td>{{ explainability.insufficient_faces }}</td></tr>
+  </table>
+  {% endif %}
+
+  {# ══════════ TEXT ══════════ #}
+  {% if media_type == 'text' %}
+
+    {# Language + truth-override #}
+    {% if explainability.detected_language and explainability.detected_language != 'en' %}
+    <h2>Language</h2>
+    <div class="muted">Detected: <b>{{ explainability.detected_language | upper }}</b> — analysed via multilingual model</div>
+    {% endif %}
+    {% if explainability.truth_override and explainability.truth_override.applied %}
+    <div class="truth-box">
+      <b>Truth-override applied.</b>
+      Corroborated by {{ explainability.truth_override.source_name }}
+      ({{ '%.0f' | format(explainability.truth_override.similarity * 100) }}% similarity).
+      Fake probability reduced from {{ '%.1f' | format(explainability.truth_override.fake_prob_before * 100) }}%
+      to {{ '%.1f' | format(explainability.truth_override.fake_prob_after * 100) }}%.
+    </div>
+    {% endif %}
+
+    <h2>Text Classification</h2>
+    <table class="data">
+      <tr><th>Metric</th><th>Value</th></tr>
+      <tr><td>Fake probability</td><td>{{ '%.1f' | format(explainability.fake_probability * 100) }}%</td></tr>
+      <tr><td>Top label</td><td>{{ explainability.top_label }}</td></tr>
+      <tr><td>Sensationalism score</td><td>{{ explainability.sensationalism.score }}/100 ({{ explainability.sensationalism.level }})</td></tr>
+      <tr><td>Exclamations</td><td>{{ explainability.sensationalism.exclamation_count }}</td></tr>
+      <tr><td>ALL CAPS words</td><td>{{ explainability.sensationalism.caps_word_count }}</td></tr>
+      <tr><td>Clickbait matches</td><td>{{ explainability.sensationalism.clickbait_matches }}</td></tr>
+      <tr><td>Emotional words</td><td>{{ explainability.sensationalism.emotional_word_count }}</td></tr>
+    </table>
+
+    {% if explainability.manipulation_indicators %}
+    <h3>Manipulation Indicators ({{ explainability.manipulation_indicators | length }})</h3>
+    <table class="data">
+      <tr><th>Pattern</th><th>Severity</th><th>Matched text</th></tr>
+      {% for m in explainability.manipulation_indicators %}
+      <tr>
+        <td>{{ m.pattern_type }}</td>
+        <td><span class="badge sev-{{ m.severity }}">{{ m.severity }}</span></td>
+        <td>{{ m.matched_text }}</td>
+      </tr>
+      {% endfor %}
+    </table>
+    {% endif %}
+
+    {% if explainability.keywords %}
+    <h3>Extracted Keywords</h3>
+    <div>{% for kw in explainability.keywords %}<span class="keyword">{{ kw }}</span>{% endfor %}</div>
+    {% endif %}
+
+  {% endif %}{# end text #}
+
+  {# ══════════ SCREENSHOT ══════════ #}
+  {% if media_type == 'screenshot' %}
+
+    {% if explainability.detected_language and explainability.detected_language != 'en' %}
+    <div class="muted" style="margin-bottom:4pt;">Detected language: <b>{{ explainability.detected_language | upper }}</b></div>
+    {% endif %}
+    {% if explainability.truth_override and explainability.truth_override.applied %}
+    <div class="truth-box">
+      <b>Truth-override applied.</b> {{ explainability.truth_override.source_name }}
+      ({{ '%.0f' | format(explainability.truth_override.similarity * 100) }}% similarity)
+    </div>
+    {% endif %}
+
+    <h2>Extracted Text</h2>
+    <div class="muted">{{ explainability.ocr_boxes | length }} OCR regions detected</div>
+    <table class="data">
+      <tr><td style="white-space:pre-wrap; font-size:8.5pt; padding:6pt;">{{ explainability.extracted_text }}</td></tr>
+    </table>
+
+    <h3>Analysis Summary</h3>
+    <table class="data">
+      <tr><th>Metric</th><th>Value</th></tr>
+      <tr><td>Fake probability</td><td>{{ '%.1f' | format(explainability.fake_probability * 100) }}%</td></tr>
+      <tr><td>Sensationalism</td><td>{{ explainability.sensationalism.score }}/100 ({{ explainability.sensationalism.level }})</td></tr>
+      <tr><td>Suspicious phrases</td><td>{{ explainability.suspicious_phrases | length }}</td></tr>
+      <tr><td>Layout anomalies</td><td>{{ explainability.layout_anomalies | length }}</td></tr>
+    </table>
+
+    {% if explainability.suspicious_phrases %}
+    <h3>Suspicious Phrases</h3>
+    <table class="data">
+      <tr><th>Text</th><th>Pattern</th><th>Severity</th></tr>
+      {% for p in explainability.suspicious_phrases %}
+      <tr>
+        <td>{{ p.text }}</td>
+        <td>{{ p.pattern_type }}</td>
+        <td><span class="badge sev-{{ p.severity }}">{{ p.severity }}</span></td>
+      </tr>
+      {% endfor %}
+    </table>
+    {% endif %}
+
+  {% endif %}{# end screenshot #}
+
+  {# ══════════ SOURCES (all types) ══════════ #}
+  {% if trusted_sources %}
+  <h2>Trusted Source Cross-Reference ({{ trusted_sources | length }})</h2>
+  <table class="data">
+    <tr><th>Source</th><th>Title</th><th>Relevance</th></tr>
+    {% for s in trusted_sources %}
+    <tr>
+      <td>{{ s.source_name }}</td>
+      <td>{{ s.title }}</td>
+      <td>{{ '%.0f' | format(s.relevance_score * 100) }}%</td>
+    </tr>
+    {% endfor %}
+  </table>
+  {% endif %}
+
+  {% if contradicting_evidence %}
+  <h2 style="color:#B91C1C;">Contradicting Evidence ({{ contradicting_evidence | length }})</h2>
+  <table class="data">
+    <tr><th>Source</th><th>Title</th><th>Type</th></tr>
+    {% for c in contradicting_evidence %}
+    <tr><td>{{ c.source_name }}</td><td>{{ c.title }}</td><td>{{ c.type }}</td></tr>
+    {% endfor %}
+  </table>
+  {% endif %}
+
+  {# ══════════ PROCESSING ══════════ #}
+  <h2>Processing Summary</h2>
+  <div class="muted">Model: {{ processing_summary.model_used }} &nbsp;·&nbsp; Duration: {{ processing_summary.total_duration_ms }} ms</div>
+  <div style="font-size:8.5pt; margin-top:3pt;">{{ processing_summary.stages_completed | join(' → ') }}</div>
+
+  {# ══════════ FOOTER ══════════ #}
+  <div class="footer">
+    <b>DeepShield Responsible-AI Notice.</b> {{ responsible_ai_notice }}<br />
+    Generated {{ generated_at }}. Report expires in 1 hour.
+    AI-assisted analysis — cross-check with trusted sources before sharing.
+  </div>
+
+</body>
+</html>
