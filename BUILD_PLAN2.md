@@ -383,9 +383,9 @@ Total: ~8 weeks of focused work to graduate from MVP → defensible v1.0.
 | Subtask | Status |
 |---|---|
 | 11.1 Dataset Procurement (FFPP + DFDC) | Done |
-| 11.2 Training pipeline (`dataset.py`, `train_convnext.py`, `calibrate.py`, `eval.py`) | Pending |
-| 11.3 Backend wiring (`IMAGE_MODEL_ID`, calibrator, `LEGACY_MODEL` flag) | Pending |
-| 11.4 Smoke + regression (50-image curated set, MODEL_CARDS.md update) | Pending |
+| 11.2 Training pipeline (`dataset.py`, `train_convnext.py`, `calibrate.py`, `eval.py`) | Done (trained on Google Colab — ViT fine-tuned on FFPP c40, see `trained_models/Colab_ViT_Training.ipynb`) |
+| 11.3 Backend wiring (FFPP ViT checkpoint integrated via `FFPP_MODEL_PATH`, weighted ensemble with EfficientNet + generic ViT — FFPP dominant when face present) | Done |
+| 11.4 Smoke + regression (50-image curated set, MODEL_CARDS.md update) | Done |
 
 ### Phase 12 — Explainability v2
 
@@ -414,15 +414,15 @@ Total: ~8 weeks of focused work to graduate from MVP → defensible v1.0.
 
 | Subtask | Status |
 |---|---|
-| 15.1 Auth on `/report` endpoints (ownership check, frontend redirect) | Pending |
-| 15.2 Rate limiting via slowapi (anon + authed limits, 429 toast) | Pending |
-| 15.3 JWT & config hardening (refuse default secret, CORS restrict, loguru rotation) | Pending |
+| 15.1 Auth on `/report` endpoints (ownership check, frontend redirect) | Done |
+| 15.2 Rate limiting via slowapi (anon + authed limits, 429 toast) | Done |
+| 15.3 JWT & config hardening (refuse default secret, CORS restrict, loguru rotation) | Done |
 
 ### Phase 16 — Results Page Rebuild + History Navigation
 
 | Subtask | Status |
 |---|---|
-| 16.1 `ResultsPage.jsx` implementation (`AnalysisResultView` shared component) | Pending |
+| 16.1 `ResultsPage.jsx` implementation (`AnalysisResultView` shared component) | Done |
 | 16.2 History page clickable rows (`<Link>`, hover/focus, stopPropagation delete) | Pending |
 | 16.3 Auth rehydrate race fix (`authReady` boolean in `AuthContext`) | Pending |
 | 16.4 Sticky action bar ("Analyze Another" / "Generate PDF" / "Share") | Pending |

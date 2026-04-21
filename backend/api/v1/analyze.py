@@ -6,7 +6,7 @@ import time
 import uuid
 from datetime import datetime, timezone
 
-from fastapi import APIRouter, Body, Depends, File, UploadFile
+from fastapi import APIRouter, Body, Depends, File, Request, UploadFile
 from pydantic import BaseModel
 from loguru import logger
 from sqlalchemy.orm import Session
@@ -56,6 +56,7 @@ from services.text_service import (
 )
 from services.video_service import analyze_video
 from services.metadata_writer import write_verdict_metadata
+from services.rate_limit import ANON_ANALYZE, AUTH_ANALYZE, is_anon, is_authed, limiter
 from utils.file_handler import read_upload_bytes, save_upload_to_tempfile
 from utils.scoring import compute_authenticity_score, get_verdict_label
 
@@ -67,7 +68,10 @@ VIDEO_NUM_FRAMES = 16
 
 
 @router.post("/image", response_model=ImageAnalysisResponse)
+@limiter.limit(ANON_ANALYZE, exempt_when=is_authed)
+@limiter.limit(AUTH_ANALYZE, exempt_when=is_anon)
 async def analyze_image(
+    request: Request,
     file: UploadFile = File(...),
     db: Session = Depends(get_db),
     user: User | None = Depends(optional_current_user),
@@ -204,7 +208,10 @@ async def analyze_image(
 
 
 @router.post("/video", response_model=VideoAnalysisResponse)
+@limiter.limit(ANON_ANALYZE, exempt_when=is_authed)
+@limiter.limit(AUTH_ANALYZE, exempt_when=is_anon)
 async def analyze_video_endpoint(
+    request: Request,
     file: UploadFile = File(...),
     db: Session = Depends(get_db),
     user: User | None = Depends(optional_current_user),
@@ -330,7 +337,10 @@ class TextAnalyzeBody(BaseModel):
 
 
 @router.post("/text", response_model=TextAnalysisResponse)
+@limiter.limit(ANON_ANALYZE, exempt_when=is_authed)
+@limiter.limit(AUTH_ANALYZE, exempt_when=is_anon)
 async def analyze_text_endpoint(
+    request: Request,
     body: TextAnalyzeBody = Body(...),
     db: Session = Depends(get_db),
     user: User | None = Depends(optional_current_user),
@@ -455,7 +465,10 @@ async def analyze_text_endpoint(
 
 
 @router.post("/screenshot", response_model=ScreenshotAnalysisResponse)
+@limiter.limit(ANON_ANALYZE, exempt_when=is_authed)
+@limiter.limit(AUTH_ANALYZE, exempt_when=is_anon)
 async def analyze_screenshot_endpoint(
+    request: Request,
     file: UploadFile = File(...),
     db: Session = Depends(get_db),
     user: User | None = Depends(optional_current_user),

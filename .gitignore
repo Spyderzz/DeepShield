@@ -32,6 +32,8 @@ Thumbs.db
 *.pt
 *.h5
 *.onnx
+*.safetensors
+trained_models/
 backend/training/datasets/
 backend/training/weights/
 

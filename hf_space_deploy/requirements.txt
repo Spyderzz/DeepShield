@@ -11,6 +11,13 @@ alembic==1.13.3
 python-jose[cryptography]==3.3.0
 bcrypt==4.2.0
 
+# === MERGE: EfficientNetAutoAttB4 (DeepShield1 / ICPR2020) ===
+albumentations>=1.3.0,<1.5       # Required by icpr2020dfdc isplutils transforms; pin to avoid 1.5+ API break
+scipy>=1.13.0                    # expit (sigmoid) for EfficientNet logit conversion
+# NOTE: MERGE_PLAN §4 said NOT to install efficientnet-pytorch, but fornet.py imports it directly.
+efficientnet-pytorch==0.7.1      # Required by icpr2020dfdc/architectures/fornet.py
+psutil>=5.9.0                    # RAM monitoring in smoke tests
+
 # === Phase 1: Image Detection ===
 # Install torch separately with CPU index first (see README): pip install torch==2.4.1 --index-url https://download.pytorch.org/whl/cpu
 torch==2.4.1

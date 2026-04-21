@@ -55,3 +55,6 @@ xhtml2pdf==0.2.16
 
 # === Phase 8: Auth ===
 email-validator==2.2.0
+
+# === Phase 15: Security Hardening ===
+slowapi==0.1.9

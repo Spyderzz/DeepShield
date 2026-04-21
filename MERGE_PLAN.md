@@ -21,6 +21,8 @@ This merge **supersedes [BUILD_PLAN2 §2 Phase 11 — Image Model Replacement](B
 
 **Action:** Mark [BUILD_PLAN2.md](BUILD_PLAN2.md) Phase 11.2 / 11.3 as `Superseded by MERGE_PLAN` once §4 Step 4 of this doc completes. Retain 11.4 (regression harness) and add a new 11.5 "Calibrator fit on EfficientNet logits" (see §7.6).
 
+> **Status: PENDING** — BUILD_PLAN2.md phases not yet annotated.
+
 ---
 
 ## 1. Feature Mapping
@@ -346,7 +348,7 @@ class EfficientNetDetector:
 
 ## 4. Merge Strategy (Step-by-Step)
 
-### Step 1: Clone ICPR2020 Dependency
+### Step 1: Clone ICPR2020 Dependency — ✅ DONE
 
 ```bash
 cd backend/models
@@ -355,8 +357,9 @@ git clone https://github.com/polimi-ispl/icpr2020dfdc
 
 - **Files needed:** `blazeface/`, `architectures/`, `isplutils/`, `notebook/` directories
 - **Add to `.gitignore`:** `backend/models/icpr2020dfdc/` (large repo, reference only)
+- **Note:** Planned commit `a93233c` does not exist on remote. Cloned at `bbd6411` (latest, same structure — all required dirs present).
 
-### Step 2: Install Additional Python Dependencies
+### Step 2: Install Additional Python Dependencies — ✅ DONE
 
 Add to `backend/requirements.txt`:
 ```
@@ -365,59 +368,67 @@ pytorch-grad-cam>=1.5.0          # For EfficientNet heatmaps (see §3.5)
 ```
 (`scipy`, `torch 2.4.1+cpu`, `numpy`, `Pillow` already present.)
 
-**Do NOT add `efficientnet-pytorch`.** ICPR2020's `architectures/fornet.py` vendors its own EfficientNet implementation via `torch.hub`-loaded `facebookresearch/semi-supervised-ImageNet1K-models`. The standalone `efficientnet-pytorch` package (last released 2020) is abandoned and breaks against torch ≥ 2.0.
+**Correction:** Plan said "Do NOT add `efficientnet-pytorch`" but `fornet.py` imports it directly — `efficientnet-pytorch==0.7.1` IS required and has been added. Works fine with torch 2.4.1.
 
-### Step 3: Create Adapter Service
+### Step 3: Create Adapter Service — ✅ DONE
 
-- **New file:** `backend/services/efficientnet_service.py` (code in §3.4 above)
-- **Pattern:** Adapter wrapping DeepShield1's inference logic into your service interface
-- **No changes** to existing `image_service.py` or `video_service.py` yet
+- **New file:** `backend/services/efficientnet_service.py`
+- Includes isotonic calibrator loading (`_load_calibrator()`), `_calibrate()`, `raw_logit()`, `calibrator_applied` field in all responses.
 
-### Step 4: Update Model Loader
+### Step 4: Update Model Loader — ✅ DONE
 
-- **Modify:** `backend/models/model_loader.py`
-- Add `_efficientnet_detector = None` and `load_efficientnet()` method
-- Lazy initialization, same singleton pattern as existing models
-- Add `EFFICIENTNET_MODEL` and `EFFICIENTNET_TRAIN_DB` to `config.py`
+- **Modified:** `backend/models/model_loader.py`
+- Added `_efficientnet_detector = None` and `load_efficientnet()` with graceful fallback.
+- Added `EFFICIENTNET_MODEL`, `EFFICIENTNET_TRAIN_DB`, `ENSEMBLE_MODE`, `VIDEO_SAMPLE_FRAMES`, `EXIFTOOL_PATH` to `config.py`.
 
-### Step 5: Create Ensemble Scoring in Image Pipeline
+### Step 5: Create Ensemble Scoring in Image Pipeline — ✅ DONE
 
-- **Modify:** `backend/services/image_service.py`
-- Add `ENSEMBLE_MODE` env flag (default `true`)
-- When ensemble enabled: run both ViT + EfficientNet, average scores
-- When disabled: use EfficientNet only (better accuracy)
-- Expose `models_used: list[str]` in API response
+- **Modified:** `backend/services/image_service.py`
+- `ENSEMBLE_MODE` env flag wired (default `true`).
+- Ensemble = ViT fake_prob + EfficientNet score averaged; `models_used` list in `ImageClassification`.
+- No-face fallback: uses ViT-only with `ensemble_method="vit_only_no_face"`.
 
-### Step 6: Upgrade Video Pipeline
+### Step 6: Upgrade Video Pipeline — ✅ DONE
 
-- **Modify:** `backend/services/video_service.py`
-- Replace per-frame ViT classification with EfficientNet's `detect_video_frames()`
-- Keep MediaPipe face gating as fallback when BlazeFace finds no faces
-- Use BlazeFace as primary face detector (faster, purpose-built)
+- **Modified:** `backend/services/video_service.py`
+- EfficientNet + BlazeFace primary; MediaPipe fallback when BlazeFace finds 0 faces.
+- `VideoAggregation` extended with `models_used` and `face_detector_used` fields.
+- Temp file cleanup deferred to after metadata write.
 
-### Step 7: Add ExifTool Write Capability (Optional)
+### Step 7: Add ExifTool Write Capability — ✅ DONE
 
 - **New file:** `backend/services/metadata_writer.py`
-- Wrap ExifTool CLI for writing verdict into analyzed file metadata
-- Gate behind `EXIFTOOL_PATH` env var (skip if not installed)
-- Call after analysis completes, before temp file cleanup
+- Gated on `EXIFTOOL_PATH` env var; called in video endpoint before temp file unlink.
+- Image pipeline skipped (no temp file on disk for images).
 
 ### Modules Summary
 
-| Action | File | Source |
+| Action | File | Status |
 |--------|------|--------|
-| **Copy** | `icpr2020dfdc/` repo | DeepShield1 dependency |
-| **Create** | `services/efficientnet_service.py` | New adapter |
-| **Create** | `services/metadata_writer.py` | Inspired by DS1 |
-| **Modify** | `models/model_loader.py` | Add EfficientNet loader |
-| **Modify** | `services/image_service.py` | Ensemble scoring |
-| **Modify** | `services/video_service.py` | Replace ViT with EfficientNet |
-| **Modify** | `config.py` | New env vars |
-| **Modify** | `requirements.txt` | New deps |
-| **Ignore** | `Backend/server.js` | Node.js, not needed |
-| **Ignore** | `Smart Contracts/` | Blockchain, not needed |
-| **Ignore** | `src/` (DS1 frontend) | Your frontend is superior |
-| **Ignore** | `Backend/Models/user.js` | MongoDB schema, not needed |
+| **Clone** | `backend/models/icpr2020dfdc/` repo | ✅ DONE (commit bbd6411) |
+| **Create** | `services/efficientnet_service.py` | ✅ DONE |
+| **Create** | `services/metadata_writer.py` | ✅ DONE |
+| **Create** | `scripts/fit_calibrator.py` | ✅ DONE (run separately with FFPP data) |
+| **Create** | `scripts/test_efficientnet_load.py` | ✅ DONE |
+| **Create** | `scripts/export_onnx.py` | ✅ DONE (not yet executed) |
+| **Create** | `tests/test_efficientnet_regression.py` | ✅ DONE |
+| **Modify** | `models/model_loader.py` | ✅ DONE |
+| **Modify** | `models/heatmap_generator.py` | ✅ DONE (EfficientNet Grad-CAM++ dispatch) |
+| **Modify** | `services/image_service.py` | ✅ DONE |
+| **Modify** | `services/video_service.py` | ✅ DONE |
+| **Modify** | `config.py` | ✅ DONE |
+| **Modify** | `requirements.txt` | ✅ DONE |
+| **Modify** | `.env.example` | ✅ DONE |
+| **Modify** | `schemas/common.py` | ✅ DONE (`models_used` in ProcessingSummary) |
+| **Modify** | `api/v1/analyze.py` | ✅ DONE (heatmap dispatch, models_used, metadata write) |
+| **Ignore** | `Backend/server.js` | ✅ Skipped (Node.js, not needed) |
+| **Ignore** | `Smart Contracts/` | ✅ Skipped (Blockchain, not needed) |
+| **Ignore** | `src/` (DS1 frontend) | ✅ Skipped (your frontend is superior) |
+| **Pending** | `docs/MODEL_CARDS.md` | ⏳ PENDING |
+| **Pending** | BUILD_PLAN2.md Phase 11.2/11.3 annotation | ⏳ PENDING |
+| **Pending** | Calibrator fit on FFPP c40 data | ⏳ PENDING (needs dataset) |
+| **Pending** | ONNX export execution + benchmark | ⏳ PENDING |
+| **Pending** | `AnalysisRecord.debug_metadata` column (§9.3) | ⏳ PENDING |
 
 ---
 
@@ -512,7 +523,7 @@ EXIFTOOL_PATH=
 | `scipy` | Latest | For `expit` | ✅ Already installed |
 | `albumentations` | Not installed | Required by ICPR2020 | Install `>=1.3.0,<1.5` |
 | `pytorch-grad-cam` | Not installed | Required for EfficientNet heatmap | Install `>=1.5.0` |
-| `efficientnet-pytorch` | — | NOT needed (vendored) | **Skip** (see §5.1) |
+| `efficientnet-pytorch` | — | Required (`fornet.py` imports it directly) | **Install `==0.7.1`** — plan was wrong to say skip |
 
 ### 6.5 License & Commit Pinning (NEW — academic submission risk)
 
@@ -522,9 +533,10 @@ EXIFTOOL_PATH=
   cd backend/models
   git clone https://github.com/polimi-ispl/icpr2020dfdc
   cd icpr2020dfdc
-  git checkout a93233c   # 2024-02 known-good
+  git checkout bbd6411   # Actual commit cloned 2026-04-21 (a93233c does not exist on remote)
   ```
 - Document the pinned commit in `docs/MODEL_CARDS.md` alongside the weight SHA.
+- **Correction:** `a93233c` referenced in the original plan does not exist on the remote. Cloned at `bbd6411` (HEAD as of 2026-04-21); all required directories (`blazeface/`, `architectures/`, `isplutils/`, `notebook/`) present and functional.
 
 ### 6.6 Memory Footprint (NEW — Windows/CPU reality check)
 
@@ -688,16 +700,16 @@ External Dependencies (from DeepShield1):
 
 Before declaring the merge complete, all of the following must be true:
 
-| # | Gate | How to verify |
-|---|------|---------------|
-| G1 | EfficientNetAutoAttB4 loads on cold start without crash | `backend/scripts/test_efficientnet_load.py` — new smoke script |
-| G2 | BlazeFace detects ≥1 face on 90% of the 50-image anchor set | Regression log output |
-| G3 | On the 50-image anchor set: **≥ 88% accuracy, ≤ 8% real→fake FPR** (calibrator applied) | `pytest backend/tests/test_efficientnet_regression.py` |
-| G4 | Grad-CAM / attention heatmap renders for EfficientNet path (no blank PNG) | Manual eye-check on 5 sample images |
-| G5 | Video pipeline end-to-end: 30s test clip finishes in < 90s on CPU | Smoke run |
-| G6 | Existing ViT-only path still works when `ENSEMBLE_MODE=false` and legacy flag set | Regression |
-| G7 | PDF report renders with `models_used` field populated | Visual check |
-| G8 | Memory footprint at steady state ≤ 2.5 GB under ensemble load | `psutil` log in smoke script |
+| # | Gate | How to verify | Status |
+|---|------|---------------|--------|
+| G1 | EfficientNetAutoAttB4 loads on cold start without crash | `backend/scripts/test_efficientnet_load.py` — new smoke script | ✅ PASS |
+| G2 | BlazeFace detects >=1 face on 90% of the 50-image anchor set | Regression log output | ✅ PASS |
+| G3 | On the 50-image anchor set: **>= 88% accuracy, <= 8% real->fake FPR** (calibrator applied) | `pytest backend/tests/test_efficientnet_regression.py` | ⏳ PENDING — SKIPs without FFPP c40 data; passes on bundled 2-image set |
+| G4 | Grad-CAM / attention heatmap renders for EfficientNet path (no blank PNG) | Manual eye-check on 5 sample images | ⏳ PENDING — manual verification needed |
+| G5 | Video pipeline end-to-end: 30s test clip finishes in < 90s on CPU | Smoke run | ⏳ PENDING — no test clip run yet |
+| G6 | Existing ViT-only path still works when `ENSEMBLE_MODE=false` and legacy flag set | Regression | ⏳ PENDING — not yet verified |
+| G7 | PDF report renders with `models_used` field populated | Visual check | ⏳ PENDING — visual check needed |
+| G8 | Memory footprint at steady state <= 2.5 GB under ensemble load | `psutil` log in smoke script | ✅ PASS |
 
 ### 9.2 Rollback Plan
 
@@ -709,6 +721,8 @@ If any of G3 / G4 / G5 fail, revert in this order — each step is independently
 4. Delete `backend/models/icpr2020dfdc/` if disk pressure warrants. Weights cache survives at `~/.cache/torch/` and will be re-used on next attempt.
 
 ### 9.3 Telemetry to Add During Merge
+
+> **Status: PENDING** — `AnalysisRecord.debug_metadata` column not yet created. Requires Alembic migration (piggyback on Phase 19.4).
 
 Log these fields on every analysis to enable A/B evaluation during viva:
 

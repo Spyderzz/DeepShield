@@ -2,23 +2,44 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Request, status
 from fastapi.responses import FileResponse
 from loguru import logger
 from sqlalchemy.orm import Session
 
+from api.deps import get_current_user, optional_current_user
 from db.database import get_db
-from db.models import AnalysisRecord, Report
+from db.models import AnalysisRecord, Report, User
+from services.rate_limit import ANON_REPORT, AUTH_REPORT, is_anon, is_authed, limiter
 from services.report_service import cleanup_expired, create_report_row, generate_report
 
 router = APIRouter(prefix="/report", tags=["report"])
 
 
+def _assert_record_access(record: AnalysisRecord, user: User | None) -> None:
+    """Phase 15.1 — allow access if the requester owns the record, or if the record
+    is anonymous (user_id is None). Everything else is 403."""
+    if record.user_id is None:
+        return
+    if user is not None and record.user_id == user.id:
+        return
+    raise HTTPException(status.HTTP_403_FORBIDDEN, "You do not own this analysis")
+
+
 @router.post("/{analysis_id}")
-def generate(analysis_id: int, db: Session = Depends(get_db)):
+@limiter.limit(ANON_REPORT, exempt_when=is_authed)
+@limiter.limit(AUTH_REPORT, exempt_when=is_anon)
+def generate(
+    request: Request,
+    analysis_id: int,
+    db: Session = Depends(get_db),
+    user: User | None = Depends(optional_current_user),
+):
     record = db.query(AnalysisRecord).filter(AnalysisRecord.id == analysis_id).first()
     if not record:
         raise HTTPException(status_code=404, detail="analysis not found")
+
+    _assert_record_access(record, user)
 
     existing = db.query(Report).filter(Report.analysis_id == analysis_id).first()
     if existing and Path(existing.file_path).exists():
@@ -44,7 +65,19 @@ def generate(analysis_id: int, db: Session = Depends(get_db)):
 
 
 @router.get("/{analysis_id}/download")
-def download(analysis_id: int, db: Session = Depends(get_db)):
+@limiter.limit(ANON_REPORT, exempt_when=is_authed)
+@limiter.limit(AUTH_REPORT, exempt_when=is_anon)
+def download(
+    request: Request,
+    analysis_id: int,
+    db: Session = Depends(get_db),
+    user: User | None = Depends(optional_current_user),
+):
+    record = db.query(AnalysisRecord).filter(AnalysisRecord.id == analysis_id).first()
+    if not record:
+        raise HTTPException(status_code=404, detail="analysis not found")
+    _assert_record_access(record, user)
+
     row = db.query(Report).filter(Report.analysis_id == analysis_id).first()
     if not row:
         raise HTTPException(status_code=404, detail="report not found — generate first")
@@ -58,7 +91,9 @@ def download(analysis_id: int, db: Session = Depends(get_db)):
     )
 
 
-@router.post("/cleanup")
-def cleanup():
+@router.post("/cleanup", include_in_schema=False)
+def cleanup(user: User = Depends(get_current_user)):
+    # Phase 15.1 — auth-guarded. Exposed only to authenticated users; an internal
+    # scheduler loop in main.py handles periodic cleanup automatically.
     n = cleanup_expired()
     return {"deleted": n}

@@ -42,6 +42,13 @@ class Settings(BaseSettings):
     LLM_API_KEY: str = ""
     LLM_MODEL: str = "gemini-2.5-pro"  # or "gpt-4o"
 
+    # EfficientNet (ICPR2020 / DeepShield1 merge)
+    EFFICIENTNET_MODEL: str = "EfficientNetAutoAttB4"
+    EFFICIENTNET_TRAIN_DB: str = "DFDC"
+    ENSEMBLE_MODE: bool = True  # run both ViT + EfficientNet and average scores
+    VIDEO_SAMPLE_FRAMES: int = 16  # frames to sample per video for inference
+    EXIFTOOL_PATH: str = ""  # full path to ExifTool binary; empty = metadata write disabled
+
     # Auth
     JWT_SECRET_KEY: str = "change-me-in-production"
     JWT_ALGORITHM: str = "HS256"

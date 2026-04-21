@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from pathlib import Path
 from threading import Lock
 from typing import Optional, Tuple
 
@@ -28,6 +29,8 @@ class ModelLoader:
                     cls._instance._spacy_nlp = None
                     cls._instance._sentence_transformer = None
                     cls._instance._efficientnet_detector = None
+                    cls._instance._ffpp_model = None
+                    cls._instance._ffpp_processor = None
         return cls._instance
 
     @classmethod
@@ -163,6 +166,48 @@ class ModelLoader:
                 logger.warning(f"EfficientNet load failed (continuing without it): {e}")
                 return None
         return self._efficientnet_detector
+
+    # ---------- FFPP-fine-tuned ViT (Phase 11.3) ----------
+    def load_ffpp_model(self) -> Optional[Tuple[object, object]]:
+        """Lazy-load the FaceForensics++ fine-tuned ViT from a local checkpoint.
+
+        The checkpoint directory was exported from Colab with only
+        `model.safetensors` + `config.json` (no preprocessor_config.json), so the
+        image processor is loaded from the base google/vit-base-patch16-224-in21k
+        — this matches the processor used during training.
+
+        Returns None if disabled or the checkpoint is missing.
+        """
+        if not settings.FFPP_ENABLED:
+            return None
+        if self._ffpp_model is not None:
+            return self._ffpp_model, self._ffpp_processor
+
+        ckpt_path = Path(settings.FFPP_MODEL_PATH)
+        if not ckpt_path.is_absolute():
+            # Resolve relative to the repo root (backend's parent).
+            repo_root = Path(__file__).resolve().parent.parent.parent
+            ckpt_path = (repo_root / settings.FFPP_MODEL_PATH).resolve()
+
+        if not (ckpt_path / "config.json").exists():
+            logger.warning(f"FFPP ViT checkpoint not found at {ckpt_path} — skipping")
+            return None
+
+        try:
+            from transformers import AutoImageProcessor, AutoModelForImageClassification
+
+            logger.info(f"Loading FFPP ViT model from {ckpt_path}")
+            processor = AutoImageProcessor.from_pretrained(settings.FFPP_BASE_PROCESSOR_ID)
+            model = AutoModelForImageClassification.from_pretrained(str(ckpt_path))
+            model.to(settings.DEVICE)
+            model.eval()
+            self._ffpp_model = model
+            self._ffpp_processor = processor
+            logger.info("FFPP ViT model loaded")
+            return self._ffpp_model, self._ffpp_processor
+        except Exception as e:
+            logger.warning(f"FFPP ViT load failed (continuing without it): {e}")
+            return None
 
     # ---------- Preload ----------
     def preload_phase1(self) -> None:

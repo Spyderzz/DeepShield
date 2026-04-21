@@ -1,15 +1,71 @@
 import asyncio
+import secrets
+import sys
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from loguru import logger
+from slowapi import _rate_limit_exceeded_handler
+from slowapi.errors import RateLimitExceeded
 
 from api.router import api_router
 from config import settings
 from db.database import init_db
 from models.model_loader import get_model_loader
+from services.rate_limit import RateLimitContextMiddleware, limiter
 from services.report_service import cleanup_expired
+
+
+# === Phase 15.3 — JWT / CORS / logging hardening ===
+
+_DEFAULT_JWT_SECRET = "change-me-in-production"
+
+
+def _enforce_production_hardening() -> None:
+    """Refuse to start in production with unsafe defaults (Phase 15.3)."""
+    if settings.DEBUG:
+        return
+    if settings.JWT_SECRET_KEY == _DEFAULT_JWT_SECRET or not settings.JWT_SECRET_KEY:
+        example = secrets.token_urlsafe(48)
+        logger.error(
+            "Refusing to start: JWT_SECRET_KEY is unset or default. "
+            f"Set JWT_SECRET_KEY in your environment. Example: {example}"
+        )
+        sys.exit(1)
+    if "*" in settings.CORS_ORIGINS:
+        logger.error(
+            "Refusing to start: CORS_ORIGINS contains '*' while allow_credentials=True. "
+            "Set an explicit origin list."
+        )
+        sys.exit(1)
+
+
+def _configure_logging() -> None:
+    """Rotate + retain logs, scrub emails."""
+    import re
+
+    email_re = re.compile(r"([A-Za-z0-9._%+-]+)@([A-Za-z0-9.-]+\.[A-Za-z]{2,})")
+
+    def _scrub(record):
+        msg = record["message"]
+        record["message"] = email_re.sub(r"***@\2", msg)
+        return True
+
+    logger.remove()
+    logger.add(sys.stderr, filter=_scrub, level="INFO")
+    logger.add(
+        "logs/deepshield.log",
+        rotation="10 MB",
+        retention="7 days",
+        filter=_scrub,
+        level="INFO",
+        enqueue=True,
+    )
+
+
+_configure_logging()
+_enforce_production_hardening()
 
 
 async def _report_cleanup_loop():
@@ -43,12 +99,20 @@ app = FastAPI(
     lifespan=lifespan,
 )
 
+# Phase 15.2 — slowapi rate limiter
+app.state.limiter = limiter
+
+
+app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
+app.add_middleware(RateLimitContextMiddleware)
+
+# Phase 15.3 — explicit CORS methods/headers (no wildcards with credentials)
 app.add_middleware(
     CORSMiddleware,
     allow_origins=settings.CORS_ORIGINS,
     allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
+    allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"],
+    allow_headers=["Authorization", "Content-Type", "Accept", "Origin", "X-Requested-With"],
 )
 
 app.include_router(api_router)

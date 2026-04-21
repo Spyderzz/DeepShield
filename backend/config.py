@@ -46,6 +46,20 @@ class Settings(BaseSettings):
     EFFICIENTNET_MODEL: str = "EfficientNetAutoAttB4"
     EFFICIENTNET_TRAIN_DB: str = "DFDC"
     ENSEMBLE_MODE: bool = True  # run both ViT + EfficientNet and average scores
+
+    # Phase 11.3: FFPP-fine-tuned ViT (local checkpoint in ../trained_models)
+    # Path is resolved relative to the repo root (backend's parent) when not absolute.
+    FFPP_MODEL_PATH: str = "../trained_models"
+    FFPP_BASE_PROCESSOR_ID: str = "google/vit-base-patch16-224-in21k"
+    FFPP_ENABLED: bool = True
+    # Ensemble weights — FFPP is trained on a better (face-specific FFPP c40) dataset
+    # and is weighted more heavily when a face is present. When no face is detected,
+    # we still blend it but lean on the generic ViT since FFPP only saw face crops.
+    FFPP_WEIGHT_FACE: float = 0.55       # face-present ensemble weight
+    VIT_WEIGHT_FACE: float = 0.20
+    EFFNET_WEIGHT_FACE: float = 0.25
+    FFPP_WEIGHT_NOFACE: float = 0.35     # no-face ensemble weight
+    VIT_WEIGHT_NOFACE: float = 0.65
     VIDEO_SAMPLE_FRAMES: int = 16  # frames to sample per video for inference
     EXIFTOOL_PATH: str = ""  # full path to ExifTool binary; empty = metadata write disabled
 

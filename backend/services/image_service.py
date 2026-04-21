@@ -55,70 +55,112 @@ def _classify_vit(pil_img: Image.Image) -> Tuple[float, str, dict[str, float]]:
     return fake_prob, top_label, all_scores
 
 
+def _classify_ffpp(pil_img: Image.Image) -> Optional[Tuple[float, dict[str, float]]]:
+    """Run the FFPP-fine-tuned ViT (Phase 11.3). Returns (fake_prob, all_scores) or None."""
+    loader = get_model_loader()
+    loaded = loader.load_ffpp_model()
+    if loaded is None:
+        return None
+    model, processor = loaded
+
+    inputs = processor(images=pil_img, return_tensors="pt")
+    inputs = {k: v.to(settings.DEVICE) for k, v in inputs.items()}
+
+    with torch.no_grad():
+        outputs = model(**inputs)
+        probs = torch.softmax(outputs.logits, dim=-1)[0]
+
+    id2label: dict[int, str] = getattr(model.config, "id2label", {0: "fake", 1: "real"})
+    all_scores = {id2label.get(i, str(i)): float(p.item()) for i, p in enumerate(probs)}
+    fake_prob = next(
+        (float(v) for k, v in all_scores.items() if k.lower() == "fake"),
+        float(probs[0].item()),
+    )
+    return fake_prob, all_scores
+
+
 def classify_image(pil_img: Image.Image) -> ImageClassification:
-    """Run deepfake classification. Uses ensemble (ViT + EfficientNet) when ENSEMBLE_MODE=true,
-    falls back to ViT-only when EfficientNet is unavailable or ENSEMBLE_MODE=false.
+    """Run deepfake classification. Weighted ensemble across:
+      - FFPP-fine-tuned ViT (Phase 11.3, face-trained) — highest weight when present
+      - EfficientNetAutoAttB4 (face-gated DFDC model)
+      - Generic ViT (prithivMLmods)
+    Falls back gracefully when individual models are unavailable.
     """
     vit_fake_prob, vit_label, vit_scores = _classify_vit(pil_img)
     models_used = [settings.IMAGE_MODEL_ID]
+    scores_out: dict[str, float] = {f"vit_{k}": v for k, v in vit_scores.items()}
+
+    # FFPP inference (may be None if disabled / checkpoint missing).
+    ffpp_fake_prob: Optional[float] = None
+    ffpp_res = _classify_ffpp(pil_img) if settings.FFPP_ENABLED else None
+    if ffpp_res is not None:
+        ffpp_fake_prob, ffpp_scores = ffpp_res
+        models_used.append("ffpp-vit-local")
+        scores_out.update({f"ffpp_{k}": v for k, v in ffpp_scores.items()})
 
     if not settings.ENSEMBLE_MODE:
-        logger.info(f"Image classify (ViT-only) → {vit_label} @ fake_p={vit_fake_prob:.3f}")
-        label = "Fake" if vit_fake_prob >= 0.5 else "Real"
+        # ViT-only mode, but still blend FFPP when available — it's strictly better.
+        if ffpp_fake_prob is not None:
+            combined = 0.4 * vit_fake_prob + 0.6 * ffpp_fake_prob
+            method = "ffpp_vit_blend"
+        else:
+            combined = vit_fake_prob
+            method = None
+        label = "Fake" if combined >= 0.5 else "Real"
+        logger.info(f"Image classify (ensemble-off) → {label} @ {combined:.3f}")
         return ImageClassification(
-            label=label,
-            confidence=vit_fake_prob,
-            all_scores=vit_scores,
-            models_used=models_used,
-            ensemble_method=None,
+            label=label, confidence=combined, all_scores=scores_out,
+            models_used=models_used, ensemble_method=method,
         )
 
-    # Attempt EfficientNet inference.
+    # EfficientNet inference (face-gated).
     loader = get_model_loader()
     eff_detector = loader.load_efficientnet()
-    if eff_detector is None:
-        logger.warning("EfficientNet unavailable — falling back to ViT-only")
-        label = "Fake" if vit_fake_prob >= 0.5 else "Real"
-        return ImageClassification(
-            label=label,
-            confidence=vit_fake_prob,
-            all_scores=vit_scores,
-            models_used=models_used,
-            ensemble_method=None,
-        )
+    eff_fake_prob: Optional[float] = None
+    face_present = False
+    if eff_detector is not None:
+        eff_result = eff_detector.detect_image(pil_img)
+        if not eff_result.get("error") and eff_result.get("score") is not None:
+            eff_fake_prob = float(eff_result["score"])
+            face_present = True
+            models_used.append(eff_result["model"])
+            scores_out["efficientnet_fake"] = eff_fake_prob
+            scores_out["efficientnet_real"] = 1.0 - eff_fake_prob
 
-    eff_result = eff_detector.detect_image(pil_img)
-    if eff_result.get("error") or eff_result.get("score") is None:
-        # BlazeFace found no face — trust ViT alone.
-        logger.info(f"EfficientNet no-face fallback → using ViT score {vit_fake_prob:.3f}")
-        label = "Fake" if vit_fake_prob >= 0.5 else "Real"
-        return ImageClassification(
-            label=label,
-            confidence=vit_fake_prob,
-            all_scores=vit_scores,
-            models_used=models_used,
-            ensemble_method="vit_only_no_face",
-        )
+    # Weighted ensemble
+    if face_present and eff_fake_prob is not None and ffpp_fake_prob is not None:
+        w_ffpp = settings.FFPP_WEIGHT_FACE
+        w_vit = settings.VIT_WEIGHT_FACE
+        w_eff = settings.EFFNET_WEIGHT_FACE
+        total = w_ffpp + w_vit + w_eff
+        ensemble_prob = (w_ffpp * ffpp_fake_prob + w_vit * vit_fake_prob + w_eff * eff_fake_prob) / total
+        method = "weighted_ffpp_vit_eff"
+    elif face_present and eff_fake_prob is not None:
+        ensemble_prob = 0.5 * vit_fake_prob + 0.5 * eff_fake_prob
+        method = "average_vit_eff"
+    elif ffpp_fake_prob is not None:
+        w_ffpp = settings.FFPP_WEIGHT_NOFACE
+        w_vit = settings.VIT_WEIGHT_NOFACE
+        total = w_ffpp + w_vit
+        ensemble_prob = (w_ffpp * ffpp_fake_prob + w_vit * vit_fake_prob) / total
+        method = "weighted_ffpp_vit_no_face"
+    else:
+        ensemble_prob = vit_fake_prob
+        method = "vit_only"
 
-    eff_fake_prob: float = eff_result["score"]
-    models_used.append(eff_result["model"])
-
-    # Simple average ensemble.
-    ensemble_prob = (vit_fake_prob + eff_fake_prob) / 2.0
     label = "Fake" if ensemble_prob >= 0.5 else "Real"
     logger.info(
-        f"Image classify (ensemble) → {label} | vit={vit_fake_prob:.3f} eff={eff_fake_prob:.3f} avg={ensemble_prob:.3f}"
+        f"Image classify ({method}) → {label} | vit={vit_fake_prob:.3f} "
+        f"ffpp={ffpp_fake_prob if ffpp_fake_prob is not None else 'n/a'} "
+        f"eff={eff_fake_prob if eff_fake_prob is not None else 'n/a'} "
+        f"→ {ensemble_prob:.3f}"
     )
     return ImageClassification(
         label=label,
         confidence=ensemble_prob,
-        all_scores={
-            **{f"vit_{k}": v for k, v in vit_scores.items()},
-            f"efficientnet_fake": eff_fake_prob,
-            f"efficientnet_real": 1.0 - eff_fake_prob,
-        },
+        all_scores=scores_out,
         models_used=models_used,
-        ensemble_method="average",
+        ensemble_method=method,
     )
 
 

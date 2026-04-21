@@ -55,6 +55,7 @@ from services.text_service import (
     score_sensationalism,
 )
 from services.video_service import analyze_video
+from services.metadata_writer import write_verdict_metadata
 from utils.file_handler import read_upload_bytes, save_upload_to_tempfile
 from utils.scoring import compute_authenticity_score, get_verdict_label
 
@@ -89,7 +90,10 @@ async def analyze_image(
     heatmap_status = "success"
     heatmap = ""
     try:
-        heatmap = generate_heatmap_base64(pil)
+        model_family = "efficientnet" if settings.ENSEMBLE_MODE else "vit"
+        heatmap, heatmap_source = generate_heatmap_base64(pil, model_family=model_family)
+        if not heatmap:
+            heatmap_status = heatmap_source  # "none" or "fallback"
         stages.append("heatmap_generation")
     except Exception as e:  # noqa: BLE001
         logger.warning(f"Heatmap generation failed, continuing: {e}")
@@ -155,6 +159,7 @@ async def analyze_image(
             stages_completed=stages,
             total_duration_ms=duration_ms,
             model_used=settings.IMAGE_MODEL_ID,
+            models_used=clf.models_used,
         ),
     )
 
@@ -218,11 +223,12 @@ async def analyze_video_endpoint(
         stages.append("frame_extraction")
         stages.append("frame_classification")
         stages.append("aggregation")
-    finally:
+    except Exception:
         try:
             os.unlink(path)
         except OSError:
             pass
+        raise
 
     if agg.insufficient_faces:
         score = 50
@@ -271,6 +277,7 @@ async def analyze_video_endpoint(
             stages_completed=stages,
             total_duration_ms=duration_ms,
             model_used=settings.IMAGE_MODEL_ID,
+            models_used=agg.models_used,
         ),
     )
 
@@ -289,6 +296,23 @@ async def analyze_video_endpoint(
         f"Saved AnalysisRecord id={record.id} video score={score} verdict={label} "
         f"frames={agg.num_frames_sampled} susp={agg.num_suspicious_frames}"
     )
+
+    # Write verdict into video metadata (ExifTool, optional — gated by EXIFTOOL_PATH).
+    try:
+        write_verdict_metadata(
+            file_path=path,
+            verdict=label,
+            authenticity_score=score,
+            models_used=agg.models_used,
+            analysis_id=str(record.id),
+        )
+    except Exception as e:  # noqa: BLE001
+        logger.warning(f"Metadata write failed: {e}")
+    finally:
+        try:
+            os.unlink(path)
+        except OSError:
+            pass
 
     # Phase 12: LLM explainability card
     try:
