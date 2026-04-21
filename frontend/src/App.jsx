@@ -1,4 +1,4 @@
-import { Routes, Route } from 'react-router-dom';
+import { Routes, Route, useLocation } from 'react-router-dom';
 import Navbar from './components/layout/Navbar.jsx';
 import Footer from './components/layout/Footer.jsx';
 import HomePage from './pages/HomePage.jsx';
@@ -13,6 +13,8 @@ import { useAuth } from './contexts/AuthContext.jsx';
 
 export default function App() {
   const { authReady } = useAuth();
+  const location = useLocation();
+  const isHome = location.pathname === '/';
 
   if (!authReady) {
     return (
@@ -25,7 +27,10 @@ export default function App() {
   return (
     <div style={{ display: 'flex', flexDirection: 'column', minHeight: '100vh' }}>
       <Navbar />
-      <main style={{ flex: 1, padding: 'var(--space-8)', maxWidth: 1200, width: '100%', margin: '0 auto' }}>
+      <main style={isHome
+        ? { flex: 1, width: '100%' }
+        : { flex: 1, padding: 'var(--space-8)', maxWidth: 1200, width: '100%', margin: '0 auto' }
+      }>
         <Routes>
           <Route path="/" element={<HomePage />} />
           <Route path="/analyze" element={<AnalyzePage />} />
