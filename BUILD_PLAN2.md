@@ -423,25 +423,25 @@ Total: ~8 weeks of focused work to graduate from MVP → defensible v1.0.
 | Subtask | Status |
 |---|---|
 | 16.1 `ResultsPage.jsx` implementation (`AnalysisResultView` shared component) | Done |
-| 16.2 History page clickable rows (`<Link>`, hover/focus, stopPropagation delete) | Pending |
-| 16.3 Auth rehydrate race fix (`authReady` boolean in `AuthContext`) | Pending |
-| 16.4 Sticky action bar ("Analyze Another" / "Generate PDF" / "Share") | Pending |
+| 16.2 History page clickable rows (`<Link>`, hover/focus, stopPropagation delete) | Done |
+| 16.3 Auth rehydrate race fix (`authReady` boolean in `AuthContext`) | Done |
+| 16.4 Sticky action bar ("Analyze Another" / "Generate PDF" / "Share") | Done |
 
 ### Phase 17 — Video Pipeline v2
 
 | Subtask | Status |
 |---|---|
-| 17.1 Temporal consistency module (optical flow, blink rate, lip-sync, `temporal_score`) | Pending |
-| 17.2 Audio deepfake detection (`audio_service.py`, WavLM/wav2vec2, `AudioCard.jsx`) | Pending |
-| 17.3 Combined video verdict formula (visual + temporal + audio weights) | Pending |
+| 17.1 Temporal consistency module (optical flow, blink rate, lip-sync, `temporal_score`) | Done |
+| 17.2 Audio deepfake detection (`audio_service.py`, WavLM/wav2vec2, `AudioCard.jsx`) | Done |
+| 17.3 Combined video verdict formula (visual + temporal + audio weights) | Done |
 
 ### Phase 18 — UI Polish v2
 
 | Subtask | Status |
 |---|---|
-| 18.1 Apple-style 3D layer animation (`ProcessingAnimation.jsx`, framer-motion) | Pending |
-| 18.2 Glassmorphism + premium aesthetics (tokens, `.glass-panel`, Inter font) | Pending |
-| 18.3 Analyze page core overhaul (hero drag-zone, segmented controller, mesh bg) | Pending |
+| 18.1 Apple-style 3D layer animation (`ProcessingAnimation.jsx`, framer-motion) | Done |
+| 18.2 Glassmorphism + premium aesthetics (tokens, `.glass-panel`, Inter font) | Done |
+| 18.3 Analyze page core overhaul (hero drag-zone, segmented controller, mesh bg) | Done |
 
 ### Phase 19 — Backend Platform
 

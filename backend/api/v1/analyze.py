@@ -55,6 +55,7 @@ from services.text_service import (
     score_sensationalism,
 )
 from services.video_service import analyze_video
+from services.audio_service import analyze_audio, AudioAnalysis
 from services.metadata_writer import write_verdict_metadata
 from services.rate_limit import ANON_ANALYZE, AUTH_ANALYZE, is_anon, is_authed, limiter
 from utils.file_handler import read_upload_bytes, save_upload_to_tempfile
@@ -230,6 +231,8 @@ async def analyze_video_endpoint(
         stages.append("frame_extraction")
         stages.append("frame_classification")
         stages.append("aggregation")
+        if agg.temporal:
+            stages.append("temporal_analysis")
     except Exception:
         try:
             os.unlink(path)
@@ -237,14 +240,44 @@ async def analyze_video_endpoint(
             pass
         raise
 
+    # Phase 17.2 — audio analysis (needs file path, runs before cleanup)
+    audio_result: AudioAnalysis | None = None
+    try:
+        audio_result = analyze_audio(path)
+        if audio_result:
+            stages.append("audio_analysis")
+    except Exception as _ae:  # noqa: BLE001
+        logger.warning(f"Audio analysis failed, continuing: {_ae}")
+
+    # Phase 17.3 — combined verdict formula
     if agg.insufficient_faces:
         score = 50
         label = "Insufficient face content"
         severity = "warning"
     else:
-        score = int(round(max(0.0, min(100.0, (1.0 - agg.mean_suspicious_prob) * 100.0))))
+        visual_score = (1.0 - agg.mean_suspicious_prob) * 100.0
+        temporal_sc = agg.temporal.temporal_score if agg.temporal else visual_score
+        if audio_result and audio_result.has_audio:
+            combined = 0.50 * visual_score + 0.30 * temporal_sc + 0.20 * audio_result.audio_authenticity_score
+        else:
+            combined = 0.70 * visual_score + 0.30 * temporal_sc
+        score = int(round(max(0.0, min(100.0, combined))))
         label, severity = get_verdict_label(score)
+
     duration_ms = int((time.perf_counter() - start) * 1000)
+
+    from schemas.analyze import AudioExplainability
+    audio_ex = None
+    if audio_result:
+        audio_ex = AudioExplainability(
+            audio_authenticity_score=audio_result.audio_authenticity_score,
+            has_audio=audio_result.has_audio,
+            duration_s=audio_result.duration_s,
+            silence_ratio=audio_result.silence_ratio,
+            spectral_variance=audio_result.spectral_variance,
+            rms_consistency=audio_result.rms_consistency,
+            notes=audio_result.notes,
+        )
 
     response = VideoAnalysisResponse(
         analysis_id=str(uuid.uuid4()),
@@ -279,6 +312,11 @@ async def analyze_video_endpoint(
                 )
                 for f in agg.frames
             ],
+            temporal_score=agg.temporal.temporal_score if agg.temporal else None,
+            optical_flow_variance=agg.temporal.optical_flow_variance if agg.temporal else None,
+            flicker_score=agg.temporal.flicker_score if agg.temporal else None,
+            blink_rate_anomaly=agg.temporal.blink_rate_anomaly if agg.temporal else None,
+            audio=audio_ex,
         ),
         processing_summary=ProcessingSummary(
             stages_completed=stages,

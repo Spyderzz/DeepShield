@@ -10,10 +10,19 @@ export function AuthProvider({ children }) {
   const [user, setUser] = useState(() => getStoredUser());
   const [token, setToken] = useState(() => getStoredToken());
   const [loading, setLoading] = useState(false);
+  // authReady=false only when a token exists but user needs async rehydration
+  const [authReady, setAuthReady] = useState(() => {
+    const t = getStoredToken();
+    const u = getStoredUser();
+    return !(t && !u);
+  });
 
   useEffect(() => {
     if (token && !user) {
-      fetchMe().then(setUser).catch(() => { clearAuth(); setUser(null); setToken(null); });
+      fetchMe()
+        .then(setUser)
+        .catch(() => { clearAuth(); setUser(null); setToken(null); })
+        .finally(() => setAuthReady(true));
     }
   }, [token, user]);
 
@@ -24,6 +33,7 @@ export function AuthProvider({ children }) {
       setAuth(data.access_token, data.user);
       setToken(data.access_token);
       setUser(data.user);
+      setAuthReady(true);
       return data.user;
     } finally { setLoading(false); }
   };
@@ -35,6 +45,7 @@ export function AuthProvider({ children }) {
       setAuth(data.access_token, data.user);
       setToken(data.access_token);
       setUser(data.user);
+      setAuthReady(true);
       return data.user;
     } finally { setLoading(false); }
   };
@@ -43,10 +54,11 @@ export function AuthProvider({ children }) {
     clearAuth();
     setUser(null);
     setToken(null);
+    setAuthReady(true);
   };
 
   return (
-    <AuthContext.Provider value={{ user, token, loading, login, register, logout, isAuthed: !!token }}>
+    <AuthContext.Provider value={{ user, token, loading, authReady, login, register, logout, isAuthed: !!token }}>
       {children}
     </AuthContext.Provider>
   );

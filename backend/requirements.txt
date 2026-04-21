@@ -58,3 +58,6 @@ email-validator==2.2.0
 
 # === Phase 15: Security Hardening ===
 slowapi==0.1.9
+
+# === Phase 17: Video Pipeline v2 ===
+ffmpeg-python==0.2.0   # Python wrapper for ffmpeg subprocess (audio extraction)

@@ -56,11 +56,16 @@
   --space-12: 3rem;
   --space-16: 4rem;
 
-  /* === Elevation — Material Shadows === */
-  --shadow-sm:  0 1px 3px rgba(0,0,0,0.08), 0 1px 2px rgba(0,0,0,0.06);
-  --shadow-md:  0 4px 6px rgba(0,0,0,0.07), 0 2px 4px rgba(0,0,0,0.06);
-  --shadow-lg:  0 10px 15px rgba(0,0,0,0.08), 0 4px 6px rgba(0,0,0,0.05);
-  --shadow-xl:  0 20px 25px rgba(0,0,0,0.08), 0 10px 10px rgba(0,0,0,0.04);
+  /* === Elevation — Multi-layer shadows === */
+  --shadow-sm:  0 1px 2px rgba(0,0,0,0.04), 0 1px 3px rgba(0,0,0,0.06);
+  --shadow-md:  0 1px 2px rgba(0,0,0,0.04), 0 8px 24px rgba(0,0,0,0.08);
+  --shadow-lg:  0 2px 4px rgba(0,0,0,0.03), 0 16px 48px rgba(0,0,0,0.10);
+  --shadow-xl:  0 4px 6px rgba(0,0,0,0.03), 0 24px 64px rgba(0,0,0,0.12);
+
+  /* === Glassmorphism === */
+  --glass-bg:     rgba(255, 255, 255, 0.72);
+  --glass-border: rgba(255, 255, 255, 0.42);
+  --glass-blur:   16px;
 
   /* === Border Radius === */
   --radius-sm:  4px;
@@ -120,6 +125,16 @@ a:hover { color: var(--color-primary-700); }
 
 button {
   font-family: inherit;
+}
+
+/* === Glass panel === */
+.glass-panel {
+  background: var(--glass-bg);
+  border: 1px solid var(--glass-border);
+  backdrop-filter: blur(var(--glass-blur));
+  -webkit-backdrop-filter: blur(var(--glass-blur));
+  box-shadow: var(--shadow-md);
+  border-radius: var(--radius-lg);
 }
 
 /* === Skeleton + toast animations === */

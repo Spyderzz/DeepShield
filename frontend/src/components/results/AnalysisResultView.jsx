@@ -16,6 +16,8 @@ import LanguageBadge from './LanguageBadge.jsx';
 import DetailedBreakdownCards from './DetailedBreakdownCards.jsx';
 import ResponsibleAIBanner from '../common/ResponsibleAIBanner.jsx';
 import PipelineVisualizer from '../common/PipelineVisualizer.jsx';
+import StickyActionBar from './StickyActionBar.jsx';
+import AudioCard from './AudioCard.jsx';
 
 export default function AnalysisResultView({ analysis, originalUrl, textContent, onAnalyzeAnother }) {
   const r = analysis;
@@ -25,7 +27,7 @@ export default function AnalysisResultView({ analysis, originalUrl, textContent,
     <div style={{ display: 'grid', gap: 'var(--space-6)' }}>
       <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 2fr) minmax(0, 1fr)', gap: 'var(--space-6)', alignItems: 'start' }}>
         <VerdictCard verdict={r.verdict} mediaType={r.media_type} timestamp={r.timestamp} />
-        <div style={{ display: 'flex', justifyContent: 'center', background: 'var(--color-surface)', padding: 'var(--space-4)', borderRadius: 'var(--radius-md)', boxShadow: 'var(--shadow-sm)' }}>
+        <div className="glass-panel" style={{ display: 'flex', justifyContent: 'center', padding: 'var(--space-4)', borderRadius: 'var(--radius-md)' }}>
           <ScoreMeter score={r.verdict.authenticity_score} />
         </div>
       </div>
@@ -77,6 +79,25 @@ export default function AnalysisResultView({ analysis, originalUrl, textContent,
             </div>
             <FrameTimeline frames={ex.frames} />
           </div>
+          {ex.temporal_score != null && (
+            <div style={{ background: 'var(--color-surface)', padding: 'var(--space-4) var(--space-6)', borderRadius: 'var(--radius-md)', boxShadow: 'var(--shadow-sm)' }}>
+              <h3 style={{ marginTop: 0 }}>Temporal Consistency</h3>
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))', gap: 'var(--space-3)' }}>
+                {[
+                  { label: 'Temporal Score', value: `${Math.round(ex.temporal_score)} / 100` },
+                  { label: 'Flow Variance', value: ex.optical_flow_variance?.toFixed(4) ?? '—' },
+                  { label: 'Flicker Score', value: ex.flicker_score?.toFixed(1) ?? '—' },
+                  { label: 'Blink Anomaly', value: ex.blink_rate_anomaly ? 'Detected' : 'Normal' },
+                ].map(({ label, value }) => (
+                  <div key={label} style={{ background: 'var(--color-bg)', borderRadius: 'var(--radius-sm)', padding: 'var(--space-3)', textAlign: 'center' }}>
+                    <div style={{ fontSize: 'var(--font-size-xs, 11px)', color: 'var(--color-text-secondary)', marginBottom: 4 }}>{label}</div>
+                    <div style={{ fontWeight: 'var(--font-weight-semibold)', fontSize: 'var(--font-size-sm)' }}>{value}</div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+          <AudioCard audio={ex.audio} />
           {originalUrl && (
             <div style={{ background: 'var(--color-surface)', padding: 'var(--space-4)', borderRadius: 'var(--radius-md)', boxShadow: 'var(--shadow-sm)', textAlign: 'center' }}>
               <video src={originalUrl} controls style={{ maxHeight: 360, maxWidth: '100%', borderRadius: 'var(--radius-sm, 4px)' }} />
@@ -174,23 +195,13 @@ export default function AnalysisResultView({ analysis, originalUrl, textContent,
       <ReportDownload recordId={r.record_id} mediaType={r.media_type} />
       <ResponsibleAIBanner text={r.responsible_ai_notice} />
 
-      {onAnalyzeAnother && (
-        <div>
-          <button
-            onClick={onAnalyzeAnother}
-            style={{
-              padding: 'var(--space-3) var(--space-6)',
-              background: 'var(--color-surface)',
-              border: '1px solid var(--color-border)',
-              borderRadius: 'var(--radius-md)',
-              cursor: 'pointer',
-              fontWeight: 'var(--font-weight-medium)',
-            }}
-          >
-            Analyze another {r.media_type}
-          </button>
-        </div>
-      )}
+      <StickyActionBar
+        recordId={r.record_id}
+        mediaType={r.media_type}
+        onAnalyzeAnother={onAnalyzeAnother}
+      />
+      {/* Bottom padding so content isn't hidden behind the sticky bar */}
+      <div style={{ height: 72 }} />
     </div>
   );
 }

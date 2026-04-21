@@ -11,6 +11,7 @@ from PIL import Image
 from config import settings
 from models.model_loader import get_model_loader
 from services.image_service import _classify_vit
+from services.video_temporal import TemporalAnalysis, compute_temporal_score
 
 
 @dataclass
@@ -38,6 +39,8 @@ class VideoAggregation:
     frames: List[FrameAnalysis] = field(default_factory=list)
     models_used: List[str] = field(default_factory=list)
     face_detector_used: str = "mediapipe"
+    # Phase 17.1 — temporal consistency
+    temporal: Optional[TemporalAnalysis] = None
 
 
 FAKE_TOKENS = ("fake", "deepfake", "manipulated", "ai", "generated", "synthetic")
@@ -219,4 +222,14 @@ def analyze_video(video_path: str, num_frames: int = 16) -> VideoAggregation:
         face_detector_used = "mediapipe"
         models_used = [settings.IMAGE_MODEL_ID]
 
-    return aggregate(frame_results, models_used=models_used, face_detector_used=face_detector_used)
+    agg = aggregate(frame_results, models_used=models_used, face_detector_used=face_detector_used)
+
+    # Phase 17.1 — temporal consistency on BGR frames
+    try:
+        bgr_frames = [f[2] for f in frames]
+        timestamps = [f[1] for f in frames]
+        agg.temporal = compute_temporal_score(bgr_frames, timestamps)
+    except Exception as exc:  # noqa: BLE001
+        logger.warning(f"Temporal analysis failed: {exc}")
+
+    return agg

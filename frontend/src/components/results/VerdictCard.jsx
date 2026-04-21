@@ -4,12 +4,11 @@ export default function VerdictCard({ verdict, mediaType, timestamp }) {
   const color = SEVERITY_COLORS[verdict.severity] || 'var(--color-text-secondary)';
   return (
     <div
+      className="glass-panel"
       style={{
-        background: 'var(--color-surface)',
         borderLeft: `4px solid ${color}`,
         borderRadius: 'var(--radius-md)',
         padding: 'var(--space-6)',
-        boxShadow: 'var(--shadow-sm)',
       }}
     >
       <div style={{ fontSize: 'var(--font-size-xs)', textTransform: 'uppercase', letterSpacing: 1, color: 'var(--color-text-secondary)', marginBottom: 'var(--space-2)' }}>

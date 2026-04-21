@@ -134,6 +134,16 @@ class FrameAnalysisOut(BaseModel):
     scored: bool = False
 
 
+class AudioExplainability(BaseModel):
+    audio_authenticity_score: float = 100.0
+    has_audio: bool = False
+    duration_s: float = 0.0
+    silence_ratio: float = 0.0
+    spectral_variance: float = 0.0
+    rms_consistency: float = 0.0
+    notes: str = ""
+
+
 class VideoExplainability(BaseModel):
     num_frames_sampled: int
     num_face_frames: int = 0
@@ -144,6 +154,13 @@ class VideoExplainability(BaseModel):
     insufficient_faces: bool = False
     suspicious_timestamps: List[float] = []
     frames: List[FrameAnalysisOut] = []
+    # Phase 17.1 — temporal consistency
+    temporal_score: float | None = None
+    optical_flow_variance: float | None = None
+    flicker_score: float | None = None
+    blink_rate_anomaly: bool | None = None
+    # Phase 17.2 — audio deepfake detection
+    audio: AudioExplainability | None = None
 
 
 class VideoAnalysisResponse(BaseModel):

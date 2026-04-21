@@ -67,16 +67,38 @@ export default function HistoryPage() {
       {items.length > 0 && (
         <div style={{ display: 'grid', gap: 'var(--space-2)' }}>
           {items.map((it) => (
-            <div key={it.id} style={{
-              display: 'grid',
-              gridTemplateColumns: '48px 1fr auto auto',
-              gap: 'var(--space-4)',
-              alignItems: 'center',
-              padding: 'var(--space-3) var(--space-4)',
-              background: 'var(--color-surface)',
-              border: '1px solid var(--color-border)',
-              borderRadius: 'var(--radius-md)',
-            }}>
+            <Link
+              key={it.id}
+              to={`/results/${it.id}`}
+              style={{
+                display: 'grid',
+                gridTemplateColumns: '48px 1fr auto auto',
+                gap: 'var(--space-4)',
+                alignItems: 'center',
+                padding: 'var(--space-3) var(--space-4)',
+                background: 'var(--color-surface)',
+                border: '1px solid var(--color-border)',
+                borderRadius: 'var(--radius-md)',
+                textDecoration: 'none',
+                color: 'inherit',
+                transition: 'border-color 0.15s, box-shadow 0.15s',
+                outline: 'none',
+              }}
+              onMouseEnter={(e) => {
+                e.currentTarget.style.borderColor = 'var(--color-primary-400, #818cf8)';
+                e.currentTarget.style.boxShadow = 'var(--shadow-md)';
+              }}
+              onMouseLeave={(e) => {
+                e.currentTarget.style.borderColor = 'var(--color-border)';
+                e.currentTarget.style.boxShadow = 'none';
+              }}
+              onFocus={(e) => {
+                e.currentTarget.style.boxShadow = '0 0 0 3px var(--color-primary-200, rgba(99,102,241,0.3))';
+              }}
+              onBlur={(e) => {
+                e.currentTarget.style.boxShadow = 'none';
+              }}
+            >
               <div style={{
                 width: 40, height: 40, borderRadius: 'var(--radius-sm)',
                 background: 'var(--color-primary-50, rgba(99,102,241,0.08))',
@@ -100,7 +122,7 @@ export default function HistoryPage() {
                 {Math.round(it.authenticity_score)}
               </div>
               <button
-                onClick={() => handleDelete(it.id)}
+                onClick={(e) => { e.stopPropagation(); e.preventDefault(); handleDelete(it.id); }}
                 style={{
                   padding: 'var(--space-2) var(--space-3)',
                   background: 'transparent',
@@ -111,7 +133,7 @@ export default function HistoryPage() {
                   fontSize: 'var(--font-size-xs)',
                 }}
               >Delete</button>
-            </div>
+            </Link>
           ))}
         </div>
       )}

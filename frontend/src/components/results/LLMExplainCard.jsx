@@ -4,13 +4,15 @@ export default function LLMExplainCard({ llmSummary }) {
   const isUnavailable = llmSummary.model_used === 'none' || llmSummary.model_used === 'error';
 
   return (
-    <div style={{
-      background: 'linear-gradient(135deg, #EDE7F6 0%, #E8EAF6 100%)',
-      padding: 'var(--space-5)',
-      borderRadius: 'var(--radius-md)',
-      boxShadow: 'var(--shadow-sm)',
-      borderLeft: '4px solid var(--color-primary-500, #6366f1)',
-    }}>
+    <div
+      className="glass-panel"
+      style={{
+        background: 'linear-gradient(135deg, rgba(237,231,246,0.80) 0%, rgba(232,234,246,0.80) 100%)',
+        padding: 'var(--space-5)',
+        borderRadius: 'var(--radius-md)',
+        borderLeft: '4px solid var(--color-primary-500)',
+      }}
+    >
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 'var(--space-3)' }}>
         <h3 style={{ margin: 0, fontSize: 'var(--font-size-base)' }}>AI Summary</h3>
         {llmSummary.model_used && !isUnavailable && (
