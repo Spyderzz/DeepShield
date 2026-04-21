@@ -457,11 +457,11 @@ Total: ~8 weeks of focused work to graduate from MVP → defensible v1.0.
 
 | Subtask | Status |
 |---|---|
-| 20.1 Moving impact cards (marquee carousel, framer-motion infinite loop) | Pending |
-| 20.2 "Why DeepShield is Better" comparison grid | Pending |
-| 20.3 FAQ accordion (8 questions) | Pending |
+| 20.1 Moving impact cards (marquee carousel, CSS infinite loop, pause-on-hover) | Done |
+| 20.2 "Why DeepShield is Better" comparison grid (4-column table) | Done |
+| 20.3 FAQ accordion (8 questions, framer-motion height animation) | Done |
 | 20.4 Live counter (`GET /stats/recent` endpoint) | Pending |
-| 20.5 Trust badges (local processing, open-source, privacy-first) | Pending |
+| 20.5 Trust badges (local processing, open-source, privacy-first, explainable AI) | Done |
 
 ### Phase 21 — Quality Gates
 
