@@ -6,7 +6,7 @@ import time
 import uuid
 from datetime import datetime, timezone
 
-from fastapi import APIRouter, Body, Depends, File, Request, UploadFile
+from fastapi import APIRouter, BackgroundTasks, Body, Depends, File, HTTPException, Request, Response, UploadFile, status
 from pydantic import BaseModel
 from loguru import logger
 from sqlalchemy.orm import Session
@@ -58,6 +58,16 @@ from services.video_service import analyze_video
 from services.audio_service import analyze_audio, AudioAnalysis
 from services.metadata_writer import write_verdict_metadata
 from services.rate_limit import ANON_ANALYZE, AUTH_ANALYZE, is_anon, is_authed, limiter
+from services.dedup_cache import lookup_cached, cached_payload
+from services.storage import (
+    make_image_thumbnail,
+    make_video_thumbnail,
+    save_bytes,
+    save_file,
+    sha256_bytes,
+    sha256_file,
+)
+from services.job_queue import registry as job_registry, run_job
 from utils.file_handler import read_upload_bytes, save_upload_to_tempfile
 from utils.scoring import compute_authenticity_score, get_verdict_label
 
@@ -84,6 +94,15 @@ async def analyze_image(
         file, settings.ALLOWED_IMAGE_TYPES, max_size_mb=IMAGE_MAX_MB
     )
     stages.append("validation")
+
+    # Phase 19.1 — SHA-256 dedup cache
+    media_hash = sha256_bytes(raw)
+    cached = lookup_cached(db, media_hash=media_hash, media_type="image", user_id=user.id if user else None)
+    if cached is not None:
+        payload = cached_payload(cached)
+        if payload is not None:
+            logger.info(f"cache hit image sha={media_hash[:12]} record={cached.id}")
+            return ImageAnalysisResponse.model_validate(payload)
 
     pil, clf = preprocess_and_classify(raw)
     stages.append("classification")
@@ -168,6 +187,16 @@ async def analyze_image(
         ),
     )
 
+    # Phase 19.2 — persist original bytes + thumbnail under content-address
+    ext = (mime.split("/")[-1] if mime else "jpg").replace("jpeg", "jpg")
+    try:
+        media_path = save_bytes(raw, media_hash, ext)
+    except Exception as e:  # noqa: BLE001
+        logger.warning(f"media save failed: {e}")
+        media_path = None
+    thumbnail_url = make_image_thumbnail(pil, media_hash)
+    response.thumbnail_url = thumbnail_url
+
     record = AnalysisRecord(
         user_id=user.id if user else None,
         media_type="image",
@@ -176,6 +205,9 @@ async def analyze_image(
         result_json=json.dumps(response.model_dump(
             exclude={"explainability": {"heatmap_base64", "ela_base64", "boxes_base64"}}
         )),
+        media_hash=media_hash,
+        media_path=media_path,
+        thumbnail_url=thumbnail_url,
     )
     db.add(record)
     db.commit()
@@ -225,6 +257,19 @@ async def analyze_video_endpoint(
         file, settings.ALLOWED_VIDEO_TYPES, max_size_mb=VIDEO_MAX_MB, suffix=suffix
     )
     stages.append("validation")
+
+    # Phase 19.1 — dedup cache (hash temp file before running pipeline)
+    media_hash = sha256_file(path)
+    cached = lookup_cached(db, media_hash=media_hash, media_type="video", user_id=user.id if user else None)
+    if cached is not None:
+        payload = cached_payload(cached)
+        if payload is not None:
+            try:
+                os.unlink(path)
+            except OSError:
+                pass
+            logger.info(f"cache hit video sha={media_hash[:12]} record={cached.id}")
+            return VideoAnalysisResponse.model_validate(payload)
 
     try:
         agg = analyze_video(path, num_frames=VIDEO_NUM_FRAMES)
@@ -326,12 +371,24 @@ async def analyze_video_endpoint(
         ),
     )
 
+    # Phase 19.2 — persist video + thumbnail frame
+    try:
+        media_path = save_file(path, media_hash, suffix.lstrip("."))
+    except Exception as e:  # noqa: BLE001
+        logger.warning(f"video media save failed: {e}")
+        media_path = None
+    thumbnail_url = make_video_thumbnail(path, media_hash)
+    response.thumbnail_url = thumbnail_url
+
     record = AnalysisRecord(
         user_id=user.id if user else None,
         media_type="video",
         verdict=label,
         authenticity_score=float(score),
         result_json=json.dumps(response.model_dump()),
+        media_hash=media_hash,
+        media_path=media_path,
+        thumbnail_url=thumbnail_url,
     )
     db.add(record)
     db.commit()
@@ -519,6 +576,15 @@ async def analyze_screenshot_endpoint(
     )
     stages.append("validation")
 
+    # Phase 19.1 — dedup cache
+    media_hash = sha256_bytes(raw)
+    cached = lookup_cached(db, media_hash=media_hash, media_type="screenshot", user_id=user.id if user else None)
+    if cached is not None:
+        payload = cached_payload(cached)
+        if payload is not None:
+            logger.info(f"cache hit screenshot sha={media_hash[:12]} record={cached.id}")
+            return ScreenshotAnalysisResponse.model_validate(payload)
+
     pil = load_image_from_bytes(raw)
     ocr_boxes = run_ocr(pil)
     stages.append("ocr")
@@ -632,12 +698,25 @@ async def analyze_screenshot_endpoint(
         ),
     )
 
+    # Phase 19.2 — object storage + thumbnail
+    ext = (mime.split("/")[-1] if mime else "jpg").replace("jpeg", "jpg")
+    try:
+        media_path = save_bytes(raw, media_hash, ext)
+    except Exception as e:  # noqa: BLE001
+        logger.warning(f"screenshot media save failed: {e}")
+        media_path = None
+    thumbnail_url = make_image_thumbnail(pil, media_hash)
+    response.thumbnail_url = thumbnail_url
+
     record = AnalysisRecord(
         user_id=user.id if user else None,
         media_type="screenshot",
         verdict=label,
         authenticity_score=float(score),
         result_json=json.dumps(response.model_dump()),
+        media_hash=media_hash,
+        media_path=media_path,
+        thumbnail_url=thumbnail_url,
     )
     db.add(record)
     db.commit()
@@ -654,3 +733,179 @@ async def analyze_screenshot_endpoint(
         logger.warning(f"LLM explainer failed for screenshot: {e}")
 
     return response
+
+
+# ───────────────────────── Phase 19.3 — async video + jobs ─────────────────────────
+
+@router.post("/video/async", status_code=status.HTTP_202_ACCEPTED)
+@limiter.limit(ANON_ANALYZE, exempt_when=is_authed)
+@limiter.limit(AUTH_ANALYZE, exempt_when=is_anon)
+async def analyze_video_async(
+    request: Request,
+    background: BackgroundTasks,
+    file: UploadFile = File(...),
+    db: Session = Depends(get_db),
+    user: User | None = Depends(optional_current_user),
+):
+    """Queue a video analysis and return a job_id. Poll GET /api/v1/jobs/{job_id}.
+
+    Used by the PipelineVisualizer so it can read real backend stage/progress
+    instead of guessing timing.
+    """
+    suffix = os.path.splitext(file.filename or "")[1].lower() or ".mp4"
+    path, _mime = await save_upload_to_tempfile(
+        file, settings.ALLOWED_VIDEO_TYPES, max_size_mb=VIDEO_MAX_MB, suffix=suffix
+    )
+
+    # Quick cache probe so callers don't wait for queue dispatch on repeats.
+    media_hash = sha256_file(path)
+    cached = lookup_cached(db, media_hash=media_hash, media_type="video", user_id=user.id if user else None)
+    if cached is not None:
+        payload = cached_payload(cached)
+        try:
+            os.unlink(path)
+        except OSError:
+            pass
+        if payload is not None:
+            job = job_registry.create()
+            job_registry.update(job.id, status="done", stage="done", progress=100, result=payload)
+            return {"job_id": job.id, "status": "done", "cached": True}
+
+    user_id = user.id if user else None
+    job = job_registry.create()
+
+    def _work(progress):
+        from db.database import SessionLocal
+        local_db = SessionLocal()
+        try:
+            progress("frame_extraction", 15)
+            agg = analyze_video(path, num_frames=VIDEO_NUM_FRAMES)
+            progress("aggregation", 60)
+
+            audio_result = None
+            try:
+                audio_result = analyze_audio(path)
+            except Exception as _ae:  # noqa: BLE001
+                logger.warning(f"Audio analysis failed, continuing: {_ae}")
+            progress("audio_analysis", 75)
+
+            if agg.insufficient_faces:
+                score_val, label_val, sev = 50, "Insufficient face content", "warning"
+            else:
+                visual_score = (1.0 - agg.mean_suspicious_prob) * 100.0
+                temporal_sc = agg.temporal.temporal_score if agg.temporal else visual_score
+                if audio_result and audio_result.has_audio:
+                    combined = 0.50 * visual_score + 0.30 * temporal_sc + 0.20 * audio_result.audio_authenticity_score
+                else:
+                    combined = 0.70 * visual_score + 0.30 * temporal_sc
+                score_val = int(round(max(0.0, min(100.0, combined))))
+                label_val, sev = get_verdict_label(score_val)
+
+            from schemas.analyze import AudioExplainability
+            audio_ex = None
+            if audio_result:
+                audio_ex = AudioExplainability(
+                    audio_authenticity_score=audio_result.audio_authenticity_score,
+                    has_audio=audio_result.has_audio,
+                    duration_s=audio_result.duration_s,
+                    silence_ratio=audio_result.silence_ratio,
+                    spectral_variance=audio_result.spectral_variance,
+                    rms_consistency=audio_result.rms_consistency,
+                    notes=audio_result.notes,
+                )
+
+            resp = VideoAnalysisResponse(
+                analysis_id=str(uuid.uuid4()),
+                media_type="video",
+                timestamp=datetime.now(timezone.utc).isoformat(),
+                verdict=Verdict(
+                    label=label_val, severity=sev,
+                    authenticity_score=score_val,
+                    model_confidence=float(agg.mean_suspicious_prob),
+                    model_label="suspicious_mean" if not agg.insufficient_faces else "no_faces",
+                ),
+                explainability=VideoExplainability(
+                    num_frames_sampled=agg.num_frames_sampled,
+                    num_face_frames=agg.num_face_frames,
+                    num_suspicious_frames=agg.num_suspicious_frames,
+                    mean_suspicious_prob=agg.mean_suspicious_prob,
+                    max_suspicious_prob=agg.max_suspicious_prob,
+                    suspicious_ratio=agg.suspicious_ratio,
+                    insufficient_faces=agg.insufficient_faces,
+                    suspicious_timestamps=agg.suspicious_timestamps,
+                    frames=[
+                        FrameAnalysisOut(
+                            index=f.index, timestamp_s=f.timestamp_s,
+                            label=f.label, confidence=f.confidence,
+                            suspicious_prob=f.suspicious_prob, is_suspicious=f.is_suspicious,
+                            has_face=f.has_face, scored=f.scored,
+                        ) for f in agg.frames
+                    ],
+                    temporal_score=agg.temporal.temporal_score if agg.temporal else None,
+                    optical_flow_variance=agg.temporal.optical_flow_variance if agg.temporal else None,
+                    flicker_score=agg.temporal.flicker_score if agg.temporal else None,
+                    blink_rate_anomaly=agg.temporal.blink_rate_anomaly if agg.temporal else None,
+                    audio=audio_ex,
+                ),
+                processing_summary=ProcessingSummary(
+                    stages_completed=["frame_extraction", "classification", "aggregation"],
+                    total_duration_ms=0,
+                    model_used=settings.IMAGE_MODEL_ID,
+                    models_used=agg.models_used,
+                ),
+            )
+
+            progress("storage", 85)
+            try:
+                media_path = save_file(path, media_hash, suffix.lstrip("."))
+            except Exception as e:  # noqa: BLE001
+                logger.warning(f"async video media save failed: {e}")
+                media_path = None
+            thumb = make_video_thumbnail(path, media_hash)
+            resp.thumbnail_url = thumb
+
+            rec = AnalysisRecord(
+                user_id=user_id,
+                media_type="video",
+                verdict=label_val,
+                authenticity_score=float(score_val),
+                result_json=json.dumps(resp.model_dump()),
+                media_hash=media_hash,
+                media_path=media_path,
+                thumbnail_url=thumb,
+            )
+            local_db.add(rec)
+            local_db.commit()
+            local_db.refresh(rec)
+            resp.record_id = rec.id
+            progress("persist", 95)
+
+            return resp.model_dump()
+        finally:
+            local_db.close()
+            try:
+                os.unlink(path)
+            except OSError:
+                pass
+
+    stages = ["queued", "frame_extraction", "aggregation", "audio_analysis", "storage", "persist", "done"]
+    background.add_task(run_job, job.id, stages, _work)
+    return {"job_id": job.id, "status": "queued", "cached": False}
+
+
+jobs_router = APIRouter(prefix="/jobs", tags=["jobs"])
+
+
+@jobs_router.get("/{job_id}")
+def get_job(job_id: str):
+    j = job_registry.get(job_id)
+    if not j:
+        raise HTTPException(status_code=404, detail="job not found")
+    return {
+        "id": j.id,
+        "status": j.status,
+        "stage": j.stage,
+        "progress": j.progress,
+        "error": j.error,
+        "result": j.result if j.status == "done" else None,
+    }

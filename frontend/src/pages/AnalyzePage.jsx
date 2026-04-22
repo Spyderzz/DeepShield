@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { motion } from 'framer-motion';
 import UploadZone from '../components/upload/UploadZone.jsx';
 import TextInput from '../components/upload/TextInput.jsx';
@@ -6,7 +6,7 @@ import ProcessingAnimation from '../components/common/ProcessingAnimation.jsx';
 import LoadingSpinner from '../components/common/LoadingSpinner.jsx';
 import PipelineVisualizer from '../components/common/PipelineVisualizer.jsx';
 import AnalysisResultView from '../components/results/AnalysisResultView.jsx';
-import { analyzeImage, analyzeVideo, analyzeText, analyzeScreenshot } from '../services/analyzeApi.js';
+import { analyzeImage, analyzeVideo, analyzeText, analyzeScreenshot, getReadiness } from '../services/analyzeApi.js';
 import { useToast } from '../contexts/ToastContext.jsx';
 
 const MODES = {
@@ -25,6 +25,18 @@ export default function AnalyzePage() {
   const [result, setResult] = useState(null);
   const [error, setError] = useState(null);
   const toast = useToast();
+  const [ready, setReady] = useState(true); // Phase 19.5 — readiness gate
+
+  useEffect(() => {
+    let cancelled = false;
+    const check = async () => {
+      const r = await getReadiness();
+      if (!cancelled) setReady(Boolean(r.ready));
+    };
+    check();
+    const id = setInterval(check, 10000);
+    return () => { cancelled = true; clearInterval(id); };
+  }, []);
 
   const cfg = MODES[mode];
 
@@ -167,25 +179,26 @@ export default function AnalyzePage() {
                 <motion.button
                   id="file-analyze-btn"
                   onClick={submitFile}
-                  disabled={!file}
-                  whileHover={file ? { scale: 1.02 } : {}}
-                  whileTap={file ? { scale: 0.97 } : {}}
+                  disabled={!file || !ready}
+                  whileHover={file && ready ? { scale: 1.02 } : {}}
+                  whileTap={file && ready ? { scale: 0.97 } : {}}
+                  title={!ready ? 'Backend is warming up — try again in a moment' : undefined}
                   style={{
                     padding: 'var(--space-3) var(--space-8)',
-                    background: file
+                    background: (file && ready)
                       ? 'linear-gradient(135deg, var(--color-primary-500) 0%, var(--color-primary-600) 100%)'
                       : 'var(--color-border)',
                     color: 'white',
                     border: 'none',
                     borderRadius: 'var(--radius-full)',
-                    cursor: file ? 'pointer' : 'not-allowed',
+                    cursor: (file && ready) ? 'pointer' : 'not-allowed',
                     fontWeight: 'var(--font-weight-semibold)',
                     fontSize: 'var(--font-size-base)',
-                    boxShadow: file ? '0 4px 14px rgba(30,136,229,0.30)' : 'none',
+                    boxShadow: (file && ready) ? '0 4px 14px rgba(30,136,229,0.30)' : 'none',
                     transition: 'background 0.2s, box-shadow 0.2s',
                   }}
                 >
-                  {cfg.cta}
+                  {!ready ? 'Backend warming up…' : cfg.cta}
                 </motion.button>
               </div>
             </>

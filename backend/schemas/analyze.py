@@ -50,6 +50,8 @@ class TextExplainability(BaseModel):
 class TextAnalysisResponse(BaseModel):
     analysis_id: str
     record_id: int = 0
+    cached: bool = False
+    thumbnail_url: str | None = None
     media_type: str = "text"
     timestamp: str
     verdict: Verdict
@@ -99,6 +101,8 @@ class ScreenshotExplainability(BaseModel):
 class ScreenshotAnalysisResponse(BaseModel):
     analysis_id: str
     record_id: int = 0
+    cached: bool = False
+    thumbnail_url: str | None = None
     media_type: str = "screenshot"
     timestamp: str
     verdict: Verdict
@@ -166,6 +170,8 @@ class VideoExplainability(BaseModel):
 class VideoAnalysisResponse(BaseModel):
     analysis_id: str
     record_id: int = 0
+    cached: bool = False
+    thumbnail_url: str | None = None
     media_type: str = "video"
     timestamp: str
     verdict: Verdict
@@ -182,6 +188,8 @@ class VideoAnalysisResponse(BaseModel):
 class ImageAnalysisResponse(BaseModel):
     analysis_id: str
     record_id: int = 0
+    cached: bool = False
+    thumbnail_url: str | None = None
     media_type: str = "image"
     timestamp: str
     verdict: Verdict

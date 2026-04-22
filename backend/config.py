@@ -37,6 +37,10 @@ class Settings(BaseSettings):
     REPORT_DIR: str = "./temp_reports"
     REPORT_TTL_SECONDS: int = 3600  # 1h expiry
 
+    # Phase 19 — dedup cache + object storage
+    CACHE_TTL_DAYS: int = 30
+    MEDIA_ROOT: str = "./media"
+
     # LLM Explainability (Phase 12)
     LLM_PROVIDER: str = "gemini"  # "gemini" | "openai"
     LLM_API_KEY: str = ""

@@ -214,6 +214,16 @@ class ModelLoader:
         """Preload only what Phase 1 needs (image model)."""
         self.load_image_model()
 
+    def is_ready(self) -> bool:
+        """Phase 19.5 — readiness signal for /health/ready.
+
+        When PRELOAD_MODELS is enabled, readiness = image model loaded.
+        Otherwise the loader constructs successfully → ready (lazy-load on demand).
+        """
+        if settings.PRELOAD_MODELS:
+            return self._image_model is not None
+        return True
+
 
 def get_model_loader() -> ModelLoader:
     return ModelLoader.get_instance()

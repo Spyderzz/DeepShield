@@ -447,11 +447,11 @@ Total: ~8 weeks of focused work to graduate from MVP → defensible v1.0.
 
 | Subtask | Status |
 |---|---|
-| 19.1 SHA-256 dedup cache (`media_hash` column, `CACHE_TTL_DAYS`) | Done |
-| 19.2 Object storage (`storage.py`, thumbnail generation, `media_path` in schema) | Done |
-| 19.3 Job queue (`POST /analyze/video/async` → 202, `GET /jobs/{id}`, frontend polling helpers) | Done |
-| 19.4 DB indices + lightweight in-place migration + Postgres path docs (`.env.example`) | Done |
-| 19.5 Healthcheck split (`/health/live`, `/health/ready`, disable Analyze on 503) | Done |
+| 19.1 SHA-256 dedup cache (`media_hash` column, `CACHE_TTL_DAYS`) | Pending |
+| 19.2 Object storage (`storage.py`, thumbnail generation, `media_path` in schema) | Pending |
+| 19.3 Job queue (`POST /analyze/video` → 202, `GET /jobs/{id}`, frontend polling) | Pending |
+| 19.4 DB indices + Alembic migrations + Postgres path docs | Pending |
+| 19.5 Healthcheck split (`/health/live`, `/health/ready`, disable Analyze on 503) | Pending |
 
 ### Phase 20 — Landing Page v2
 

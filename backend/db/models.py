@@ -1,6 +1,6 @@
 from datetime import datetime
 
-from sqlalchemy import DateTime, ForeignKey, Integer, String, Text
+from sqlalchemy import DateTime, ForeignKey, Index, Integer, String, Text
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from db.database import Base
@@ -28,9 +28,17 @@ class AnalysisRecord(Base):
     authenticity_score: Mapped[float] = mapped_column(nullable=False)
     result_json: Mapped[str] = mapped_column(Text, nullable=False)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    # Phase 19.1 / 19.2 — SHA-256 dedup + object storage
+    media_hash: Mapped[str | None] = mapped_column(String(64), nullable=True, index=True)
+    media_path: Mapped[str | None] = mapped_column(String(512), nullable=True)
+    thumbnail_url: Mapped[str | None] = mapped_column(String(512), nullable=True)
 
     user: Mapped["User | None"] = relationship(back_populates="analyses")
     report: Mapped["Report | None"] = relationship(back_populates="analysis", uselist=False)
+
+    __table_args__ = (
+        Index("ix_record_user_created", "user_id", "created_at"),
+    )
 
 
 class Report(Base):
@@ -43,3 +51,7 @@ class Report(Base):
     expires_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
 
     analysis: Mapped["AnalysisRecord"] = relationship(back_populates="report")
+
+    __table_args__ = (
+        Index("ix_report_analysis", "analysis_id"),
+    )

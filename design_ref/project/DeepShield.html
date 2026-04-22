@@ -1,0 +1,113 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1"/>
+<title>DeepShield — forensic AI for synthetic media</title>
+
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Instrument+Serif:ital@0;1&family=Geist:wght@300;400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+
+<link rel="stylesheet" href="styles.css"/>
+
+<script src="https://unpkg.com/react@18.3.1/umd/react.development.js" integrity="sha384-hD6/rw4ppMLGNu3tX5cjIb+uRZ7UkRJ6BPkLpg4hAu/6onKUg4lLsHAs9EBPT82L" crossorigin="anonymous"></script>
+<script src="https://unpkg.com/react-dom@18.3.1/umd/react-dom.development.js" integrity="sha384-u6aeetuaXnQ38mYT8rp6sbXaQe3NL9t+IBXmnYxwkUI2Hw4bsp2Wvmx4yRQF1uAm" crossorigin="anonymous"></script>
+<script src="https://unpkg.com/@babel/standalone@7.29.0/babel.min.js" integrity="sha384-m08KidiNqLdpJqLq95G/LEi8Qvjl/xUYll3QILypMoQ65QorJ9Lvtp2RXYGBFj1y" crossorigin="anonymous"></script>
+</head>
+<body>
+<div id="root"></div>
+
+<script type="text/babel" src="parts1.jsx"></script>
+<script type="text/babel" src="parts2.jsx"></script>
+<script type="text/babel" src="parts3.jsx"></script>
+
+<script type="text/babel">
+const { useState, useEffect } = React;
+
+const TWEAK_DEFAULTS = /*EDITMODE-BEGIN*/{
+  "accent": "#6C7DFF",
+  "font": "mix",
+  "atmos": "both",
+  "density": 1.05
+}/*EDITMODE-END*/;
+
+function App() {
+  const [tweaksOpen, setTweaksOpen] = useState(false);
+  const [state, setState] = useState(TWEAK_DEFAULTS);
+
+  // Edit mode handshake
+  useEffect(() => {
+    const handler = (e) => {
+      if (!e.data || typeof e.data !== "object") return;
+      if (e.data.type === "__activate_edit_mode") setTweaksOpen(true);
+      if (e.data.type === "__deactivate_edit_mode") setTweaksOpen(false);
+    };
+    window.addEventListener("message", handler);
+    window.parent.postMessage({ type: "__edit_mode_available" }, "*");
+    return () => window.removeEventListener("message", handler);
+  }, []);
+
+  // Apply tweaks as CSS variables
+  useEffect(() => {
+    const r = document.documentElement;
+    r.style.setProperty("--ds-brand", state.accent);
+    r.style.setProperty("--ds-accent", state.accent);
+    r.style.setProperty("--density", state.density);
+
+    // font
+    if (state.font === "serif") {
+      r.style.setProperty("--ff-display", '"Instrument Serif", serif');
+    } else if (state.font === "sans") {
+      r.style.setProperty("--ff-display", '"Geist", sans-serif');
+    } else {
+      r.style.setProperty("--ff-display", '"Instrument Serif", serif');
+    }
+
+    // atmosphere
+    const hero = document.querySelectorAll(".ds-mesh, .ds-grid");
+    hero.forEach(el => {
+      if (el.classList.contains("ds-mesh")) el.style.display = state.atmos === "dots" || state.atmos === "none" ? "none" : "";
+      if (el.classList.contains("ds-grid")) el.style.display = state.atmos === "mesh" || state.atmos === "none" ? "none" : "";
+    });
+
+    // persist
+    try {
+      window.parent.postMessage({ type: "__edit_mode_set_keys", edits: state }, "*");
+    } catch (e) {}
+  }, [state]);
+
+  const { Nav, Hero, Statement, ModalityCards } = window.DSParts1;
+  const { AnalyzeDemo } = window.DSParts2;
+  const { Comparison, Marquee, FAQ, CTAFooter, TweaksPanel } = window.DSParts3;
+
+  return (
+    <>
+      <Nav />
+      <main>
+        <Hero />
+        <Statement />
+        <ModalityCards />
+        <AnalyzeDemo />
+        <Comparison />
+        <Marquee />
+        <FAQ />
+        <CTAFooter />
+      </main>
+      <TweaksPanel open={tweaksOpen} onClose={() => setTweaksOpen(false)} state={state} setState={setState} />
+    </>
+  );
+}
+
+// Mount after all parts load
+function mountWhenReady() {
+  if (window.DSParts1 && window.DSParts2 && window.DSParts3) {
+    ReactDOM.createRoot(document.getElementById("root")).render(<App />);
+  } else {
+    setTimeout(mountWhenReady, 50);
+  }
+}
+mountWhenReady();
+</script>
+</body>
+</html>

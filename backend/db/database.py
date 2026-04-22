@@ -27,4 +27,31 @@ def get_db():
 
 def init_db():
     from db import models  # noqa: F401
+    from sqlalchemy import inspect, text
+
     Base.metadata.create_all(bind=engine)
+
+    # Phase 19.4 — lightweight in-place migration for new columns.
+    # Alembic is overkill here; just ALTER TABLE when a new column is missing.
+    insp = inspect(engine)
+    if "analyses" in insp.get_table_names():
+        existing = {c["name"] for c in insp.get_columns("analyses")}
+        additions = {
+            "media_hash": "VARCHAR(64)",
+            "media_path": "VARCHAR(512)",
+            "thumbnail_url": "VARCHAR(512)",
+        }
+        with engine.begin() as conn:
+            for col, ddl in additions.items():
+                if col not in existing:
+                    conn.execute(text(f"ALTER TABLE analyses ADD COLUMN {col} {ddl}"))
+            # Indices (CREATE INDEX IF NOT EXISTS is SQLite+Postgres safe)
+            for ddl in (
+                "CREATE INDEX IF NOT EXISTS ix_analyses_media_hash ON analyses (media_hash)",
+                "CREATE INDEX IF NOT EXISTS ix_record_user_created ON analyses (user_id, created_at)",
+                "CREATE INDEX IF NOT EXISTS ix_report_analysis ON reports (analysis_id)",
+            ):
+                try:
+                    conn.execute(text(ddl))
+                except Exception:  # noqa: BLE001
+                    pass
