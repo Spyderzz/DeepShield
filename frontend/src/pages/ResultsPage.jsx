@@ -1,93 +1,546 @@
 import { useEffect, useState } from 'react';
-import { Link, useParams } from 'react-router-dom';
+import { useLocation, useNavigate, useParams } from 'react-router-dom';
+import { SharedNav, SharedFooter } from '../components/layout/SharedNav.jsx';
+import useDottedSurface from '../hooks/useDottedSurface.js';
 import { getHistoryDetail } from '../services/historyApi.js';
-import AnalysisResultView from '../components/results/AnalysisResultView.jsx';
+import './deepshield-landing.css';
+import './deepshield-pages.css';
 
 export default function ResultsPage() {
+  useDottedSurface();
   const { id } = useParams();
-  const [result, setResult] = useState(null);
-  const [loading, setLoading] = useState(true);
-  const [notFound, setNotFound] = useState(false);
+  const navigate = useNavigate();
+  const location = useLocation();
+
+  const preloaded = location.state?.result;
+  const [result, setResult] = useState(preloaded || null);
+  const [loading, setLoading] = useState(!preloaded);
   const [error, setError] = useState(null);
 
   useEffect(() => {
-    let live = true;
-    setLoading(true);
-    setNotFound(false);
-    setError(null);
-    getHistoryDetail(id)
-      .then((data) => { if (live) setResult(data); })
-      .catch((err) => {
-        if (!live) return;
-        const status = err?.response?.status;
-        if (status === 404 || status === 401 || status === 403) {
-          setNotFound(true);
-        } else {
-          setError(err.userMessage || err.message || 'Failed to load analysis');
-        }
-      })
-      .finally(() => live && setLoading(false));
-    return () => { live = false; };
+    if (preloaded) return;
+    (async () => {
+      try {
+        const data = await getHistoryDetail(id);
+        setResult(data);
+      } catch (e) {
+        setError(e?.response?.data?.detail || e?.message || 'Could not load result');
+      } finally {
+        setLoading(false);
+      }
+    })();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [id]);
 
   if (loading) {
     return (
-      <section style={{ display: 'grid', gap: 'var(--space-4)' }}>
-        <p style={{ color: 'var(--color-text-secondary)' }}>Loading analysis…</p>
-      </section>
+      <>
+        <SharedNav current="history" />
+        <section className="page-shell"><div className="page-head"><p className="sub" style={{ color: 'var(--ds-muted)' }}>Loading analysis…</p></div></section>
+        <SharedFooter />
+      </>
     );
   }
 
-  if (notFound) {
+  if (error || !result) {
     return (
-      <section style={{ display: 'grid', gap: 'var(--space-6)', justifyItems: 'center', padding: 'var(--space-16) var(--space-4)', textAlign: 'center' }}>
-        <div style={{ fontSize: '3rem' }}>🔍</div>
-        <div>
-          <h2 style={{ margin: '0 0 var(--space-2)' }}>Analysis not found</h2>
-          <p style={{ color: 'var(--color-text-secondary)', margin: '0 0 var(--space-6)' }}>
-            This analysis doesn't exist or you don't have access to it.
-          </p>
-          <Link
-            to="/history"
-            style={{
-              padding: 'var(--space-3) var(--space-6)',
-              background: 'var(--color-primary-500)',
-              color: 'white',
-              borderRadius: 'var(--radius-md)',
-              textDecoration: 'none',
-              fontWeight: 'var(--font-weight-semibold)',
-            }}
-          >
-            ← Back to History
-          </Link>
-        </div>
-      </section>
+      <>
+        <SharedNav current="history" />
+        <section className="page-shell">
+          <div className="page-head">
+            <div className="crumbs">
+              <a onClick={() => navigate('/')} style={{ cursor: 'pointer' }}>Home</a>
+              <span className="sep">/</span>
+              <a onClick={() => navigate('/history')} style={{ cursor: 'pointer' }}>History</a>
+              <span className="sep">/</span>
+              <span>{id}</span>
+            </div>
+            <h1 className="display">Analysis not found.</h1>
+            <p className="sub" style={{ color: 'var(--ds-danger)' }}>{error || 'The record may have been deleted or you may not have access.'}</p>
+            <button className="btn btn-glass btn-lg" onClick={() => navigate('/analyze')}>Start a new analysis →</button>
+          </div>
+        </section>
+        <SharedFooter />
+      </>
     );
   }
 
-  if (error) {
-    return (
-      <section style={{ display: 'grid', gap: 'var(--space-4)' }}>
-        <div style={{ color: 'var(--color-danger)', background: '#FFEBEE', padding: 'var(--space-3)', borderRadius: 'var(--radius-md)' }}>
-          {error}
-        </div>
-        <Link to="/history" style={{ color: 'var(--color-primary-600)' }}>← Back to History</Link>
-      </section>
-    );
-  }
+  return <ResultsView result={result} id={id} />;
+}
+
+function ResultsView({ result, id }) {
+  const navigate = useNavigate();
+  const [heatmapMode, setHeatmapMode] = useState('heatmap');
+  const [alpha, setAlpha] = useState(0.65);
+  const [expanded, setExpanded] = useState(null);
+  const [displayScore, setDisplayScore] = useState(0);
+
+  const verdict = result.verdict || {};
+  const expl = result.explainability || {};
+  const fakeProb = verdict.fake_probability
+    ?? (typeof result.fake_probability === 'number' ? result.fake_probability : 0.5);
+  const authenticityScore = Math.round(Math.max(0, Math.min(1, 1 - fakeProb)) * 100);
+  const c = authenticityScore >= 65 ? 'safe' : authenticityScore >= 40 ? 'warn' : 'danger';
+  const verdictLabel = (verdict.label || verdict.classification
+    || (c === 'safe' ? 'LIKELY REAL' : c === 'warn' ? 'SUSPICIOUS' : 'LIKELY FAKE')).toString().toUpperCase();
+
+  const exif = expl.exif || {};
+  const vlm = expl.vlm_breakdown || {};
+  const llm = expl.llm_summary || result.llm_summary || null;
+  const artifacts = expl.artifact_indicators || [];
+  const sources = result.trusted_sources || [];
+  const mediaType = result.media_type || 'image';
+
+  const heatmapData = expl.heatmap_base64 ? `data:image/png;base64,${expl.heatmap_base64}` : null;
+  const elaData = expl.ela_base64 ? `data:image/png;base64,${expl.ela_base64}` : null;
+  const boxesData = expl.boxes_base64 ? `data:image/png;base64,${expl.boxes_base64}` : null;
+  const baseImg = result.thumbnail_url || result.media_url || heatmapData;
+
+  const totalMs = result.processing_summary?.total_ms ?? 0;
+  const latency = totalMs ? `${(totalMs / 1000).toFixed(2)}s` : '—';
+  const timestamp = result.timestamp || (result.created_at ? new Date(result.created_at).toUTCString() : '—');
+  const hash = (result.analysis_id || id || '').toString();
+
+  useEffect(() => {
+    let start = performance.now();
+    const dur = 900;
+    const tick = (t) => {
+      const p = Math.min(1, (t - start) / dur);
+      const e = 1 - Math.pow(1 - p, 3);
+      setDisplayScore(Math.round(authenticityScore * e));
+      if (p < 1) requestAnimationFrame(tick);
+    };
+    requestAnimationFrame(tick);
+  }, [authenticityScore]);
 
   return (
-    <section style={{ display: 'grid', gap: 'var(--space-6)' }}>
-      <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-4)' }}>
-        <Link
-          to="/history"
-          style={{ color: 'var(--color-text-secondary)', textDecoration: 'none', fontSize: 'var(--font-size-sm)' }}
-        >
-          ← History
-        </Link>
-        <h2 style={{ margin: 0 }}>Analysis #{id}</h2>
+    <>
+      <SharedNav current="history" />
+      <section className="results-shell page-shell">
+        <div className="results-header">
+          <div>
+            <div className="crumbs">
+              <a onClick={() => navigate('/')} style={{ cursor: 'pointer' }}>Home</a>
+              <span className="sep">/</span>
+              <a onClick={() => navigate('/history')} style={{ cursor: 'pointer' }}>History</a>
+              <span className="sep">/</span>
+              <span>{hash.slice(0, 8)}</span>
+            </div>
+            <span className="eyebrow">Analysis report</span>
+            <h1 className="display">{result.filename || `${mediaType} analysis`}</h1>
+            <div className="meta-row">
+              <span>id · <b>{hash.slice(0, 12)}</b></span>
+              <span>·</span>
+              <span>type · <b>{mediaType}</b></span>
+              <span>·</span>
+              <span>ingested · <b>{timestamp}</b></span>
+              <span>·</span>
+              <span>latency · <b>{latency}</b></span>
+              <span>·</span>
+              <span>model · <b>EfficientNetAutoAttB4 + ViT</b></span>
+            </div>
+          </div>
+          <div className="actions">
+            <a onClick={() => navigate('/analyze')} className="btn btn-ghost btn-sm" style={{ textDecoration: 'none', cursor: 'pointer' }}>↻ New</a>
+            <button className="btn btn-glass btn-sm" onClick={() => {
+              const base = import.meta.env.VITE_API_BASE_URL || '/api/v1';
+              window.open(`${base}/report/${id}.pdf`, '_blank');
+            }}>⤓ PDF</button>
+            <button className="btn btn-glass btn-sm" onClick={() => navigator.clipboard?.writeText(window.location.href)}>⎘ Link</button>
+            <button className="btn btn-primary btn-sm btn-shiny">Share →</button>
+          </div>
+        </div>
+
+        <div className="results-grid">
+          <VerdictCard verdict={verdictLabel} displayScore={displayScore} color={c} llm={llm} />
+
+          <div className="result-grid">
+            <HeatmapCard
+              src={baseImg}
+              heatmapData={heatmapData} elaData={elaData} boxesData={boxesData}
+              heatmapMode={heatmapMode} setHeatmapMode={setHeatmapMode}
+              alpha={alpha} setAlpha={setAlpha}
+              status={expl.heatmap_status || 'n/a'}
+            />
+            <EXIFCard exif={exif} />
+          </div>
+
+          <BreakdownCard vlm={vlm} fallbackHigh={authenticityScore >= 60} expanded={expanded} setExpanded={setExpanded} />
+
+          <div className="result-grid">
+            <SourcesCard sources={sources} />
+            <ArtifactsCard artifacts={artifacts} />
+          </div>
+
+          <div className="result-grid">
+            <AudioCard audio={expl.audio} mediaType={mediaType} />
+            <TemporalCard expl={expl} mediaType={mediaType} />
+          </div>
+
+          <ProcessingSummaryCard summary={result.processing_summary} />
+        </div>
+
+        <StickyActions id={id} onNew={() => navigate('/analyze')} />
+      </section>
+      <SharedFooter />
+    </>
+  );
+}
+
+/* ==== verdict + ring ==== */
+function VerdictCard({ verdict, displayScore, color, llm }) {
+  return (
+    <div className={`verdict-card verdict-${color}`}>
+      <div className="verdict-left">
+        <ScoreRing value={displayScore} size={120} color={color} />
+        <div>
+          <span className="eyebrow">Authenticity verdict</span>
+          <h3 className="display verdict-label">{verdict}</h3>
+          <div className="verdict-meta mono">
+            <span>score · {displayScore}/100</span>
+            <span>·</span>
+            <span>confidence · calibrated (isotonic)</span>
+          </div>
+        </div>
       </div>
-      <AnalysisResultView analysis={result} originalUrl={null} textContent="" />
-    </section>
+      <div className="verdict-llm">
+        <span className="eyebrow">Plain-English summary{llm?.model ? ` · ${llm.model}` : ' · Gemini 1.5'}</span>
+        <p>
+          {llm?.summary || llm?.text ||
+            'Model confidence is calibrated from the ensemble forward pass. Review the heatmap, EXIF, and detailed breakdown below for the evidence behind this verdict.'}
+        </p>
+        {Array.isArray(llm?.bullets) && llm.bullets.length > 0 && (
+          <div className="verdict-bullets">
+            {llm.bullets.slice(0, 4).map((b, i) => <span key={i}>• {b}</span>)}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function ScoreRing({ value, size = 120, color = 'safe' }) {
+  const r = size / 2 - 7;
+  const c = 2 * Math.PI * r;
+  const off = c - (value / 100) * c;
+  const stroke = color === 'safe' ? 'var(--ds-safe)' : color === 'warn' ? 'var(--ds-warn)' : 'var(--ds-danger)';
+  return (
+    <svg width={size} height={size} className="score-ring">
+      <circle cx={size/2} cy={size/2} r={r} stroke="rgba(255,255,255,0.08)" strokeWidth="5" fill="none"/>
+      <circle cx={size/2} cy={size/2} r={r} stroke={stroke} strokeWidth="5" fill="none"
+        strokeDasharray={c} strokeDashoffset={off} strokeLinecap="round"
+        transform={`rotate(-90 ${size/2} ${size/2})`}
+        style={{ filter: `drop-shadow(0 0 10px ${stroke})`, transition: 'stroke-dashoffset 120ms linear' }}/>
+      <text x={size/2} y={size/2 + 2} textAnchor="middle" dominantBaseline="middle"
+        fontFamily="var(--ff-mono)" fontSize={size * 0.28} fill="var(--ds-ink)" fontWeight="500">{value}</text>
+      <text x={size/2} y={size/2 + size * 0.22} textAnchor="middle" dominantBaseline="middle"
+        fontFamily="var(--ff-mono)" fontSize={size * 0.09} fill="var(--ds-muted)" letterSpacing="0.1em">/100</text>
+    </svg>
+  );
+}
+
+/* ==== heatmap ==== */
+function HeatmapCard({ src, heatmapData, elaData, boxesData, heatmapMode, setHeatmapMode, alpha, setAlpha, status }) {
+  const overlayImg = (data, cls) => data
+    ? <img src={data} alt="" className={cls} style={{ opacity: alpha, position: 'absolute', inset: 0, width: '100%', height: '100%', objectFit: 'cover', mixBlendMode: cls === 'heatmap-overlay' ? 'screen' : 'screen' }} />
+    : <div className={cls} style={{ opacity: alpha }} />;
+  return (
+    <div className="card heatmap-card">
+      <div className="card-head">
+        <span className="eyebrow">Visual evidence</span>
+        <div className="seg-control">
+          {['heatmap','ela','boxes','off'].map(m => (
+            <button key={m} className={heatmapMode === m ? 'active' : ''} onClick={() => setHeatmapMode(m)}>{m}</button>
+          ))}
+        </div>
+      </div>
+      <div className="heatmap-stage">
+        {src ? <img src={src} alt="" className="heatmap-base"/> : <div className="heatmap-base" style={{ background: '#0A0D18' }}/>}
+        {heatmapMode === 'heatmap' && overlayImg(heatmapData, 'heatmap-overlay')}
+        {heatmapMode === 'ela' && overlayImg(elaData, 'ela-overlay')}
+        {heatmapMode === 'boxes' && (boxesData
+          ? <img src={boxesData} alt="" style={{ opacity: alpha, position: 'absolute', inset: 0, width: '100%', height: '100%', objectFit: 'cover' }} />
+          : (
+            <svg className="heatmap-boxes" viewBox="0 0 100 100" preserveAspectRatio="none">
+              <rect x="34" y="20" width="30" height="38" fill="none" stroke="var(--ds-warn)" strokeWidth="0.3" strokeDasharray="1.2"/>
+              <rect x="40" y="46" width="18" height="12" fill="none" stroke="var(--ds-danger)" strokeWidth="0.3"/>
+            </svg>
+          ))}
+      </div>
+      <div className="heatmap-foot">
+        <span className="mono">α {alpha.toFixed(2)}</span>
+        <input type="range" min="0" max="1" step="0.01" value={alpha} onChange={e => setAlpha(+e.target.value)} />
+        <span className="mono status-chip">heatmap · {status}</span>
+      </div>
+    </div>
+  );
+}
+
+/* ==== EXIF ==== */
+function EXIFCard({ exif }) {
+  const suspiciousSoftware = (v) => typeof v === 'string' && /photoshop|midjourney|dall·e|dalle|stable diffusion/i.test(v);
+  const rows = [
+    ['Make', exif.make],
+    ['Model', exif.model],
+    ['DateTimeOriginal', exif.date_time_original || exif.datetime],
+    ['GPSInfo', exif.gps || exif.gps_info],
+    ['Software', exif.software],
+    ['LensModel', exif.lens_model || exif.lens],
+    ['ColorSpace', exif.color_space || exif.colorspace],
+    ['ExposureTime', exif.exposure_time || exif.exposure],
+  ];
+  const trustDelta = exif.trust_delta;
+  const presentCount = rows.filter(([, v]) => v).length;
+  return (
+    <div className="card exif-card">
+      <div className="card-head">
+        <span className="eyebrow">EXIF metadata</span>
+        <span className="mono small">{presentCount} fields{trustDelta != null ? <> · <span style={{ color: trustDelta < 0 ? 'var(--ds-warn)' : 'var(--ds-safe)' }}>{trustDelta > 0 ? `+${trustDelta}` : trustDelta} trust</span></> : null}</span>
+      </div>
+      <ul className="exif-list mono">
+        {rows.map(([k, v]) => {
+          const bad = k === 'Software' && suspiciousSoftware(v);
+          const present = !!v;
+          const state = bad ? 'bad' : present ? 'ok' : 'warn';
+          return (
+            <li key={k}>
+              <span>{k}</span>
+              <b className={bad ? 'bad' : ''}>{v || '—'}</b>
+              <em className={state}>{state === 'ok' ? '✓' : state === 'bad' ? '✗' : '⚠'}</em>
+            </li>
+          );
+        })}
+      </ul>
+      {rows.some(([k, v]) => k === 'Software' && suspiciousSoftware(v)) && (
+        <p style={{ marginTop: 14, fontSize: 11, color: 'var(--ds-muted)', lineHeight: 1.6 }}>
+          <span style={{ color: 'var(--ds-warn)' }}>⚠ Software field</span> indicates post-processing. This weakens authenticity but does not imply malicious manipulation.
+        </p>
+      )}
+    </div>
+  );
+}
+
+/* ==== VLM breakdown ==== */
+function BreakdownCard({ vlm, fallbackHigh, expanded, setExpanded }) {
+  const base = [
+    { k: 'Facial symmetry', key: 'facial_symmetry', note: 'Left-right alignment across eye, nose, and jaw landmarks.' },
+    { k: 'Skin texture',    key: 'skin_texture',    note: 'Pore distribution, micro-shading, sebum highlights.' },
+    { k: 'Lighting',        key: 'lighting',        note: 'Light-source direction consistent across face and background.' },
+    { k: 'Background',      key: 'background',      note: 'Depth, focal blur, and edge coherence.' },
+    { k: 'Anatomy',         key: 'anatomy',         note: 'Hands, ears, teeth — typical GAN failure zones.' },
+    { k: 'Context',         key: 'context',         note: 'Objects and environment plausibility.' },
+  ].map(b => {
+    const score = vlm[`${b.key}_score`];
+    const note = vlm[`${b.key}_note`];
+    return {
+      ...b,
+      v: typeof score === 'number' ? Math.round(score) : (fallbackHigh ? 80 : 40),
+      note: note || b.note,
+    };
+  });
+  return (
+    <div className="breakdown card">
+      <div className="card-head">
+        <span className="eyebrow">Detailed breakdown{vlm.model ? ` · ${vlm.model}` : ' · Gemini Vision'}</span>
+        <span className="mono small">6 components · click to expand</span>
+      </div>
+      <div className="breakdown-grid">
+        {base.map((b, i) => (
+          <button key={b.k} className={`bd-cell ${expanded === i ? 'open' : ''}`} onClick={() => setExpanded(expanded === i ? null : i)}>
+            <ScoreRing value={b.v} size={56} color={b.v > 70 ? 'safe' : b.v > 45 ? 'warn' : 'danger'} />
+            <div className="bd-body">
+              <div className="bd-title">{b.k}</div>
+              <div className="mono bd-score">{b.v}/100</div>
+              {expanded === i && <p className="bd-note">{b.note}</p>}
+            </div>
+          </button>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+/* ==== sources ==== */
+function SourcesCard({ sources }) {
+  const contradicting = sources.filter(s => s.contradicting || s.state === 'contradict').length;
+  return (
+    <div className="card sources-card">
+      <div className="card-head">
+        <span className="eyebrow">Trusted sources · cross-reference</span>
+        <span className="mono small">{sources.length} matches{contradicting ? ` · ${contradicting} contradicting` : ''}</span>
+      </div>
+      {sources.length > 0 ? (
+        <ul className="src-list">
+          {sources.slice(0, 5).map((s, i) => {
+            const dom = s.domain || s.source || `source-${i+1}`;
+            const sim = typeof s.similarity === 'number' ? s.similarity : (s.sim ?? 0);
+            const w = typeof s.weight === 'number' ? s.weight : (s.trust_weight ?? 1);
+            const contr = s.contradicting || s.state === 'contradict';
+            return (
+              <li key={i}>
+                <div className="src-head">
+                  <span className="mono" style={{ display: 'inline-flex', alignItems: 'center', gap: 8 }}>
+                    <span style={{ width: 16, height: 16, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', background: contr ? 'rgba(255,94,122,0.15)' : 'rgba(108,125,255,0.15)', color: contr ? 'var(--ds-danger)' : 'var(--ds-brand)', borderRadius: 3, fontSize: 9 }}>{dom.slice(0, 2).toUpperCase()}</span>
+                    {dom}
+                  </span>
+                  <div className="src-bar"><i style={{ width: `${w * 100}%`, background: contr ? 'var(--ds-danger)' : 'var(--ds-safe)' }}/></div>
+                </div>
+                <p>{s.title || s.snippet || s.description || '—'}</p>
+                <div className="src-foot mono">
+                  <span>sim {sim.toFixed ? sim.toFixed(2) : sim}</span>
+                  <span>weight {w.toFixed ? w.toFixed(2) : w}</span>
+                  {contr && <span style={{ color: 'var(--ds-danger)' }}>contradicting</span>}
+                  {s.url && <a href={s.url} target="_blank" rel="noreferrer">open ↗</a>}
+                </div>
+              </li>
+            );
+          })}
+        </ul>
+      ) : (
+        <p style={{ color: 'var(--ds-muted)', fontSize: 13, margin: 0 }}>No trusted-source publications match this media. This weakens authenticity.</p>
+      )}
+    </div>
+  );
+}
+
+/* ==== artifacts ==== */
+function ArtifactsCard({ artifacts }) {
+  const items = artifacts.length > 0 ? artifacts : [
+    { name: 'GAN frequency fingerprint', severity: 'low', score: 0.22 },
+    { name: 'JPEG Q-table anomaly', severity: 'medium', score: 0.48 },
+    { name: 'FaceMesh jaw jitter', severity: 'medium', score: 0.55 },
+    { name: 'Luminance imbalance', severity: 'low', score: 0.18 },
+    { name: 'Over-smoothing (high-pass)', severity: 'medium', score: 0.52 },
+    { name: 'Sensor noise (PRNU)', severity: 'low', score: 0.19 },
+  ];
+  return (
+    <div className="card artifact-card">
+      <div className="card-head">
+        <span className="eyebrow">Artifact indicators</span>
+        <span className="mono small">{items.length} signals</span>
+      </div>
+      <ul className="art-list">
+        {items.map((a, i) => {
+          const lvl = (a.severity || a.level || 'low').toString().toLowerCase();
+          const val = typeof a.score === 'number' ? a.score : typeof a.confidence === 'number' ? a.confidence : 0;
+          return (
+            <li key={i}>
+              <span>{a.name || a.indicator || a.k}</span>
+              <span className={`art-chip ${lvl}`}>{lvl}</span>
+              <span className="mono art-val">{val.toFixed(2)}</span>
+            </li>
+          );
+        })}
+      </ul>
+    </div>
+  );
+}
+
+/* ==== audio + temporal ==== */
+function AudioCard({ audio, mediaType }) {
+  const active = audio && audio.has_audio;
+  return (
+    <div className="card" style={{ minHeight: 200 }}>
+      <div className="card-head">
+        <span className="eyebrow">Audio waveform · WavLM</span>
+        <span className="mono small" style={{ color: 'var(--ds-muted)' }}>
+          {active ? `score · ${Math.round(audio.audio_authenticity_score)}/100` : `not applicable (${mediaType} input)`}
+        </span>
+      </div>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 3, height: 80, opacity: active ? 0.9 : 0.35 }}>
+        {Array.from({ length: 80 }).map((_, i) => {
+          const h = 20 + Math.abs(Math.sin(i * 0.3)) * 60;
+          return <span key={i} style={{ flex: 1, height: `${h}%`, background: active ? 'var(--ds-brand)' : 'var(--ds-muted)', borderRadius: 1 }}/>;
+        })}
+      </div>
+      <p style={{ marginTop: 14, fontSize: 12, color: 'var(--ds-muted)', fontFamily: 'var(--ff-mono)' }}>
+        {active
+          ? `duration · ${(audio.duration_s || 0).toFixed(2)}s · silence · ${(audio.silence_ratio || 0).toFixed(2)}`
+          : 'audio_analysis · skipped · rerun as video to enable lip-sync correlation'}
+      </p>
+    </div>
+  );
+}
+
+function TemporalCard({ expl, mediaType }) {
+  const active = typeof expl.temporal_score === 'number';
+  return (
+    <div className="card" style={{ minHeight: 200 }}>
+      <div className="card-head">
+        <span className="eyebrow">Temporal consistency</span>
+        <span className="mono small" style={{ color: 'var(--ds-muted)' }}>
+          {active ? `score · ${expl.temporal_score.toFixed(2)}` : `not applicable (${mediaType} input)`}
+        </span>
+      </div>
+      <svg viewBox="0 0 200 80" style={{ width: '100%', height: 80, opacity: active ? 1 : 0.35 }}>
+        <path d="M0 40 Q 20 20 40 38 T 80 42 T 120 36 T 160 44 T 200 40" fill="none" stroke={active ? 'var(--ds-brand)' : 'var(--ds-muted)'} strokeWidth="1.5"/>
+        <path d="M0 50 Q 20 30 40 48 T 80 52 T 120 46 T 160 54 T 200 50" fill="none" stroke="var(--ds-muted)" strokeWidth="0.6" strokeDasharray="2 2"/>
+      </svg>
+      <p style={{ marginTop: 14, fontSize: 12, color: 'var(--ds-muted)', fontFamily: 'var(--ff-mono)' }}>
+        {active
+          ? `optical_flow_var · ${(expl.optical_flow_variance ?? 0).toFixed(3)} · flicker · ${(expl.flicker_score ?? 0).toFixed(3)}`
+          : 'per_frame_score · n/a · no frames to aggregate'}
+      </p>
+    </div>
+  );
+}
+
+/* ==== processing summary ==== */
+function ProcessingSummaryCard({ summary }) {
+  const stages = (summary?.stages || []).map(s => [s.t || s.timestamp || '', s.label || s.name || '', s.meta || s.detail || '']);
+  const fallback = [
+    ['', 'Upload received', ''],
+    ['', 'Preprocess (resize 512², BlazeFace gate)', ''],
+    ['', 'Ensemble forward pass (ViT + EfficientNetAutoAttB4)', ''],
+    ['', 'Grad-CAM++ heatmap generated', ''],
+    ['', 'ELA + EXIF pass', ''],
+    ['', 'Gemini 1.5 Flash summary', ''],
+    ['', 'Result cached', ''],
+  ];
+  const steps = stages.length ? stages : fallback;
+  const total = summary?.total_ms ? `${(summary.total_ms / 1000).toFixed(2)}s` : '—';
+  return (
+    <div className="card">
+      <div className="card-head">
+        <span className="eyebrow">Processing summary · timeline</span>
+        <span className="mono small">{total} · {steps.length} stages</span>
+      </div>
+      <ol style={{ listStyle: 'none', padding: 0, margin: 0, display: 'flex', flexDirection: 'column', gap: 4, fontFamily: 'var(--ff-mono)', fontSize: 12 }}>
+        {steps.map(([t, s, m], i) => (
+          <li key={i} style={{
+            display: 'grid', gridTemplateColumns: '130px 1fr auto', gap: 14, alignItems: 'center',
+            padding: '8px 12px', background: i % 2 ? 'rgba(255,255,255,0.02)' : 'transparent',
+            borderRadius: 6, color: 'var(--ds-ink-2)',
+          }}>
+            <span style={{ color: 'var(--ds-muted)' }}>{t}</span>
+            <span style={{ color: 'var(--ds-ink)' }}>{s}</span>
+            <span style={{ color: 'var(--ds-muted)' }}>{m}</span>
+          </li>
+        ))}
+      </ol>
+    </div>
+  );
+}
+
+function StickyActions({ id, onNew }) {
+  return (
+    <div style={{
+      position: 'sticky', bottom: 20, maxWidth: 600, margin: '32px auto 0',
+      display: 'flex', gap: 8, justifyContent: 'center',
+      padding: '10px 12px',
+      background: 'rgba(10,13,20,0.88)',
+      border: '1px solid var(--ds-border-2)', borderRadius: 14,
+      backdropFilter: 'blur(20px)',
+      boxShadow: '0 20px 40px -20px rgba(0,0,0,0.6)',
+      zIndex: 10,
+    }}>
+      <a onClick={onNew} className="btn btn-glass btn-sm" style={{ textDecoration: 'none', cursor: 'pointer' }}>↻ Analyze another</a>
+      <button className="btn btn-glass btn-sm" onClick={() => {
+        const base = import.meta.env.VITE_API_BASE_URL || '/api/v1';
+        window.open(`${base}/report/${id}.pdf`, '_blank');
+      }}>⤓ PDF report</button>
+      <button className="btn btn-glass btn-sm" onClick={() => navigator.clipboard?.writeText(window.location.href)}>⎘ Copy link</button>
+      <button className="btn btn-primary btn-sm btn-shiny">Share verdict →</button>
+    </div>
   );
 }

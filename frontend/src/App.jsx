@@ -1,6 +1,4 @@
-import { Routes, Route, useLocation } from 'react-router-dom';
-import Navbar from './components/layout/Navbar.jsx';
-import Footer from './components/layout/Footer.jsx';
+import { Routes, Route } from 'react-router-dom';
 import HomePage from './pages/HomePage.jsx';
 import AnalyzePage from './pages/AnalyzePage.jsx';
 import ResultsPage from './pages/ResultsPage.jsx';
@@ -13,36 +11,25 @@ import { useAuth } from './contexts/AuthContext.jsx';
 
 export default function App() {
   const { authReady } = useAuth();
-  const location = useLocation();
-  const isHome = location.pathname === '/';
 
   if (!authReady) {
     return (
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', minHeight: '100vh' }}>
-        <div style={{ color: 'var(--color-text-secondary)', fontSize: 'var(--font-size-sm)' }}>Loading…</div>
+        <div style={{ color: 'var(--ds-muted, #7A8299)', fontSize: 14 }}>Loading…</div>
       </div>
     );
   }
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', minHeight: '100vh' }}>
-      <Navbar />
-      <main style={isHome
-        ? { flex: 1, width: '100%' }
-        : { flex: 1, padding: 'var(--space-8)', maxWidth: 1200, width: '100%', margin: '0 auto' }
-      }>
-        <Routes>
-          <Route path="/" element={<HomePage />} />
-          <Route path="/analyze" element={<AnalyzePage />} />
-          <Route path="/results/:id" element={<ResultsPage />} />
-          <Route path="/history" element={<HistoryPage />} />
-          <Route path="/login" element={<LoginPage />} />
-          <Route path="/register" element={<RegisterPage />} />
-          <Route path="/about" element={<AboutPage />} />
-          <Route path="*" element={<NotFoundPage />} />
-        </Routes>
-      </main>
-      <Footer />
-    </div>
+    <Routes>
+      <Route path="/" element={<HomePage />} />
+      <Route path="/analyze" element={<AnalyzePage />} />
+      <Route path="/results/:id" element={<ResultsPage />} />
+      <Route path="/history" element={<HistoryPage />} />
+      <Route path="/login" element={<LoginPage />} />
+      <Route path="/register" element={<RegisterPage />} />
+      <Route path="/about" element={<AboutPage />} />
+      <Route path="*" element={<NotFoundPage />} />
+    </Routes>
   );
 }

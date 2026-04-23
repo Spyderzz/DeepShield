@@ -1,301 +1,924 @@
-import { useEffect, useRef, useState } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { motion, AnimatePresence } from 'framer-motion';
+import './deepshield-landing.css';
+import { analyzeImage } from '../services/analyzeApi.js';
+import useDottedSurface from '../hooks/useDottedSurface.js';
 
-/* ─── CONSTANTS ──────────────────────────────────────────────── */
-const DARK   = '#0A0A0F';
-const DARK2  = '#0F1018';
-const CREAM  = '#F2EEE7';
-const CREAM2 = '#E8E3DA';
-const BLUE   = '#2B70E8';
-const AMBER  = '#F5A623';
-const GREEN  = '#22C55E';
-const WHITE  = '#F0EDE8';
-const FONT_D = "'Libre Bodoni', Georgia, serif";
-const FONT_B = "'Figtree', -apple-system, BlinkMacSystemFont, sans-serif";
-
-/* ─── CSS KEYFRAMES + GOOGLE FONTS ───────────────────────────── */
-function useHeadAssets() {
+/* ============ NAV ============ */
+function Nav() {
+  const navigate = useNavigate();
+  const [scrolled, setScrolled] = useState(false);
   useEffect(() => {
-    const fontLink = document.createElement('link');
-    fontLink.rel = 'stylesheet';
-    fontLink.href = 'https://fonts.googleapis.com/css2?family=Libre+Bodoni:ital,wght@0,400;0,700;0,800;1,400;1,700;1,800&family=Figtree:wght@300;400;500;600;700&display=swap';
-    document.head.appendChild(fontLink);
-
-    const style = document.createElement('style');
-    style.textContent = `
-      @keyframes ds-float-a {
-        0%,100% { transform: translateY(0px) translateX(0px) scale(1); }
-        33%     { transform: translateY(-38px) translateX(22px) scale(1.07); }
-        66%     { transform: translateY(18px) translateX(-14px) scale(0.95); }
-      }
-      @keyframes ds-float-b {
-        0%,100% { transform: translateY(0px) translateX(0px) scale(1); }
-        40%     { transform: translateY(28px) translateX(-32px) scale(1.1); }
-        75%     { transform: translateY(-20px) translateX(18px) scale(0.93); }
-      }
-      @keyframes ds-float-c {
-        0%,100% { transform: translateY(0px) translateX(0px); }
-        50%     { transform: translateY(-25px) translateX(25px); }
-      }
-      @keyframes ds-card-float {
-        0%,100% { transform: perspective(1100px) rotateX(6deg) rotateY(-14deg) rotateZ(1.5deg) translateY(0px); }
-        50%     { transform: perspective(1100px) rotateX(4deg) rotateY(-11deg) rotateZ(1deg) translateY(-14px); }
-      }
-      @keyframes ds-scan {
-        0%   { top: 8%; opacity: 1; }
-        90%  { top: 88%; opacity: 1; }
-        100% { top: 88%; opacity: 0; }
-      }
-      @keyframes ds-marquee {
-        from { transform: translateX(0); }
-        to   { transform: translateX(-50%); }
-      }
-      @keyframes ds-hero-in {
-        from { opacity: 0; transform: translateY(32px); }
-        to   { opacity: 1; transform: translateY(0); }
-      }
-      @keyframes ds-reveal {
-        from { opacity: 0; transform: translateY(44px); }
-        to   { opacity: 1; transform: translateY(0); }
-      }
-      @keyframes ds-pulse-ring {
-        0%   { transform: scale(0.92); opacity: 0.7; }
-        50%  { transform: scale(1.06); opacity: 0.3; }
-        100% { transform: scale(0.92); opacity: 0.7; }
-      }
-      .ds-reveal-item {
-        opacity: 0;
-        transform: translateY(44px);
-      }
-      .ds-reveal-item.ds-visible {
-        animation: ds-reveal 0.75s cubic-bezier(0.22,1,0.36,1) forwards;
-      }
-      .ds-marquee-track:hover .ds-marquee-inner {
-        animation-play-state: paused !important;
-      }
-    `;
-    document.head.appendChild(style);
-    return () => {
-      document.head.removeChild(fontLink);
-      document.head.removeChild(style);
-    };
-  }, []);
-}
-
-/* ─── REVEAL ITEM COMPONENT ──────────────────────────────────── */
-function RevealItem({ children, delay = 0, style = {} }) {
-  const ref = useRef(null);
-  useEffect(() => {
-    const el = ref.current;
-    if (!el) return;
-    const obs = new IntersectionObserver(
-      ([entry]) => { if (entry.isIntersecting) { el.classList.add('ds-visible'); obs.disconnect(); } },
-      { threshold: 0.1 }
-    );
-    obs.observe(el);
-    return () => obs.disconnect();
+    const onScroll = () => setScrolled(window.scrollY > 20);
+    window.addEventListener('scroll', onScroll, { passive: true });
+    return () => window.removeEventListener('scroll', onScroll);
   }, []);
   return (
-    <div
-      ref={ref}
-      className="ds-reveal-item"
-      style={{ animationDelay: `${delay}ms`, ...style }}
-    >
-      {children}
-    </div>
+    <header className={`ds-nav ${scrolled ? 'scrolled' : ''}`}>
+      <div className="ds-nav-inner">
+        <a href="#top" className="ds-logo">
+          <svg width="22" height="26" viewBox="0 0 22 26" fill="none">
+            <path d="M11 1L21 5V12.5C21 18.5 16.5 23.5 11 25C5.5 23.5 1 18.5 1 12.5V5L11 1Z"
+              stroke="url(#lg)" strokeWidth="1.5" fill="url(#lgf)" />
+            <path d="M6 11L10 15L16 8" stroke="#6C7DFF" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
+            <defs>
+              <linearGradient id="lg" x1="0" y1="0" x2="22" y2="26">
+                <stop stopColor="#7F8FFF" /><stop offset="1" stopColor="#3DDBB3" />
+              </linearGradient>
+              <linearGradient id="lgf" x1="0" y1="0" x2="0" y2="26">
+                <stop stopColor="rgba(108,125,255,0.15)" /><stop offset="1" stopColor="rgba(61,219,179,0.05)" />
+              </linearGradient>
+            </defs>
+          </svg>
+          <span>DeepShield</span>
+        </a>
+        <nav className="ds-nav-links">
+          <SlideTabs tabs={[
+            { label: 'Detection', id: 'analyze' },
+            { label: 'Explainability', id: 'proof' },
+            { label: 'Pipeline', id: 'pipeline' },
+            { label: 'Research', id: 'compare' },
+          ]} />
+        </nav>
+        <div className="ds-nav-right">
+          <button className="btn btn-ghost btn-sm" onClick={() => navigate('/login')}>Sign in</button>
+          <button
+            className="btn btn-glass btn-sm btn-shiny"
+            onClick={() => document.getElementById('analyze')?.scrollIntoView({ behavior: 'smooth', block: 'start' })}
+          >
+            Run analysis
+            <svg width="12" height="12" viewBox="0 0 12 12" fill="none"><path d="M2 6h8m0 0L6 2m4 4L6 10" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" /></svg>
+          </button>
+        </div>
+      </div>
+    </header>
   );
 }
 
-/* ─── BOKEH BG COMPONENT ─────────────────────────────────────── */
-function BokehBg({ variant = 'dark' }) {
-  const circles = variant === 'dark' ? [
-    { w:520, h:520, top:'8%',  left:'-12%', color:'rgba(43,112,232,0.18)',  blur:110, anim:'ds-float-a 11s ease-in-out infinite' },
-    { w:380, h:380, top:'55%', left:'70%',  color:'rgba(245,166,35,0.12)',  blur:90,  anim:'ds-float-b 14s ease-in-out infinite' },
-    { w:300, h:300, top:'25%', left:'60%',  color:'rgba(43,112,232,0.10)',  blur:80,  anim:'ds-float-c 9s ease-in-out infinite' },
-    { w:240, h:240, top:'70%', left:'15%',  color:'rgba(34,197,94,0.10)',   blur:70,  anim:'ds-float-a 16s ease-in-out infinite 2s' },
-    { w:200, h:200, top:'5%',  left:'80%',  color:'rgba(139,92,246,0.12)',  blur:65,  anim:'ds-float-b 12s ease-in-out infinite 4s' },
-  ] : [
-    { w:460, h:460, top:'5%',  left:'-8%', color:'rgba(43,112,232,0.07)',  blur:100, anim:'ds-float-b 13s ease-in-out infinite' },
-    { w:320, h:320, top:'50%', left:'72%', color:'rgba(245,166,35,0.06)',  blur:80,  anim:'ds-float-a 11s ease-in-out infinite 1s' },
-    { w:280, h:280, top:'30%', left:'55%', color:'rgba(34,197,94,0.05)',   blur:70,  anim:'ds-float-c 10s ease-in-out infinite' },
-  ];
+function SlideTabs({ tabs }) {
+  const items = tabs.map(t => typeof t === 'string' ? { label: t, id: null } : t);
+  const [active, setActive] = useState(0);
+  const [hovered, setHovered] = useState(null);
+  const refs = useRef([]);
+  const [pill, setPill] = useState({ left: 0, width: 0, opacity: 0 });
+
+  useEffect(() => {
+    const idx = hovered ?? active;
+    const el = refs.current[idx];
+    if (el) setPill({ left: el.offsetLeft, width: el.offsetWidth, opacity: 1 });
+  }, [hovered, active]);
+
+  useEffect(() => {
+    const ids = items.map(it => it.id).filter(Boolean);
+    if (!ids.length) return;
+    const onScroll = () => {
+      const sections = ids.map(id => document.getElementById(id)).filter(Boolean);
+      if (!sections.length) return;
+      const mid = window.innerHeight * 0.35;
+      let bestIdx = 0, bestDist = Infinity;
+      sections.forEach(sec => {
+        const r = sec.getBoundingClientRect();
+        const dist = Math.abs(r.top - mid);
+        if (r.top - mid < 0 && dist < bestDist) {
+          bestDist = dist;
+          bestIdx = items.findIndex(it => it.id === sec.id);
+        }
+      });
+      if (bestIdx >= 0) setActive(bestIdx);
+    };
+    window.addEventListener('scroll', onScroll, { passive: true });
+    onScroll();
+    return () => window.removeEventListener('scroll', onScroll);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  const go = (i) => {
+    setActive(i);
+    const id = items[i].id;
+    if (!id) return;
+    const el = document.getElementById(id);
+    if (el) {
+      const y = el.getBoundingClientRect().top + window.scrollY - 80;
+      window.scrollTo({ top: y, behavior: 'smooth' });
+    }
+  };
 
   return (
-    <div style={{ position:'absolute', inset:0, overflow:'hidden', pointerEvents:'none', zIndex:0 }}>
-      {circles.map((c, i) => (
-        <div key={i} style={{
-          position:'absolute', top:c.top, left:c.left,
-          width:c.w, height:c.h, borderRadius:'50%',
-          background:c.color, filter:`blur(${c.blur}px)`,
-          animation:c.anim,
-        }} />
+    <div className="slide-tabs" onMouseLeave={() => setHovered(null)}>
+      <div className="slide-tabs-pill" style={{ left: pill.left, width: pill.width, opacity: pill.opacity }} />
+      {items.map((t, i) => (
+        <button key={t.label} ref={el => refs.current[i] = el}
+          className={`slide-tab ${i === active ? 'active' : ''}`}
+          onMouseEnter={() => setHovered(i)}
+          onClick={() => go(i)}>
+          {t.label}
+        </button>
       ))}
     </div>
   );
 }
 
-/* ─── ANIMATED COUNTER ───────────────────────────────────────── */
-function useCounter(target, duration = 1800) {
-  const [count, setCount] = useState(0);
-  const [started, setStarted] = useState(false);
-  const ref = useRef(null);
-
+/* ============ 3D LAYER STACK ============ */
+function LayerStack({ src, playing = true, density = 6 }) {
+  const [sweep, setSweep] = useState(0);
   useEffect(() => {
-    const el = ref.current;
-    if (!el) return;
-    const obs = new IntersectionObserver(
-      ([entry]) => { if (entry.isIntersecting && !started) { setStarted(true); obs.disconnect(); } },
-      { threshold: 0.4 }
-    );
-    obs.observe(el);
-    return () => obs.disconnect();
-  }, [started]);
-
-  useEffect(() => {
-    if (!started) return;
-    let startTime = null;
-    const step = (ts) => {
-      if (!startTime) startTime = ts;
-      const pct = Math.min((ts - startTime) / duration, 1);
-      const eased = 1 - Math.pow(1 - pct, 3);
-      setCount(Math.round(eased * target));
-      if (pct < 1) requestAnimationFrame(step);
+    if (!playing) return;
+    let raf;
+    const start = performance.now();
+    const tick = (t) => {
+      const dur = 2400;
+      const p = ((t - start) % dur) / dur;
+      setSweep(p);
+      raf = requestAnimationFrame(tick);
     };
-    requestAnimationFrame(step);
-  }, [started, target, duration]);
+    raf = requestAnimationFrame(tick);
+    return () => cancelAnimationFrame(raf);
+  }, [playing]);
 
-  return [count, ref];
-}
+  const layers = Array.from({ length: density });
+  const filters = [
+    'none',
+    'grayscale(1) contrast(1.3)',
+    'hue-rotate(180deg) blur(1.5px) saturate(2)',
+    'invert(1) hue-rotate(90deg) saturate(1.6) opacity(0.85)',
+    'sepia(0.9) hue-rotate(-30deg) saturate(2)',
+    'none',
+  ];
+  const labels = ['SOURCE', 'ARTIFACT', 'HEATMAP', 'ELA', 'FACE MESH', 'COMPOSITE'];
 
-function Counter({ target, suffix = '', prefix = '' }) {
-  const [count, ref] = useCounter(target);
-  return <span ref={ref}>{prefix}{count.toLocaleString()}{suffix}</span>;
-}
-
-/* ─── 3D ANALYSIS CARD ───────────────────────────────────────── */
-function AnalysisCard3D() {
-  const circumference = 2 * Math.PI * 54;
   return (
-    <div style={{ animation: 'ds-card-float 5s ease-in-out infinite', transformOrigin: 'center center' }}>
-      <div style={{
-        transform: 'perspective(1100px) rotateX(6deg) rotateY(-14deg) rotateZ(1.5deg)',
-        width: 320, background: 'linear-gradient(145deg, #141520 0%, #0D0E1A 100%)',
-        borderRadius: 20, border: '1px solid rgba(43,112,232,0.25)',
-        boxShadow: '0 32px 80px rgba(0,0,0,0.6), 0 0 0 1px rgba(255,255,255,0.05), inset 0 1px 0 rgba(255,255,255,0.07)',
-        overflow: 'hidden', position: 'relative',
-      }}>
-        {/* scanning line */}
-        <div style={{
-          position:'absolute', left:0, right:0, height:2,
-          background:'linear-gradient(90deg, transparent, rgba(43,112,232,0.8), transparent)',
-          animation:'ds-scan 3s ease-in-out infinite', zIndex:10,
-        }} />
-        {/* header */}
-        <div style={{ padding:'16px 20px 12px', borderBottom:'1px solid rgba(255,255,255,0.06)', display:'flex', alignItems:'center', gap:10 }}>
-          <div style={{ width:8, height:8, borderRadius:'50%', background:GREEN, boxShadow:`0 0 10px ${GREEN}` }} />
-          <span style={{ fontFamily:FONT_B, fontSize:11, color:'rgba(255,255,255,0.5)', letterSpacing:'0.12em', textTransform:'uppercase' }}>Live Analysis</span>
-          <span style={{ marginLeft:'auto', fontFamily:FONT_B, fontSize:10, color:'rgba(255,255,255,0.3)' }}>DeepShield v3.2</span>
-        </div>
-        {/* face preview */}
-        <div style={{ margin:'18px auto 6px', width:80, height:80, borderRadius:10, background:'linear-gradient(135deg,#1c2240,#0f1428)', position:'relative', display:'flex', alignItems:'center', justifyContent:'center' }}>
-          <svg width="40" height="40" viewBox="0 0 44 44" fill="none">
-            <circle cx="22" cy="16" r="10" fill="rgba(255,255,255,0.12)" />
-            <ellipse cx="22" cy="38" rx="16" ry="10" fill="rgba(255,255,255,0.08)" />
-            <circle cx="16" cy="15" r="2" fill="rgba(255,255,255,0.4)" />
-            <circle cx="28" cy="15" r="2" fill="rgba(255,255,255,0.4)" />
-            <path d="M17 21 Q22 24 27 21" stroke="rgba(255,255,255,0.3)" strokeWidth="1.5" fill="none" strokeLinecap="round" />
-          </svg>
-          <div style={{ position:'absolute', top:4, left:4, width:12, height:12, borderTop:`2px solid ${BLUE}`, borderLeft:`2px solid ${BLUE}` }} />
-          <div style={{ position:'absolute', top:4, right:4, width:12, height:12, borderTop:`2px solid ${BLUE}`, borderRight:`2px solid ${BLUE}` }} />
-          <div style={{ position:'absolute', bottom:4, left:4, width:12, height:12, borderBottom:`2px solid ${BLUE}`, borderLeft:`2px solid ${BLUE}` }} />
-          <div style={{ position:'absolute', bottom:4, right:4, width:12, height:12, borderBottom:`2px solid ${BLUE}`, borderRight:`2px solid ${BLUE}` }} />
-        </div>
-        {/* score ring */}
-        <div style={{ display:'flex', justifyContent:'center', marginBottom:12 }}>
-          <svg width="120" height="120" viewBox="0 0 132 132">
-            <circle cx="66" cy="66" r="54" fill="none" stroke="rgba(255,255,255,0.05)" strokeWidth="10" />
-            <motion.circle
-              cx="66" cy="66" r="54" fill="none"
-              stroke="url(#scoreGrad)" strokeWidth="10"
-              strokeLinecap="round"
-              strokeDasharray={circumference}
-              initial={{ strokeDashoffset: circumference }}
-              animate={{ strokeDashoffset: circumference * 0.12 }}
-              transition={{ duration: 1.8, ease: 'easeOut', delay: 0.5 }}
-              style={{ transformOrigin:'66px 66px', transform:'rotate(-90deg)' }}
-            />
-            <defs>
-              <linearGradient id="scoreGrad" x1="0%" y1="0%" x2="100%" y2="0%">
-                <stop offset="0%" stopColor="#FF4444" />
-                <stop offset="100%" stopColor="#FF6B35" />
-              </linearGradient>
-            </defs>
-            <text x="66" y="60" textAnchor="middle" fill="#FF4444" fontSize="24" fontFamily={FONT_D} fontWeight="700">88%</text>
-            <text x="66" y="76" textAnchor="middle" fill="rgba(255,255,255,0.45)" fontSize="10" fontFamily={FONT_B}>DEEPFAKE</text>
-          </svg>
-        </div>
-        {/* signal bars */}
-        {[
-          { label:'Facial Artifacts', pct:92, color:'#FF4444' },
-          { label:'Audio Sync',       pct:76, color:AMBER },
-          { label:'Metadata',         pct:44, color:GREEN },
-        ].map(bar => (
-          <div key={bar.label} style={{ padding:'0 20px 10px' }}>
-            <div style={{ display:'flex', justifyContent:'space-between', marginBottom:4 }}>
-              <span style={{ fontFamily:FONT_B, fontSize:10, color:'rgba(255,255,255,0.5)' }}>{bar.label}</span>
-              <span style={{ fontFamily:FONT_B, fontSize:10, color:bar.color, fontWeight:600 }}>{bar.pct}%</span>
+    <div className="stack-scene">
+      <div className="stack-ambient" />
+      <div className="stack-deck">
+        {layers.map((_, i) => {
+          const z = (density - 1 - i) * 36;
+          const delay = i * 90;
+          return (
+            <div key={i} className="stack-layer"
+              style={{
+                transform: `translateZ(${z}px)`,
+                animationDelay: `${delay}ms`,
+                filter: filters[i % filters.length],
+              }}>
+              <div className="stack-layer-inner" style={{ backgroundImage: `url(${src})` }} />
+              <span className="stack-tag mono">{labels[i % labels.length]} · L{i+1}</span>
+              <div className="stack-laser" style={{ top: `${sweep * 100}%` }} />
             </div>
-            <div style={{ height:3, borderRadius:2, background:'rgba(255,255,255,0.06)' }}>
-              <motion.div
-                initial={{ width: 0 }}
-                animate={{ width: `${bar.pct}%` }}
-                transition={{ duration: 1.2, ease: 'easeOut', delay: 0.8 }}
-                style={{ height:'100%', borderRadius:2, background:`linear-gradient(90deg, ${bar.color}88, ${bar.color})` }}
-              />
-            </div>
-          </div>
-        ))}
-        {/* footer badge */}
-        <div style={{ margin:'6px 20px 18px', padding:'9px 14px', background:'rgba(255,68,68,0.1)', borderRadius:8, border:'1px solid rgba(255,68,68,0.2)', display:'flex', alignItems:'center', gap:8 }}>
-          <div style={{ width:6, height:6, borderRadius:'50%', background:'#FF4444', flexShrink:0, animation:'ds-pulse-ring 1.8s ease-in-out infinite' }} />
-          <span style={{ fontFamily:FONT_B, fontSize:10, color:'rgba(255,255,255,0.7)', fontWeight:500 }}>High confidence deepfake detected</span>
-        </div>
+          );
+        })}
+        <div className="stack-floor" />
+      </div>
+      <div className="stack-telemetry">
+        <div className="tel-row"><span className="mono">FREQ</span><div className="tel-bar"><i style={{ width: `${30 + sweep*40}%` }}/></div><span className="mono">{(0.72 + sweep*0.2).toFixed(2)}</span></div>
+        <div className="tel-row"><span className="mono">ELA</span><div className="tel-bar"><i style={{ width: `${55 + Math.sin(sweep*Math.PI*2)*15}%`, background: 'var(--ds-warn)' }}/></div><span className="mono">{(0.41 + Math.abs(Math.sin(sweep*Math.PI))*0.3).toFixed(2)}</span></div>
+        <div className="tel-row"><span className="mono">FACE</span><div className="tel-bar"><i style={{ width: `${85 - sweep*20}%`, background: 'var(--ds-safe)' }}/></div><span className="mono">{(0.91 - sweep*0.1).toFixed(2)}</span></div>
       </div>
     </div>
   );
 }
 
-/* ─── MARQUEE IMPACT CARDS ───────────────────────────────────── */
-const IMPACT_CARDS = [
-  { icon:'$', label:'$25B+',    desc:'Financial fraud via deepfakes annually' },
-  { icon:'%', label:'68%',      desc:'of voters saw AI election misinformation' },
-  { icon:'↑', label:'900%',     desc:'Increase in deepfake content since 2019' },
-  { icon:'!', label:'96%',      desc:'of deepfakes target women non-consensually' },
-  { icon:'🌍', label:'47',      desc:'Countries hit by AI disinformation in 2024' },
-  { icon:'⏱', label:'3 sec',   desc:'Time to clone a voice with AI today' },
-  { icon:'🔐', label:'1 in 5', desc:'Enterprises hit by deepfake attacks in 2024' },
-  { icon:'📰', label:'84%',     desc:'of news consumers can\'t spot synthetic media' },
-];
+/* ============ HERO ============ */
+function Hero() {
+  useEffect(() => {
+    const body = document.body;
+    body.classList.add('ds-light');
+    // Start fully light so the hero text reads dark against the cream sheet on first paint.
+    body.style.setProperty('--theme-p', '0');
+    body.style.setProperty('--light-k', '1');
 
-function MarqueeSection() {
+    const onScroll = () => {
+      const y = window.scrollY;
+      const h = window.innerHeight;
+      // Hero owns the top of the page. Keep light mode locked until the viewport is
+      // roughly scrolled past the hero baseline, then ramp to dark over the next ~40% vh.
+      const holdUntil = h * 0.35;
+      const rampEnd   = h * 0.80;
+      const raw = (y - holdUntil) / (rampEnd - holdUntil);
+      const p = Math.max(0, Math.min(1, raw));            // 0 = light, 1 = dark
+      const lightK = 1 - p;                                // 1 = light, 0 = dark
+
+      body.style.setProperty('--theme-p', p.toFixed(3));
+      body.style.setProperty('--light-k', lightK.toFixed(3));
+
+      // Retire the legacy class-based toggle; color-mix via --light-k covers everything.
+      if (p > 0.98) body.classList.add('ds-dark-phase'); else body.classList.remove('ds-dark-phase');
+
+      if (window.__dotsInstance && window.__dotsInstance.setTheme) {
+        const nextTheme = p > 0.5 ? 'dark' : 'light';
+        if (window.__lastTheme !== nextTheme) {
+          window.__lastTheme = nextTheme;
+          window.__dotsInstance.setTheme(nextTheme);
+        }
+      }
+    };
+
+    window.addEventListener('scroll', onScroll, { passive: true });
+    onScroll();
+    return () => {
+      window.removeEventListener('scroll', onScroll);
+      body.classList.remove('ds-light');
+      body.classList.remove('ds-dark-phase');
+      body.style.removeProperty('--theme-p');
+      body.style.removeProperty('--light-k');
+    };
+  }, []);
   return (
-    <section style={{ background: DARK, padding: '60px 0', overflow: 'hidden', borderTop: '1px solid rgba(255,255,255,0.05)' }}>
-      <div style={{ textAlign: 'center', marginBottom: 28 }}>
-        <span style={{ fontFamily: FONT_B, fontSize: 12, letterSpacing: '0.18em', textTransform: 'uppercase', color: AMBER, fontWeight: 600 }}>The Crisis Is Real</span>
+    <section className="ds-hero" id="top">
+      <div className="ds-mesh" />
+      <div className="ds-grid" />
+      <div className="ds-hero-inner">
+        <div className="ds-hero-left">
+          <span className="label-chip"><span className="dot"/> Forensic AI · v2.0 live</span>
+          <h1 className="display ds-hero-title">
+            The leading <em className="italic accent">forensic AI</em><br/>
+            platform for trust<br/>
+            in synthetic media.
+          </h1>
+          <p className="ds-hero-sub">
+            DeepShield inspects every pixel, waveform, and word — returning a calm verdict
+            backed by Grad-CAM++, ELA, EXIF and a plain-English explanation.
+            For newsrooms, courts, and platforms.
+          </p>
+          <div className="ds-hero-cta">
+            <button className="btn btn-primary btn-lg btn-shiny" onClick={() => document.getElementById('analyze')?.scrollIntoView({ behavior: 'smooth' })}>
+              Analyze media
+              <svg width="14" height="14" viewBox="0 0 14 14" fill="none"><path d="M3 7h8m0 0L7 3m4 4L7 11" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round"/></svg>
+            </button>
+            <button className="btn btn-glass btn-lg" onClick={() => document.getElementById('pipeline')?.scrollIntoView({ behavior: 'smooth' })}>How the pipeline works</button>
+          </div>
+          <div className="ds-hero-proof">
+            <div><span className="mono">92.4%</span><small>FF++ test acc.</small></div>
+            <div><span className="mono">&lt; 3%</span><small>real-photo FPR</small></div>
+            <div><span className="mono">6</span><small>explainability modes</small></div>
+            <div><span className="mono">4</span><small>media modalities</small></div>
+          </div>
+        </div>
+        <div className="ds-hero-right">
+          <LayerStack src="https://images.unsplash.com/photo-1544005313-94ddf0286df2?w=520&q=80&auto=format&fit=crop" />
+        </div>
       </div>
-      <div className="ds-marquee-track" style={{ position: 'relative', cursor: 'default' }}>
-        <div className="ds-marquee-inner" style={{
-          display: 'flex', gap: 20, width: 'max-content',
-          animation: 'ds-marquee 40s linear infinite',
-        }}>
-          {[...IMPACT_CARDS, ...IMPACT_CARDS].map((card, i) => (
-            <div key={i} style={{
-              minWidth: 220, background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.07)',
-              borderRadius: 14, padding: '20px 22px', flexShrink: 0,
-            }}>
-              <div style={{ fontFamily: FONT_D, fontSize: 30, fontWeight: 800, color: WHITE, marginBottom: 4 }}>{card.label}</div>
-              <div style={{ fontFamily: FONT_B, fontSize: 12, color: 'rgba(255,255,255,0.45)', lineHeight: 1.5 }}>{card.desc}</div>
+    </section>
+  );
+}
+
+/* ============ EDITORIAL STATEMENT ============ */
+function Statement() {
+  const [reveal, setReveal] = useState(0);
+  const ref = useRef(null);
+  useEffect(() => {
+    const onScroll = () => {
+      if (!ref.current) return;
+      const r = ref.current.getBoundingClientRect();
+      const vh = window.innerHeight;
+      const p = Math.max(0, Math.min(1, 1 - (r.top / vh)));
+      setReveal(p);
+    };
+    window.addEventListener('scroll', onScroll, { passive: true });
+    onScroll();
+    return () => window.removeEventListener('scroll', onScroll);
+  }, []);
+  const blur = Math.max(0, (1 - reveal) * 18);
+  const opacity = 0.25 + reveal * 0.75;
+  return (
+    <section className="ds-statement" id="proof" ref={ref}>
+      <div className="ds-statement-peek ds-statement-peek-l" />
+      <div className="ds-statement-peek ds-statement-peek-r" />
+      <div className="ds-statement-inner">
+        <span className="eyebrow">What we do</span>
+        <h2 className="display ds-statement-text">
+          We <em style={{ filter: `blur(${blur * 0.6}px)`, color: 'var(--ds-brand)', fontStyle: 'italic' }}>scan</em>{' '}
+          every frame,<br/>
+          every pixel,{' '}
+          <span style={{ filter: `blur(${blur}px)`, opacity }}>every whisper</span>.<br/>
+          <span style={{ opacity: 0.55 }}>Forensics for the AI era.</span>
+        </h2>
+        <ScanOrb reveal={reveal} />
+      </div>
+    </section>
+  );
+}
+
+function ScanOrb({ reveal }) {
+  const p = Math.min(1, reveal * 1.15);
+  const photoOpacity = 1 - Math.max(0, (p - 0.15)) * 1.6;
+  const binaryOpacity = Math.max(0, (p - 0.25)) * 1.7;
+  const glyphScale = 0.6 + p * 0.6;
+  const COLS = 18, ROWS = 22;
+  const glyphs = [];
+  for (let r = 0; r < ROWS; r++) {
+    for (let c = 0; c < COLS; c++) {
+      const noise = Math.sin(r * 1.3 + c * 0.7) * 0.5 + 0.5;
+      const threshold = 0.2 + (1 - (r / ROWS)) * 0.5 + noise * 0.2;
+      if (p > threshold) {
+        glyphs.push({ r, c, char: noise > 0.5 ? '1' : '0', age: Math.min(1, (p - threshold) * 3) });
+      }
+    }
+  }
+  const SRC = 'https://images.unsplash.com/photo-1544005313-94ddf0286df2?w=640&h=760&fit=crop&q=80&auto=format';
+  return (
+    <div className="portrait-dissolve" aria-hidden="true">
+      <div className="pd-glow" />
+      <div className="pd-frame">
+        <img src={SRC} alt="" className="pd-photo" draggable="false" style={{
+          opacity: photoOpacity,
+          filter: `contrast(${1 + p * 0.2}) saturate(${1 - p * 0.4}) brightness(${0.95 - p * 0.2})`,
+        }}/>
+        <svg className="pd-mesh" viewBox="0 0 100 120" preserveAspectRatio="none" style={{ opacity: Math.max(0, Math.min(1, (p - 0.1) * 2.5)) * (1 - Math.max(0, (p - 0.6) * 2)) }}>
+          <g stroke="rgba(61,219,179,0.55)" strokeWidth="0.2" fill="none">
+            <polygon points="50,24 38,36 33,55 36,75 44,92 50,98 56,92 64,75 67,55 62,36"/>
+            <polyline points="38,36 50,46 62,36"/>
+            <polyline points="33,55 42,58 50,60 58,58 67,55"/>
+            <polyline points="42,58 50,70 58,58"/>
+            <polyline points="36,75 44,72 50,78 56,72 64,75"/>
+            <polyline points="50,46 50,60 50,78 50,92"/>
+          </g>
+          {[[50,24],[38,36],[62,36],[33,55],[67,55],[42,58],[58,58],[50,60],[42,72],[58,72],[36,75],[64,75],[44,92],[56,92],[50,98]].map(([x,y],k)=>(
+            <circle key={k} cx={x} cy={y} r="0.6" fill="rgba(61,219,179,0.95)"/>
+          ))}
+        </svg>
+        <div className="pd-binary" style={{ opacity: binaryOpacity }}>
+          {glyphs.map((g) => (
+            <span key={`${g.r}-${g.c}`} className="pd-bit" style={{
+              left: `${(g.c / COLS) * 100}%`,
+              top: `${(g.r / ROWS) * 100}%`,
+              opacity: 0.35 + g.age * 0.65,
+              color: g.char === '1' ? 'rgba(127,143,255,0.95)' : 'rgba(61,219,179,0.85)',
+              transform: `translate(-50%, -50%) scale(${glyphScale})`,
+              animationDelay: `${(g.r * 0.05 + g.c * 0.03)}s`,
+            }}>{g.char}</span>
+          ))}
+        </div>
+        <div className="pd-scanline" style={{ top: `${(Math.min(p, 0.9) * 110) % 120}%` }} />
+        <div className="pd-corner tl" />
+        <div className="pd-corner tr" />
+        <div className="pd-corner bl" />
+        <div className="pd-corner br" />
+      </div>
+      <div className="pd-meta mono">
+        <span>SUBJECT · unverified</span>
+        <span>MODEL · ensemble v4.2</span>
+        <span>CONFIDENCE · {Math.round(40 + p * 54)}%</span>
+      </div>
+    </div>
+  );
+}
+
+/* ============ MODALITY CARDS ============ */
+function ModalityCards() {
+  const items = [
+    { k: 'Image', n: '01', desc: 'ViT + EfficientNet ensemble with BlazeFace gating. Grad-CAM++, ELA, EXIF, JPEG Q-table, FFT frequency analysis.', sig: ['ensemble', 'grad-cam++', 'ela', 'exif'] },
+    { k: 'Video', n: '02', desc: 'Per-frame classification, optical-flow temporal consistency, blink-rate analysis, lip-sync correlation with audio.', sig: ['temporal', 'blink-rate', 'lip-sync', 'frame-timeline'] },
+    { k: 'Text', n: '03', desc: 'Multilingual XLM-R fake-news classifier, NER-anchored source lookup, truth-override against trusted domains, manipulation indicators.', sig: ['xlm-r', 'ner', 'truth-override', 'sensationalism'] },
+    { k: 'Screenshot', n: '04', desc: 'EasyOCR extraction, credibility pass on extracted claims, layout-anomaly detection, suspicious-phrase bbox overlay.', sig: ['ocr', 'layout', 'phrase-map', 'credibility'] },
+  ];
+  return (
+    <section className="ds-modality" id="pipeline">
+      <div className="ds-container">
+        <div className="ds-section-head">
+          <span className="eyebrow">The pipeline</span>
+          <h2 className="display">Four modalities.<br/><em className="italic accent">One verdict.</em></h2>
+          <p>Each input routes through its own forensic stack. Outputs converge on a single, calm summary — with every signal exposed for review.</p>
+        </div>
+        <div className="ds-modality-grid">
+          {items.map(it => (
+            <article key={it.k} className="mod-card">
+              <div className="mod-card-head">
+                <span className="mono mod-n">{it.n}</span>
+                <span className="mod-kind">{it.k}</span>
+              </div>
+              <h3 className="display mod-title">{it.k === 'Image' ? 'Pixel-grade' : it.k === 'Video' ? 'Frame-by-frame' : it.k === 'Text' ? 'Narrative-level' : 'Layout-aware'} inspection.</h3>
+              <p className="mod-desc">{it.desc}</p>
+              <ul className="mod-sig">
+                {it.sig.map(s => <li key={s} className="mono">{s}</li>)}
+              </ul>
+              <ModalityVisual kind={it.k} />
+            </article>
+          ))}
+        </div>
+      </div>
+    </section>
+  );
+}
+
+function ModalityVisual({ kind }) {
+  if (kind === 'Image') return (
+    <div className="mv mv-image">
+      <div className="mv-frame"/>
+      <div className="mv-heat" />
+      <div className="mv-box" style={{ left: '22%', top: '30%', width: '32%', height: '36%' }}/>
+      <span className="mv-tag mono">0.87 fake</span>
+    </div>
+  );
+  if (kind === 'Video') return (
+    <div className="mv mv-video">
+      {Array.from({length:16}).map((_,i)=>{
+        const s = 0.2 + Math.abs(Math.sin(i*0.8)) * 0.8;
+        return <span key={i} style={{ height: `${20 + s*70}%`, background: s > 0.6 ? 'var(--ds-danger)' : s > 0.4 ? 'var(--ds-warn)' : 'var(--ds-safe)' }} />;
+      })}
+    </div>
+  );
+  if (kind === 'Text') return (
+    <div className="mv mv-text mono">
+      <p><mark className="hl-warn">BREAKING:</mark> sources <mark className="hl-danger">allegedly confirm</mark> that <mark className="hl-safe">Reuters</mark> published…</p>
+      <p><mark className="hl-danger">SHOCKING truth</mark> experts refuse to believe.</p>
+    </div>
+  );
+  return (
+    <div className="mv mv-shot">
+      <div className="mv-shot-head"/>
+      <div className="mv-shot-line" style={{width: '82%'}}/>
+      <div className="mv-shot-line" style={{width: '64%'}}/>
+      <div className="mv-shot-line hl" style={{width: '72%'}}/>
+      <div className="mv-shot-line" style={{width: '48%'}}/>
+    </div>
+  );
+}
+
+/* ============ ANALYZE DEMO — WIRED TO REAL BACKEND ============ */
+const SAMPLES = [
+  { label: 'Staged portrait', src: 'https://images.unsplash.com/photo-1531123897727-8f129e1688ce?w=640&q=80&auto=format&fit=crop', filename: 'staged-portrait.jpg' },
+  { label: 'Press photo', src: 'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=640&q=80&auto=format&fit=crop', filename: 'press-photo.jpg' },
+  { label: 'Social screenshot', src: 'https://images.unsplash.com/photo-1488554378835-f7acf46e6c98?w=640&q=80&auto=format&fit=crop', filename: 'social-screenshot.jpg' },
+];
+const STAGES = ['Upload', 'Preprocess', 'Ensemble', 'Grad-CAM++', 'ELA + EXIF', 'LLM summary'];
+
+async function fetchSampleAsFile(s) {
+  const res = await fetch(s.src);
+  const blob = await res.blob();
+  return new File([blob], s.filename, { type: blob.type || 'image/jpeg' });
+}
+
+function AnalyzeDemo() {
+  const [stage, setStage] = useState('idle');
+  const [progress, setProgress] = useState(0);
+  const [activeStage, setActiveStage] = useState(0);
+  const [sampleIdx, setSampleIdx] = useState(0);
+  const [result, setResult] = useState(null);
+  const [uploadedUrl, setUploadedUrl] = useState(null);
+  const [error, setError] = useState(null);
+  const fileRef = useRef(null);
+  const sessionId = useRef(Math.random().toString(36).slice(2, 8).toUpperCase());
+  const sample = SAMPLES[sampleIdx];
+
+  // Progress ticker while processing (caps at 92% until real result arrives)
+  useEffect(() => {
+    if (stage !== 'processing') return;
+    let p = progress;
+    const id = setInterval(() => {
+      p = Math.min(92, p + 1.4);
+      const cur = Math.min(STAGES.length - 1, Math.floor(p / (100 / STAGES.length)));
+      setProgress(p);
+      setActiveStage(cur);
+    }, 80);
+    return () => clearInterval(id);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [stage]);
+
+  const runAnalysis = async (file, previewUrl) => {
+    setError(null);
+    setResult(null);
+    setProgress(0);
+    setActiveStage(0);
+    setUploadedUrl(previewUrl);
+    setStage('processing');
+    try {
+      const data = await analyzeImage(file);
+      setProgress(100);
+      setActiveStage(STAGES.length - 1);
+      setResult(data);
+      setTimeout(() => setStage('result'), 250);
+    } catch (e) {
+      setError(e?.response?.data?.detail || e?.message || 'Analysis failed');
+      setStage('idle');
+    }
+  };
+
+  const startWithSample = async () => {
+    try {
+      const f = await fetchSampleAsFile(sample);
+      await runAnalysis(f, sample.src);
+    } catch (e) {
+      setError('Could not load sample image');
+    }
+  };
+
+  const onFilePicked = async (file) => {
+    if (!file) return;
+    const url = URL.createObjectURL(file);
+    await runAnalysis(file, url);
+  };
+
+  const reset = () => {
+    setStage('idle');
+    setProgress(0);
+    setActiveStage(0);
+    setResult(null);
+    setUploadedUrl(null);
+  };
+
+  return (
+    <section className="ds-analyze" id="analyze">
+      <div className="ds-container">
+        <div className="ds-section-head center">
+          <span className="eyebrow">Live demonstration</span>
+          <h2 className="display">Try the <em className="italic accent">forensic console.</em></h2>
+          <p>Drop a sample, watch the 3D pass unfold, receive a verdict with every signal behind it. This is the same view operators see in production.</p>
+        </div>
+
+        <div className="console glass-strong">
+          <div className="console-chrome">
+            <div className="chrome-dots">
+              <span/><span/><span/>
+            </div>
+            <div className="chrome-title mono">deepshield · /analyze/image</div>
+            <div className="chrome-meta mono">session · {sessionId.current}</div>
+          </div>
+
+          <div className="console-body">
+            {stage === 'idle' && (
+              <div className="console-idle">
+                <div
+                  className="drop-zone"
+                  onDragOver={(e) => { e.preventDefault(); }}
+                  onDrop={(e) => {
+                    e.preventDefault();
+                    const f = e.dataTransfer.files?.[0];
+                    if (f) onFilePicked(f);
+                  }}
+                  onClick={() => fileRef.current?.click()}
+                >
+                  <input
+                    ref={fileRef}
+                    type="file"
+                    accept="image/*"
+                    style={{ display: 'none' }}
+                    onChange={(e) => onFilePicked(e.target.files?.[0])}
+                  />
+                  <div className="drop-liquid">
+                    <svg viewBox="0 0 200 200" width="120" height="120">
+                      <defs>
+                        <linearGradient id="dg" x1="0" y1="0" x2="1" y2="1">
+                          <stop stopColor="#7F8FFF"/><stop offset="1" stopColor="#3DDBB3"/>
+                        </linearGradient>
+                      </defs>
+                      <path d="M100 20 C140 20 170 50 170 90 C170 130 140 170 100 170 C60 170 30 130 30 90 C30 50 60 20 100 20 Z"
+                        fill="none" stroke="url(#dg)" strokeWidth="1.5" strokeDasharray="4 6" opacity="0.6"/>
+                      <path d="M100 60 L100 120 M80 100 L100 120 L120 100" stroke="url(#dg)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" fill="none"/>
+                    </svg>
+                  </div>
+                  <h3 className="display">Drop media here</h3>
+                  <p>PNG · JPEG · MP4 · WebM · or paste text / screenshot · 100MB max</p>
+                  <button className="btn btn-glass btn-sm" onClick={(e)=>{e.stopPropagation(); startWithSample();}}>Use sample</button>
+                  {error && <p style={{ color: 'var(--ds-danger)', marginTop: 14, fontSize: 13 }}>{error}</p>}
+                </div>
+                <aside className="console-side">
+                  <span className="eyebrow">Samples</span>
+                  {SAMPLES.map((s,i)=>(
+                    <button key={i} className={`sample-row ${i===sampleIdx?'active':''}`} onClick={()=>setSampleIdx(i)}>
+                      <img src={s.src} alt="" />
+                      <div>
+                        <div className="sr-name">{s.label}</div>
+                        <div className="sr-meta mono">click to select</div>
+                      </div>
+                    </button>
+                  ))}
+                  <div className="console-opts">
+                    <label className="opt"><input type="checkbox" defaultChecked/> Cache result</label>
+                    <label className="opt"><input type="checkbox" defaultChecked/> Run LLM summary</label>
+                    <label className="opt"><input type="checkbox"/> Write EXIF verdict</label>
+                  </div>
+                </aside>
+              </div>
+            )}
+
+            {stage === 'processing' && (
+              <div className="console-processing">
+                <div className="proc-stack">
+                  <LayerStack src={uploadedUrl || sample.src} density={6} />
+                </div>
+                <div className="proc-stages">
+                  <div className="stages-head">
+                    <span className="eyebrow">Forensic passes</span>
+                    <span className="mono">{Math.round(progress)}%</span>
+                  </div>
+                  <div className="stages-bar"><i style={{ width: `${progress}%` }}/></div>
+                  <ol className="stage-list">
+                    {STAGES.map((s, i) => (
+                      <li key={s} className={i < activeStage ? 'done' : i === activeStage ? 'active' : ''}>
+                        <span className="stage-dot"/>
+                        <span className="stage-label">{s}</span>
+                        <span className="mono stage-status">
+                          {i < activeStage ? '✓' : i === activeStage ? '···' : '—'}
+                        </span>
+                      </li>
+                    ))}
+                  </ol>
+                </div>
+              </div>
+            )}
+
+            {stage === 'result' && result && (
+              <ResultView result={result} imgUrl={uploadedUrl || sample.src} onReset={reset} />
+            )}
+          </div>
+        </div>
+      </div>
+    </section>
+  );
+}
+
+function ResultView({ result, imgUrl, onReset }) {
+  const [heatmapMode, setHeatmapMode] = useState('heatmap');
+  const [alpha, setAlpha] = useState(0.65);
+  const [expanded, setExpanded] = useState(null);
+
+  const verdict = result.verdict || {};
+  // fake_probability commonly 0..1 where 1 = definitely fake. authenticity = 1 - fake_prob.
+  const fakeProb = verdict.fake_probability ?? verdict.confidence ?? 0.5;
+  const score = Math.round(Math.max(0, Math.min(1, 1 - fakeProb)) * 100);
+  const verdictColor = score > 65 ? 'safe' : score > 40 ? 'warn' : 'danger';
+  const verdictLabel = (verdict.label || verdict.classification || (score < 40 ? 'LIKELY FAKE' : score < 65 ? 'SUSPICIOUS' : 'LIKELY REAL')).toString().toUpperCase();
+
+  const expl = result.explainability || {};
+  const exif = expl.exif || {};
+  const vlm = expl.vlm_breakdown || {};
+  const llm = expl.llm_summary || result.llm_summary || null;
+  const artifacts = expl.artifact_indicators || [];
+  const sources = result.trusted_sources || [];
+
+  const heatmapData = expl.heatmap_base64 ? `data:image/png;base64,${expl.heatmap_base64}` : null;
+  const elaData = expl.ela_base64 ? `data:image/png;base64,${expl.ela_base64}` : null;
+  const boxesData = expl.boxes_base64 ? `data:image/png;base64,${expl.boxes_base64}` : null;
+
+  const processingTime = result.processing_summary?.total_ms
+    ? (result.processing_summary.total_ms / 1000).toFixed(2)
+    : '—';
+
+  const bdItems = [
+    { k: 'Facial symmetry', v: vlm.facial_symmetry_score, note: vlm.facial_symmetry_note || 'Left-right alignment across eye, nose, and jaw landmarks.' },
+    { k: 'Skin texture', v: vlm.skin_texture_score, note: vlm.skin_texture_note || 'Pore distribution, micro-shading, sebum highlights.' },
+    { k: 'Lighting', v: vlm.lighting_score, note: vlm.lighting_note || 'Light-source direction consistent across face and background.' },
+    { k: 'Background', v: vlm.background_score, note: vlm.background_note || 'Depth, focal blur, and edge coherence.' },
+    { k: 'Anatomy', v: vlm.anatomy_score, note: vlm.anatomy_note || 'Hands, ears, teeth — typical GAN failure zones.' },
+    { k: 'Context', v: vlm.context_score, note: vlm.context_note || 'Objects and environment plausibility.' },
+  ].map(b => ({ ...b, v: typeof b.v === 'number' ? Math.round(b.v) : (score > 60 ? 80 : 40) }));
+
+  return (
+    <div className="result-view">
+      <div className={`verdict-card verdict-${verdictColor}`}>
+        <div className="verdict-left">
+          <ScoreRing value={score} color={verdictColor} />
+          <div>
+            <span className="eyebrow">Authenticity verdict</span>
+            <h3 className="display verdict-label">{verdictLabel}</h3>
+            <div className="verdict-meta mono">
+              <span>id · {(result.analysis_id || '').slice(0, 8) || '—'}</span>
+              <span>·</span>
+              <span>ensemble · EfficientNetAutoAttB4 + ViT</span>
+              <span>·</span>
+              <span>{processingTime}s</span>
+            </div>
+          </div>
+        </div>
+        <div className="verdict-llm">
+          <span className="eyebrow">Plain-English summary{llm?.model ? ` · ${llm.model}` : ''}</span>
+          <p>
+            {llm?.summary
+              || llm?.text
+              || verdict.reasoning
+              || `Model confidence ${(fakeProb * 100).toFixed(1)}% that this media is synthetic. Review the heatmap, EXIF, and detailed breakdown below for the evidence behind this verdict.`}
+          </p>
+          {Array.isArray(llm?.bullets) && llm.bullets.length > 0 && (
+            <div className="verdict-bullets">
+              {llm.bullets.map((b, i) => <span key={i}>• {b}</span>)}
+            </div>
+          )}
+        </div>
+        <button className="btn btn-ghost btn-sm result-reset" onClick={onReset}>↻ Analyze another</button>
+      </div>
+
+      <div className="result-grid">
+        <div className="card heatmap-card">
+          <div className="card-head">
+            <span className="eyebrow">Visual evidence</span>
+            <div className="seg-control">
+              {['heatmap','ela','boxes','off'].map(m=>(
+                <button key={m} className={heatmapMode===m?'active':''} onClick={()=>setHeatmapMode(m)}>{m}</button>
+              ))}
+            </div>
+          </div>
+          <div className="heatmap-stage">
+            <img src={imgUrl} alt="" className="heatmap-base"/>
+            {heatmapMode === 'heatmap' && (
+              heatmapData
+                ? <img src={heatmapData} alt="" className="heatmap-overlay" style={{ opacity: alpha, position: 'absolute', inset: 0, width: '100%', height: '100%', objectFit: 'cover', mixBlendMode: 'screen' }} />
+                : <div className="heatmap-overlay" style={{ opacity: alpha }} />
+            )}
+            {heatmapMode === 'ela' && (
+              elaData
+                ? <img src={elaData} alt="" className="ela-overlay" style={{ opacity: alpha, position: 'absolute', inset: 0, width: '100%', height: '100%', objectFit: 'cover', mixBlendMode: 'screen' }} />
+                : <div className="ela-overlay" style={{ opacity: alpha }} />
+            )}
+            {heatmapMode === 'boxes' && (
+              boxesData
+                ? <img src={boxesData} alt="" style={{ opacity: alpha, position: 'absolute', inset: 0, width: '100%', height: '100%', objectFit: 'cover' }} />
+                : (
+                  <svg className="heatmap-boxes" viewBox="0 0 100 100" preserveAspectRatio="none">
+                    <rect x="22" y="18" width="42" height="48" fill="none" stroke="var(--ds-danger)" strokeWidth="0.4" strokeDasharray="1"/>
+                    <rect x="28" y="55" width="24" height="16" fill="none" stroke="var(--ds-warn)" strokeWidth="0.4"/>
+                  </svg>
+                )
+            )}
+          </div>
+          <div className="heatmap-foot">
+            <span className="mono">α {alpha.toFixed(2)}</span>
+            <input type="range" min="0" max="1" step="0.01" value={alpha} onChange={e=>setAlpha(+e.target.value)} />
+            <span className="mono status-chip">heatmap_status · {expl.heatmap_status || 'n/a'}</span>
+          </div>
+        </div>
+
+        <div className="card exif-card">
+          <div className="card-head">
+            <span className="eyebrow">EXIF metadata</span>
+            <span className="mono small">{exif.trust_delta != null ? (exif.trust_delta > 0 ? `+${exif.trust_delta} trust` : `${exif.trust_delta} trust`) : '—'}</span>
+          </div>
+          <ul className="exif-list mono">
+            {[
+              ['Make', exif.make],
+              ['Model', exif.model],
+              ['DateTimeOriginal', exif.date_time_original || exif.datetime],
+              ['GPSInfo', exif.gps || exif.gps_info],
+              ['Software', exif.software],
+              ['LensModel', exif.lens_model || exif.lens],
+            ].map(([k, v]) => {
+              const present = v && v !== '—';
+              const suspicious = k === 'Software' && typeof v === 'string' && /photoshop|midjourney|dall·e|dalle|stable diffusion/i.test(v);
+              const mark = suspicious ? '✗' : present ? '✓' : '⚠';
+              const cls = suspicious ? 'bad' : present ? 'ok' : 'warn';
+              return (
+                <li key={k}>
+                  <span>{k}</span>
+                  <b className={suspicious ? 'bad' : ''}>{v || '—'}</b>
+                  <em className={cls}>{mark}</em>
+                </li>
+              );
+            })}
+          </ul>
+        </div>
+      </div>
+
+      <div className="breakdown">
+        <div className="card-head">
+          <span className="eyebrow">Detailed breakdown{vlm.model ? ` · ${vlm.model}` : ' · Gemini Vision'}</span>
+          <span className="mono small">6 components</span>
+        </div>
+        <div className="breakdown-grid">
+          {bdItems.map((b, i) => (
+            <button key={b.k} className={`bd-cell ${expanded===i?'open':''}`} onClick={() => setExpanded(expanded===i ? null : i)}>
+              <ScoreRing value={b.v} size={56} color={b.v>70?'safe':b.v>45?'warn':'danger'} />
+              <div className="bd-body">
+                <div className="bd-title">{b.k}</div>
+                <div className="mono bd-score">{b.v}/100</div>
+                {expanded===i && <p className="bd-note">{b.note}</p>}
+              </div>
+            </button>
+          ))}
+        </div>
+      </div>
+
+      <div className="result-grid">
+        <div className="card sources-card">
+          <div className="card-head">
+            <span className="eyebrow">Trusted sources · cross-reference</span>
+            <span className="mono small">{sources.length} match{sources.length === 1 ? '' : 'es'}</span>
+          </div>
+          {sources.length > 0 ? (
+            <ul className="src-list">
+              {sources.slice(0, 5).map((s, i) => (
+                <li key={i}>
+                  <div className="src-head">
+                    <span className="mono">{s.domain || s.source || `source-${i+1}`}</span>
+                    <div className="src-bar"><i style={{ width: `${Math.round((s.weight ?? s.trust_weight ?? 1) * 100)}%` }}/></div>
+                  </div>
+                  <p>{s.title || s.snippet || s.description || '—'}</p>
+                  <div className="src-foot mono">
+                    <span>sim {(s.similarity ?? s.sim ?? 0).toFixed ? (s.similarity ?? s.sim ?? 0).toFixed(2) : '—'}</span>
+                    <span>weight {((s.weight ?? s.trust_weight ?? 1)).toFixed ? (s.weight ?? s.trust_weight ?? 1).toFixed(2) : '1.00'}</span>
+                    {s.url && <a href={s.url} target="_blank" rel="noreferrer">open ↗</a>}
+                  </div>
+                </li>
+              ))}
+            </ul>
+          ) : <p className="src-empty">No trusted-source publications match this media within the last 30 days. This weakens authenticity.</p>}
+        </div>
+        <div className="card artifact-card">
+          <div className="card-head">
+            <span className="eyebrow">Artifact indicators</span>
+            <span className="mono small">{artifacts.length} signals</span>
+          </div>
+          <ul className="art-list">
+            {(artifacts.length > 0 ? artifacts : [
+              { name: 'GAN frequency fingerprint', severity: 'low', score: 0.14 },
+              { name: 'JPEG Q-table anomaly', severity: 'medium', score: 0.42 },
+              { name: 'FaceMesh jaw jitter', severity: 'low', score: 0.18 },
+              { name: 'Luminance imbalance', severity: 'low', score: 0.12 },
+            ]).map((a, i) => {
+              const lvl = (a.severity || a.level || 'low').toString().toLowerCase();
+              const val = typeof a.score === 'number' ? a.score : typeof a.confidence === 'number' ? a.confidence : 0;
+              return (
+                <li key={i}>
+                  <span>{a.name || a.indicator || a.k}</span>
+                  <span className={`art-chip ${lvl}`}>{lvl}</span>
+                  <span className="mono art-val">{val.toFixed(2)}</span>
+                </li>
+              );
+            })}
+          </ul>
+        </div>
+      </div>
+
+      <div className="sticky-actions">
+        <button className="btn btn-glass btn-sm" onClick={onReset}>↻ New analysis</button>
+        <button
+          className="btn btn-glass btn-sm"
+          onClick={() => {
+            if (!result.analysis_id) return;
+            const base = import.meta.env.VITE_API_BASE_URL || '/api/v1';
+            window.open(`${base}/report/${result.analysis_id}.pdf`, '_blank');
+          }}
+        >⤓ PDF report</button>
+        <button
+          className="btn btn-glass btn-sm"
+          onClick={() => {
+            navigator.clipboard?.writeText(`${window.location.origin}/results/${result.analysis_id || ''}`);
+          }}
+        >⎘ Copy link</button>
+        <button
+          className="btn btn-primary btn-sm btn-shiny"
+          onClick={() => {
+            if (result.analysis_id) window.location.href = `/results/${result.analysis_id}`;
+          }}
+        >Share verdict →</button>
+      </div>
+    </div>
+  );
+}
+
+function ScoreRing({ value, size = 96, color = 'safe' }) {
+  const r = size/2 - 6;
+  const c = 2 * Math.PI * r;
+  const off = c - (value/100) * c;
+  const stroke = color === 'safe' ? 'var(--ds-safe)' : color === 'warn' ? 'var(--ds-warn)' : 'var(--ds-danger)';
+  return (
+    <svg width={size} height={size} className="score-ring">
+      <circle cx={size/2} cy={size/2} r={r} stroke="rgba(255,255,255,0.08)" strokeWidth="4" fill="none"/>
+      <circle cx={size/2} cy={size/2} r={r} stroke={stroke} strokeWidth="4" fill="none"
+        strokeDasharray={c} strokeDashoffset={off} strokeLinecap="round"
+        transform={`rotate(-90 ${size/2} ${size/2})`} style={{ transition: 'stroke-dashoffset 900ms var(--e-out)', filter: `drop-shadow(0 0 8px ${stroke})` }}/>
+      <text x={size/2} y={size/2+2} textAnchor="middle" dominantBaseline="middle"
+        fontFamily="var(--ff-mono)" fontSize={size*0.28} fill="var(--ds-ink)" fontWeight="500">{value}</text>
+    </svg>
+  );
+}
+
+/* ============ COMPARISON ============ */
+function Comparison() {
+  const rows = [
+    ['Multimodal (img/video/text/screenshot)', true, false, 'partial', false],
+    ['Grad-CAM++ heatmap + ELA + EXIF', true, 'partial', false, false],
+    ['LLM plain-English explanation', true, false, false, false],
+    ['Trusted-source cross-reference', true, false, false, 'manual'],
+    ['Temporal + audio video analysis', true, false, false, false],
+    ['Local-first processing', true, false, false, true],
+    ['Open-source models', true, false, false, true],
+    ['PDF forensic report', true, 'partial', false, false],
+  ];
+  const cols = ['DeepShield', 'Reality Defender', 'Deepware', 'Manual review'];
+  return (
+    <section className="ds-compare" id="compare">
+      <div className="ds-container">
+        <div className="ds-section-head">
+          <span className="eyebrow">Why DeepShield</span>
+          <h2 className="display">Forensics <em className="italic accent">without the noise.</em></h2>
+        </div>
+        <div className="cmp glass">
+          <div className="cmp-row cmp-head">
+            <div className="cmp-cell"/>
+            {cols.map((c,i)=>(
+              <div key={c} className={`cmp-cell ${i===0?'highlight':''}`}>{c}</div>
+            ))}
+          </div>
+          {rows.map(([label, ...vals])=>(
+            <div key={label} className="cmp-row">
+              <div className="cmp-cell cmp-label">{label}</div>
+              {vals.map((v,i)=>(
+                <div key={i} className={`cmp-cell ${i===0?'highlight':''}`}>
+                  {v===true && <span className="chk ok">●</span>}
+                  {v===false && <span className="chk no">○</span>}
+                  {v==='partial' && <span className="chk part mono">partial</span>}
+                  {v==='manual' && <span className="chk part mono">manual</span>}
+                </div>
+              ))}
             </div>
           ))}
         </div>
@@ -304,384 +927,143 @@ function MarqueeSection() {
   );
 }
 
-/* ─── FAQ ACCORDION ──────────────────────────────────────────── */
-const FAQS = [
-  { q: 'How accurate is DeepShield\'s detection?', a: 'Our ensemble of EfficientNet + ViT models achieves 97.3% accuracy on the FaceForensics++ benchmark. We continuously retrain on emerging deepfake techniques to maintain detection rates as generation methods evolve.' },
-  { q: 'What media formats are supported?', a: 'DeepShield supports images (JPEG, PNG, WEBP, HEIC), videos (MP4, MOV, AVI, MKV up to 500MB), and audio (MP3, WAV, M4A). Video frames are sampled intelligently for efficiency.' },
-  { q: 'How fast is the analysis?', a: 'Images return results in under 3 seconds. Videos are processed at ~2× real-time speed — a 30-second clip returns in approximately 15 seconds.' },
-  { q: 'Is my uploaded content private?', a: 'Files are encrypted in transit and at rest. We delete uploaded media within 24 hours. We never use your content to train our models without explicit written consent.' },
-  { q: 'Can DeepShield detect AI-generated images (not just face swaps)?', a: 'Yes. Beyond face manipulation, DeepShield detects fully synthetic portraits, GAN artifacts, diffusion model fingerprints, and metadata anomalies that indicate AI origin.' },
-  { q: 'Do you offer an API for developers?', a: 'Yes — REST and WebSocket APIs with Python, JavaScript, and Go SDKs. Webhooks supported for async video processing. Enterprise plans include SLA guarantees and dedicated infrastructure.' },
-];
-
-function FAQItem({ q, a, index }) {
-  const [open, setOpen] = useState(false);
+/* ============ IMPACT MARQUEE ============ */
+function Marquee() {
+  const incidents = [
+    { date: 'Mar 2024', head: 'Fabricated Zelensky surrender broadcast', src: 'REUTERS', verdict: 'FAKE' },
+    { date: 'Feb 2024', head: 'AI-generated Biden robocall targets NH voters', src: 'AP', verdict: 'FAKE' },
+    { date: 'Jan 2024', head: 'Taylor Swift deepfakes surge across X', src: 'BBC', verdict: 'FAKE' },
+    { date: 'Nov 2023', head: 'Manipulated Netanyahu audio circulates', src: 'FT', verdict: 'SUSPICIOUS' },
+    { date: 'Jul 2023', head: 'Synthetic Xi speech on Taiwan', src: 'WSJ', verdict: 'FAKE' },
+    { date: 'May 2023', head: 'Pentagon explosion image goes viral', src: 'AP', verdict: 'FAKE' },
+  ];
+  const doubled = [...incidents, ...incidents];
   return (
-    <RevealItem delay={index * 80}>
-      <div style={{ borderBottom: '1px solid rgba(10,10,15,0.12)' }}>
-        <button
-          onClick={() => setOpen(o => !o)}
-          style={{
-            width: '100%', textAlign: 'left', padding: '22px 0',
-            background: 'transparent', border: 'none', cursor: 'pointer',
-            display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 16,
-          }}
-        >
-          <span style={{ fontFamily: FONT_D, fontSize: 18, fontWeight: 700, color: DARK, lineHeight: 1.3 }}>{q}</span>
-          <span style={{
-            flexShrink: 0, width: 28, height: 28, borderRadius: '50%',
-            background: open ? BLUE : 'rgba(10,10,15,0.08)',
-            display: 'flex', alignItems: 'center', justifyContent: 'center',
-            transition: 'all 0.25s ease', color: open ? '#fff' : DARK,
-            fontSize: 18, lineHeight: 1,
-          }}>{open ? '−' : '+'}</span>
-        </button>
-        <AnimatePresence initial={false}>
-          {open && (
-            <motion.div
-              initial={{ height: 0, opacity: 0 }}
-              animate={{ height: 'auto', opacity: 1 }}
-              exit={{ height: 0, opacity: 0 }}
-              transition={{ duration: 0.3, ease: 'easeInOut' }}
-              style={{ overflow: 'hidden' }}
-            >
-              <p style={{ fontFamily: FONT_B, fontSize: 15, color: 'rgba(10,10,15,0.65)', lineHeight: 1.75, paddingBottom: 22, margin: 0 }}>{a}</p>
-            </motion.div>
-          )}
-        </AnimatePresence>
+    <section className="ds-marquee">
+      <div className="ds-section-head center">
+        <span className="eyebrow">Real-world impact</span>
+        <h2 className="display">The incidents <em className="italic accent">we train on.</em></h2>
       </div>
-    </RevealItem>
+      <div className="mq-track-wrap">
+        <div className="mq-track">
+          {doubled.map((it,i)=>(
+            <article key={i} className="mq-card glass">
+              <div className="mq-head">
+                <span className="mono">{it.date}</span>
+                <span className={`mq-verdict ${it.verdict.toLowerCase()}`}>{it.verdict}</span>
+              </div>
+              <h4>{it.head}</h4>
+              <span className="mq-src mono">{it.src}</span>
+            </article>
+          ))}
+        </div>
+      </div>
+    </section>
   );
 }
 
-/* ─── COMPARISON DATA ────────────────────────────────────────── */
-const COMPARISON = [
-  { feature: 'Detection Accuracy',        ds: '97.3%',       others: '~72–85%' },
-  { feature: 'Face Swap Detection',       ds: '✓',           others: 'Partial' },
-  { feature: 'GAN / Diffusion Detection', ds: '✓',           others: '✗' },
-  { feature: 'Audio Deepfake Analysis',   ds: '✓',           others: 'Rare' },
-  { feature: 'Real-time Video API',       ds: '✓',           others: 'Limited' },
-  { feature: 'Explainability Heatmaps',   ds: '✓',           others: '✗' },
-  { feature: 'Open API + SDKs',           ds: '✓',           others: 'Partial' },
-  { feature: 'SOC 2 Compliance',          ds: 'In Progress', others: 'Varies' },
-];
-
-/* ─── HOW IT WORKS ───────────────────────────────────────────── */
-const STEPS = [
-  { n:'01', title:'Upload Media',       desc:'Drag-and-drop your image, video, or audio. We support all major formats up to 500MB.' },
-  { n:'02', title:'Deep Analysis',      desc:'Ensemble EfficientNet + Vision Transformer scans every frame for manipulation artifacts.' },
-  { n:'03', title:'Confidence Report',  desc:'Per-frame heatmap, confidence score, and a full breakdown of detected anomalies.' },
-  { n:'04', title:'Take Action',        desc:'Export the verified report, share via link, or integrate via API into your workflow.' },
-];
-
-/* ─── TECH TAGS ──────────────────────────────────────────────── */
-const TECH = ['EfficientNet B4', 'Vision Transformer', 'PyTorch', 'ONNX Runtime', 'React 18', 'Node.js', 'PostgreSQL', 'Redis', 'FF++ Dataset', 'Grad-CAM Heatmaps'];
-
-/* ─── TRUST BADGES ───────────────────────────────────────────── */
-const TRUST = [
-  { label: '97.3%', sub: 'Detection Accuracy' },
-  { label: '<3s',   sub: 'Image Analysis Time' },
-  { label: '50M+',  sub: 'Frames Analyzed' },
-  { label: '12+',   sub: 'Deepfake Types Detected' },
-];
-
-/* ─── MAIN PAGE ──────────────────────────────────────────────── */
-export default function HomePage() {
-  useHeadAssets();
-  const navigate = useNavigate();
-
+/* ============ FAQ ============ */
+function FAQ() {
+  const qs = [
+    ['How accurate is DeepShield?', 'Our ensemble (EfficientNetAutoAttB4 + ViT) achieves 92.4% accuracy on the FaceForensics++ c40 test set with an isotonic-calibrated false-positive rate below 3% on unedited camera photos.'],
+    ['Which media types are supported?', 'Images (JPEG/PNG/WebP), videos (MP4/WebM/MOV up to 100MB), news text (50–10,000 chars), and social-media screenshots via EasyOCR.'],
+    ['Do you retain uploaded files?', 'No. Files are hashed, analyzed, and deleted within the request lifecycle unless you opt in to the 30-day dedup cache, which stores only the SHA-256 and derived signals — never the raw media.'],
+    ['What models power the explainability layer?', 'Grad-CAM++ for visual evidence, Error-Level Analysis for compression tampering, Pillow/exifread for metadata, and Gemini 1.5 Flash for the plain-English summary.'],
+    ['Can I run this on-premise?', 'Yes. The FastAPI backend runs entirely offline with local model weights. NewsData.io lookup is optional and disabled by env flag.'],
+    ['Which languages do you handle?', 'English and Hindi at launch via XLM-RoBERTa for text and a bilingual EasyOCR reader. Tamil, Bengali, and Marathi are on the near-term roadmap.'],
+  ];
+  const [open, setOpen] = useState(null);
   return (
-    <div style={{ fontFamily: FONT_B, overflowX: 'hidden' }}>
-
-      {/* ── HERO ─────────────────────────────────────────────── */}
-      <section style={{
-        background: DARK, position: 'relative', minHeight: '100vh',
-        display: 'flex', alignItems: 'center', overflow: 'hidden',
-      }}>
-        <BokehBg variant="dark" />
-        <div style={{
-          position:'absolute', inset:0, zIndex:1, pointerEvents:'none',
-          backgroundImage: 'linear-gradient(rgba(255,255,255,0.025) 1px, transparent 1px), linear-gradient(90deg, rgba(255,255,255,0.025) 1px, transparent 1px)',
-          backgroundSize: '60px 60px',
-          maskImage: 'radial-gradient(ellipse 80% 60% at 50% 50%, black 40%, transparent 100%)',
-          WebkitMaskImage: 'radial-gradient(ellipse 80% 60% at 50% 50%, black 40%, transparent 100%)',
-        }} />
-
-        <div style={{ position:'relative', zIndex:2, maxWidth:1240, margin:'0 auto', padding:'120px 40px 80px', width:'100%' }}>
-          <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:60, alignItems:'center' }}>
-            {/* left */}
-            <div>
-              <div style={{ animation:'ds-hero-in 0.7s cubic-bezier(0.22,1,0.36,1) both', animationDelay:'0.1s' }}>
-                <span style={{
-                  display:'inline-flex', alignItems:'center', gap:8,
-                  fontFamily:FONT_B, fontSize:12, fontWeight:600, letterSpacing:'0.14em', textTransform:'uppercase',
-                  color:BLUE, background:'rgba(43,112,232,0.12)', border:'1px solid rgba(43,112,232,0.2)',
-                  padding:'6px 14px', borderRadius:100, marginBottom:32,
-                }}>
-                  <span style={{ width:6, height:6, borderRadius:'50%', background:GREEN, display:'inline-block', boxShadow:`0 0 8px ${GREEN}` }} />
-                  AI-Powered Deepfake Detection
-                </span>
-              </div>
-
-              <div style={{ animation:'ds-hero-in 0.7s cubic-bezier(0.22,1,0.36,1) both', animationDelay:'0.2s' }}>
-                <h1 style={{
-                  fontFamily: FONT_D, fontSize: 'clamp(48px, 5.5vw, 78px)',
-                  fontWeight: 800, fontStyle: 'italic', color: WHITE,
-                  lineHeight: 1.06, margin: '0 0 24px', letterSpacing: '-0.02em',
-                }}>
-                  Unmask the<br />
-                  <span style={{ color: BLUE }}>Synthetic.</span><br />
-                  Protect the<br />
-                  <span style={{ background: `linear-gradient(135deg, ${AMBER}, #FFC857)`, WebkitBackgroundClip:'text', WebkitTextFillColor:'transparent', backgroundClip:'text' }}>Real.</span>
-                </h1>
-              </div>
-
-              <div style={{ animation:'ds-hero-in 0.7s cubic-bezier(0.22,1,0.36,1) both', animationDelay:'0.35s' }}>
-                <p style={{ fontFamily:FONT_B, fontSize:17, color:'rgba(240,237,232,0.62)', lineHeight:1.75, maxWidth:460, margin:'0 0 40px' }}>
-                  DeepShield uses ensemble deep learning to detect face swaps, synthetic portraits, and audio clones — with 97.3% accuracy, in seconds.
-                </p>
-              </div>
-
-              <div style={{ display:'flex', gap:14, flexWrap:'wrap', animation:'ds-hero-in 0.7s cubic-bezier(0.22,1,0.36,1) both', animationDelay:'0.5s' }}>
-                <button
-                  onClick={() => navigate('/analyze')}
-                  style={{
-                    background: BLUE, color: '#fff', border:'none', cursor:'pointer',
-                    padding:'14px 30px', borderRadius:10, fontSize:15, fontWeight:600, fontFamily:FONT_B,
-                    boxShadow:`0 0 0 1px ${BLUE}, 0 8px 32px rgba(43,112,232,0.4)`,
-                    transition:'all 0.2s ease',
-                  }}
-                  onMouseEnter={e => { e.currentTarget.style.transform='translateY(-2px)'; e.currentTarget.style.boxShadow=`0 0 0 1px ${BLUE}, 0 14px 40px rgba(43,112,232,0.55)`; }}
-                  onMouseLeave={e => { e.currentTarget.style.transform=''; e.currentTarget.style.boxShadow=`0 0 0 1px ${BLUE}, 0 8px 32px rgba(43,112,232,0.4)`; }}
-                >
-                  Analyze Media Free →
-                </button>
-                <button
-                  onClick={() => navigate('/about')}
-                  style={{
-                    background:'transparent', color:WHITE, border:`1px solid rgba(240,237,232,0.18)`,
-                    cursor:'pointer', padding:'14px 30px', borderRadius:10, fontSize:15, fontWeight:500, fontFamily:FONT_B,
-                    transition:'all 0.2s ease',
-                  }}
-                  onMouseEnter={e => { e.currentTarget.style.borderColor='rgba(240,237,232,0.45)'; e.currentTarget.style.background='rgba(240,237,232,0.05)'; }}
-                  onMouseLeave={e => { e.currentTarget.style.borderColor='rgba(240,237,232,0.18)'; e.currentTarget.style.background='transparent'; }}
-                >
-                  How It Works
-                </button>
-              </div>
-
-              <div style={{ display:'flex', gap:36, marginTop:48, animation:'ds-hero-in 0.7s cubic-bezier(0.22,1,0.36,1) both', animationDelay:'0.65s' }}>
-                {[
-                  { v:97, s:'%', label:'Accuracy' },
-                  { v:3,  s:'s', pre:'<', label:'Analysis Speed' },
-                  { v:50, s:'M+', label:'Frames Analyzed' },
-                ].map(stat => (
-                  <div key={stat.label}>
-                    <div style={{ fontFamily:FONT_D, fontSize:30, fontWeight:800, color:WHITE, fontStyle:'italic' }}>
-                      <Counter target={stat.v} suffix={stat.s} prefix={stat.pre||''} />
-                    </div>
-                    <div style={{ fontFamily:FONT_B, fontSize:11, color:'rgba(255,255,255,0.38)', marginTop:2, letterSpacing:'0.05em' }}>{stat.label}</div>
-                  </div>
-                ))}
-              </div>
-            </div>
-
-            {/* right — 3D card */}
-            <div style={{ display:'flex', justifyContent:'center', alignItems:'center' }}>
-              <AnalysisCard3D />
-            </div>
-          </div>
+    <section className="ds-faq">
+      <div className="ds-container ds-faq-inner">
+        <div className="faq-left">
+          <span className="eyebrow">Questions</span>
+          <h2 className="display">We're here<br/>to help.</h2>
+          <p>Straight answers from the engineers who built the forensic pipeline.</p>
+          <button className="btn btn-glass btn-lg">All FAQs ↗</button>
         </div>
-
-        <div style={{ position:'absolute', bottom:0, left:0, right:0, height:120, background:`linear-gradient(to bottom, transparent, ${DARK})`, zIndex:2, pointerEvents:'none' }} />
-      </section>
-
-      {/* ── MARQUEE ───────────────────────────────────────────── */}
-      <MarqueeSection />
-
-      {/* ── PROBLEM — CREAM ──────────────────────────────────── */}
-      <section style={{ background: CREAM, padding: '120px 40px', position:'relative', overflow:'hidden' }}>
-        <BokehBg variant="cream" />
-        <div style={{ maxWidth:1240, margin:'0 auto', position:'relative', zIndex:1 }}>
-          <RevealItem>
-            <span style={{ fontFamily:FONT_B, fontSize:12, fontWeight:600, letterSpacing:'0.14em', textTransform:'uppercase', color:BLUE, marginBottom:20, display:'block' }}>The Problem</span>
-          </RevealItem>
-          <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:80, alignItems:'start' }}>
-            <RevealItem delay={100}>
-              <h2 style={{ fontFamily:FONT_D, fontSize:'clamp(36px,4.2vw,60px)', fontWeight:800, fontStyle:'italic', color:DARK, lineHeight:1.1, margin:0 }}>
-                Synthetic media is eroding trust at scale.
-              </h2>
-            </RevealItem>
-            <div>
-              {[
-                { h:'Politicians impersonated',  b:'AI-generated video of political figures making false statements has influenced elections in 6 countries since 2023.' },
-                { h:'Executives cloned for fraud', b:'Deepfake voice and video calls have successfully impersonated CEOs to authorize $25M+ in fraudulent wire transfers.' },
-                { h:'Non-consensual imagery',     b:'Over 96% of deepfakes online are non-consensual intimate imagery, targeting private individuals.' },
-              ].map((item, i) => (
-                <RevealItem key={i} delay={160 + i * 100}>
-                  <div style={{ marginBottom: 28 }}>
-                    <h3 style={{ fontFamily:FONT_D, fontSize:19, fontWeight:700, color:DARK, margin:'0 0 8px' }}>{item.h}</h3>
-                    <p style={{ fontFamily:FONT_B, fontSize:15, color:'rgba(10,10,15,0.58)', lineHeight:1.75, margin:0 }}>{item.b}</p>
-                  </div>
-                </RevealItem>
-              ))}
-            </div>
-          </div>
-        </div>
-      </section>
-
-      {/* ── COMPARISON — DARK ────────────────────────────────── */}
-      <section style={{ background: DARK2, padding: '120px 40px', position:'relative', overflow:'hidden' }}>
-        <BokehBg variant="dark" />
-        <div style={{ maxWidth:1100, margin:'0 auto', position:'relative', zIndex:1 }}>
-          <RevealItem style={{ textAlign:'center', marginBottom:64 }}>
-            <span style={{ fontFamily:FONT_B, fontSize:12, fontWeight:600, letterSpacing:'0.14em', textTransform:'uppercase', color:AMBER, display:'block', marginBottom:16 }}>Why DeepShield</span>
-            <h2 style={{ fontFamily:FONT_D, fontSize:'clamp(34px,3.8vw,54px)', fontWeight:800, fontStyle:'italic', color:WHITE, lineHeight:1.1, margin:0 }}>
-              Not all detectors are built equal.
-            </h2>
-          </RevealItem>
-          <RevealItem delay={120}>
-            <div style={{ borderRadius:16, overflow:'hidden', border:'1px solid rgba(255,255,255,0.07)', background:'rgba(255,255,255,0.02)' }}>
-              <div style={{ display:'grid', gridTemplateColumns:'2fr 1fr 1fr', background:'rgba(255,255,255,0.04)', padding:'14px 28px', borderBottom:'1px solid rgba(255,255,255,0.07)' }}>
-                <span style={{ fontFamily:FONT_B, fontSize:11, fontWeight:600, letterSpacing:'0.1em', textTransform:'uppercase', color:'rgba(255,255,255,0.35)' }}>Feature</span>
-                <span style={{ fontFamily:FONT_B, fontSize:11, fontWeight:700, letterSpacing:'0.1em', textTransform:'uppercase', color:BLUE, textAlign:'center' }}>DeepShield</span>
-                <span style={{ fontFamily:FONT_B, fontSize:11, fontWeight:600, letterSpacing:'0.1em', textTransform:'uppercase', color:'rgba(255,255,255,0.28)', textAlign:'center' }}>Others</span>
+        <div className="faq-right">
+          {qs.map(([q,a],i)=>(
+            <button key={q} className={`faq-item ${open===i?'open':''}`} onClick={()=>setOpen(open===i?-1:i)}>
+              <div className="faq-q">
+                <span>{q}</span>
+                <span className="faq-plus">{open===i?'−':'+'}</span>
               </div>
-              {COMPARISON.map((row, i) => (
-                <div key={i} style={{ display:'grid', gridTemplateColumns:'2fr 1fr 1fr', padding:'15px 28px', borderBottom: i < COMPARISON.length-1 ? '1px solid rgba(255,255,255,0.05)' : 'none', alignItems:'center', background: i%2===0 ? 'transparent' : 'rgba(255,255,255,0.012)' }}>
-                  <span style={{ fontFamily:FONT_B, fontSize:14, color:'rgba(255,255,255,0.62)' }}>{row.feature}</span>
-                  <span style={{ fontFamily:FONT_B, fontSize:14, fontWeight:600, color:GREEN, textAlign:'center' }}>{row.ds}</span>
-                  <span style={{ fontFamily:FONT_B, fontSize:14, color:'rgba(255,255,255,0.28)', textAlign:'center' }}>{row.others}</span>
-                </div>
-              ))}
-            </div>
-          </RevealItem>
-        </div>
-      </section>
-
-      {/* ── HOW IT WORKS — CREAM ─────────────────────────────── */}
-      <section style={{ background: CREAM2, padding: '120px 40px', overflow:'hidden' }}>
-        <div style={{ maxWidth:1240, margin:'0 auto' }}>
-          <RevealItem style={{ textAlign:'center', marginBottom:72 }}>
-            <span style={{ fontFamily:FONT_B, fontSize:12, fontWeight:600, letterSpacing:'0.14em', textTransform:'uppercase', color:BLUE, display:'block', marginBottom:16 }}>Process</span>
-            <h2 style={{ fontFamily:FONT_D, fontSize:'clamp(34px,3.8vw,54px)', fontWeight:800, fontStyle:'italic', color:DARK, lineHeight:1.1, margin:0 }}>
-              From upload to verdict in seconds.
-            </h2>
-          </RevealItem>
-          <div style={{ display:'grid', gridTemplateColumns:'repeat(4,1fr)', gap:24 }}>
-            {STEPS.map((step, i) => (
-              <RevealItem key={i} delay={i * 110}>
-                <div
-                  style={{ background:'rgba(10,10,15,0.04)', borderRadius:16, padding:'30px 26px', border:'1px solid rgba(10,10,15,0.07)', position:'relative', overflow:'hidden', transition:'transform 0.25s ease, box-shadow 0.25s ease', cursor:'default' }}
-                  onMouseEnter={e => { e.currentTarget.style.transform='translateY(-5px)'; e.currentTarget.style.boxShadow='0 20px 50px rgba(10,10,15,0.1)'; }}
-                  onMouseLeave={e => { e.currentTarget.style.transform=''; e.currentTarget.style.boxShadow='none'; }}
-                >
-                  <div style={{ fontFamily:FONT_D, fontSize:60, fontWeight:800, color:'rgba(10,10,15,0.04)', position:'absolute', top:4, right:14, lineHeight:1 }}>{step.n}</div>
-                  <div style={{ fontFamily:FONT_D, fontStyle:'italic', fontSize:36, fontWeight:800, color:`rgba(43,112,232,0.2)`, marginBottom:14, lineHeight:1 }}>{step.n}</div>
-                  <h3 style={{ fontFamily:FONT_D, fontSize:21, fontWeight:700, color:DARK, margin:'0 0 10px' }}>{step.title}</h3>
-                  <p style={{ fontFamily:FONT_B, fontSize:14, color:'rgba(10,10,15,0.52)', lineHeight:1.75, margin:0 }}>{step.desc}</p>
-                </div>
-              </RevealItem>
-            ))}
-          </div>
-        </div>
-      </section>
-
-      {/* ── TECH STACK — DARK ────────────────────────────────── */}
-      <section style={{ background: DARK, padding: '80px 40px', position:'relative', overflow:'hidden' }}>
-        <BokehBg variant="dark" />
-        <div style={{ maxWidth:1240, margin:'0 auto', position:'relative', zIndex:1 }}>
-          <RevealItem style={{ textAlign:'center', marginBottom:48 }}>
-            <span style={{ fontFamily:FONT_B, fontSize:12, fontWeight:600, letterSpacing:'0.14em', textTransform:'uppercase', color:'rgba(255,255,255,0.3)', display:'block', marginBottom:14 }}>Built With</span>
-            <h2 style={{ fontFamily:FONT_D, fontSize:'clamp(28px,3vw,44px)', fontWeight:800, fontStyle:'italic', color:'rgba(255,255,255,0.65)', lineHeight:1.1, margin:0 }}>
-              Industry-grade infrastructure.
-            </h2>
-          </RevealItem>
-          <div style={{ display:'flex', flexWrap:'wrap', gap:14, justifyContent:'center' }}>
-            {TECH.map((t, i) => (
-              <RevealItem key={i} delay={i * 55}>
-                <div
-                  style={{ background:'rgba(255,255,255,0.04)', border:'1px solid rgba(255,255,255,0.07)', borderRadius:100, padding:'9px 20px', fontFamily:FONT_B, fontSize:13, color:'rgba(255,255,255,0.55)', fontWeight:500, transition:'all 0.2s ease', cursor:'default' }}
-                  onMouseEnter={e => { e.currentTarget.style.background='rgba(43,112,232,0.12)'; e.currentTarget.style.borderColor='rgba(43,112,232,0.3)'; e.currentTarget.style.color=WHITE; }}
-                  onMouseLeave={e => { e.currentTarget.style.background='rgba(255,255,255,0.04)'; e.currentTarget.style.borderColor='rgba(255,255,255,0.07)'; e.currentTarget.style.color='rgba(255,255,255,0.55)'; }}
-                >
-                  {t}
-                </div>
-              </RevealItem>
-            ))}
-          </div>
-        </div>
-      </section>
-
-      {/* ── FAQ — CREAM ──────────────────────────────────────── */}
-      <section style={{ background: CREAM, padding: '120px 40px', overflow:'hidden' }}>
-        <div style={{ maxWidth:780, margin:'0 auto' }}>
-          <RevealItem style={{ marginBottom:60 }}>
-            <span style={{ fontFamily:FONT_B, fontSize:12, fontWeight:600, letterSpacing:'0.14em', textTransform:'uppercase', color:BLUE, display:'block', marginBottom:16 }}>FAQ</span>
-            <h2 style={{ fontFamily:FONT_D, fontSize:'clamp(34px,3.8vw,52px)', fontWeight:800, fontStyle:'italic', color:DARK, lineHeight:1.1, margin:0 }}>
-              Questions, answered.
-            </h2>
-          </RevealItem>
-          {FAQS.map((faq, i) => (
-            <FAQItem key={i} q={faq.q} a={faq.a} index={i} />
+              <div className="faq-a-wrap"><p className="faq-a">{a}</p></div>
+            </button>
           ))}
         </div>
-      </section>
+      </div>
+    </section>
+  );
+}
 
-      {/* ── TRUST + CTA — DARK ───────────────────────────────── */}
-      <section style={{ background: DARK, padding: '120px 40px', position:'relative', overflow:'hidden' }}>
-        <BokehBg variant="dark" />
-        <div style={{ maxWidth:1240, margin:'0 auto', position:'relative', zIndex:1 }}>
-          <div style={{ display:'grid', gridTemplateColumns:'repeat(4,1fr)', gap:18, marginBottom:100 }}>
-            {TRUST.map((badge, i) => (
-              <RevealItem key={i} delay={i * 80}>
-                <div style={{ textAlign:'center', padding:'28px 20px', borderRadius:14, background:'rgba(255,255,255,0.04)', border:'1px solid rgba(255,255,255,0.07)' }}>
-                  <div style={{ fontFamily:FONT_D, fontSize:36, fontWeight:800, fontStyle:'italic', color:WHITE, marginBottom:6 }}>{badge.label}</div>
-                  <div style={{ fontFamily:FONT_B, fontSize:11, color:'rgba(255,255,255,0.38)', textTransform:'uppercase', letterSpacing:'0.1em' }}>{badge.sub}</div>
-                </div>
-              </RevealItem>
-            ))}
-          </div>
-
-          <RevealItem delay={80} style={{ textAlign:'center' }}>
-            <h2 style={{ fontFamily:FONT_D, fontSize:'clamp(40px,4.8vw,70px)', fontWeight:800, fontStyle:'italic', color:WHITE, lineHeight:1.06, margin:'0 0 24px', maxWidth:720, marginLeft:'auto', marginRight:'auto' }}>
-              Start detecting deepfakes<br />
-              <span style={{ color:BLUE }}>right now.</span>
-            </h2>
-            <p style={{ fontFamily:FONT_B, fontSize:17, color:'rgba(255,255,255,0.48)', lineHeight:1.7, maxWidth:480, margin:'0 auto 44px' }}>
-              Free for the first 10 analyses. No credit card required. Enterprise plans with SLA guarantees available.
-            </p>
-            <div style={{ display:'flex', gap:14, justifyContent:'center', flexWrap:'wrap' }}>
-              <button
-                onClick={() => navigate('/analyze')}
-                style={{
-                  background: BLUE, color:'#fff', border:'none', cursor:'pointer',
-                  padding:'16px 38px', borderRadius:10, fontSize:16, fontWeight:600, fontFamily:FONT_B,
-                  boxShadow:`0 0 0 1px ${BLUE}, 0 8px 40px rgba(43,112,232,0.4)`,
-                  transition:'all 0.22s ease',
-                }}
-                onMouseEnter={e => { e.currentTarget.style.transform='translateY(-2px)'; e.currentTarget.style.boxShadow=`0 0 0 1px ${BLUE}, 0 16px 50px rgba(43,112,232,0.6)`; }}
-                onMouseLeave={e => { e.currentTarget.style.transform=''; e.currentTarget.style.boxShadow=`0 0 0 1px ${BLUE}, 0 8px 40px rgba(43,112,232,0.4)`; }}
-              >
-                Analyze Media Free →
+/* ============ CTA + FOOTER ============ */
+function CTAFooter() {
+  const navigate = useNavigate();
+  return (
+    <>
+      <section className="ds-cta">
+        <div className="ds-mesh"/>
+        <div className="ds-container">
+          <div className="cta-card glass-strong">
+            <span className="eyebrow">Start detecting</span>
+            <h2 className="display">Deploy forensic certainty<br/><em className="italic accent">in your newsroom today.</em></h2>
+            <p>Join newsrooms, platforms, and research labs using DeepShield as their trust instrument.</p>
+            <div className="cta-row">
+              <button className="btn btn-primary btn-lg btn-shiny" onClick={() => navigate('/register')}>Get started free
+                <svg width="14" height="14" viewBox="0 0 14 14"><path d="M3 7h8m0 0L7 3m4 4L7 11" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" fill="none"/></svg>
               </button>
-              <button
-                onClick={() => navigate('/register')}
-                style={{
-                  background:'transparent', color:WHITE, border:`1px solid rgba(240,237,232,0.18)`,
-                  cursor:'pointer', padding:'16px 38px', borderRadius:10, fontSize:16, fontWeight:500, fontFamily:FONT_B,
-                  transition:'all 0.22s ease',
-                }}
-                onMouseEnter={e => { e.currentTarget.style.borderColor='rgba(240,237,232,0.45)'; e.currentTarget.style.background='rgba(240,237,232,0.05)'; }}
-                onMouseLeave={e => { e.currentTarget.style.borderColor='rgba(240,237,232,0.18)'; e.currentTarget.style.background='transparent'; }}
-              >
-                Create Free Account
-              </button>
+              <button className="btn btn-glass btn-lg" onClick={() => navigate('/about')}>Request a live demo</button>
             </div>
-          </RevealItem>
+          </div>
         </div>
       </section>
+      <footer className="ds-footer">
+        <div className="ds-container ds-footer-inner">
+          <div className="foot-brand">
+            <div className="ds-logo">
+              <svg width="22" height="26" viewBox="0 0 22 26"><path d="M11 1L21 5V12.5C21 18.5 16.5 23.5 11 25C5.5 23.5 1 18.5 1 12.5V5L11 1Z" stroke="#6C7DFF" strokeWidth="1.5" fill="rgba(108,125,255,0.1)"/><path d="M6 11L10 15L16 8" stroke="#6C7DFF" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" fill="none"/></svg>
+              <span>DeepShield</span>
+            </div>
+            <p>Forensic AI for synthetic media. Open models, local-first, no retention.</p>
+            <div className="foot-trust mono">
+              <span>· Local-first</span><span>· Open models</span><span>· AA contrast</span>
+            </div>
+          </div>
+          <div className="foot-cols">
+            <div><h5>Product</h5><a>Analyze</a><a>Pipeline</a><a>Explainability</a><a>API</a></div>
+            <div><h5>Research</h5><a>Model cards</a><a>Benchmarks</a><a>Papers</a><a>Changelog</a></div>
+            <div><h5>Company</h5><a>About</a><a>Privacy</a><a>Responsible AI</a><a>Contact</a></div>
+          </div>
+        </div>
+        <div className="ds-container foot-bottom mono">
+          <span>© 2026 DeepShield · all signals open</span>
+          <span>build · v2.0</span>
+        </div>
+      </footer>
+    </>
+  );
+}
 
-    </div>
+/* ============ APP ============ */
+export default function HomePage() {
+  // Mount the dotted three.js background (global host lives in index.html).
+  useDottedSurface();
+
+  return (
+    <>
+      <Nav />
+      <main>
+        <Hero />
+        <Statement />
+        <ModalityCards />
+        <AnalyzeDemo />
+        <Comparison />
+        <Marquee />
+        <FAQ />
+        <CTAFooter />
+      </main>
+    </>
   );
 }

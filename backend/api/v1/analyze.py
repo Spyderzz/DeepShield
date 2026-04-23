@@ -1,5 +1,3 @@
-from __future__ import annotations
-
 import json
 import os
 import time
@@ -83,6 +81,7 @@ VIDEO_NUM_FRAMES = 16
 @limiter.limit(AUTH_ANALYZE, exempt_when=is_anon)
 async def analyze_image(
     request: Request,
+    response: Response,
     file: UploadFile = File(...),
     db: Session = Depends(get_db),
     user: User | None = Depends(optional_current_user),
@@ -245,6 +244,7 @@ async def analyze_image(
 @limiter.limit(AUTH_ANALYZE, exempt_when=is_anon)
 async def analyze_video_endpoint(
     request: Request,
+    response: Response,
     file: UploadFile = File(...),
     db: Session = Depends(get_db),
     user: User | None = Depends(optional_current_user),
@@ -436,6 +436,7 @@ class TextAnalyzeBody(BaseModel):
 @limiter.limit(AUTH_ANALYZE, exempt_when=is_anon)
 async def analyze_text_endpoint(
     request: Request,
+    response: Response,
     body: TextAnalyzeBody = Body(...),
     db: Session = Depends(get_db),
     user: User | None = Depends(optional_current_user),
@@ -564,6 +565,7 @@ async def analyze_text_endpoint(
 @limiter.limit(AUTH_ANALYZE, exempt_when=is_anon)
 async def analyze_screenshot_endpoint(
     request: Request,
+    response: Response,
     file: UploadFile = File(...),
     db: Session = Depends(get_db),
     user: User | None = Depends(optional_current_user),
@@ -742,6 +744,7 @@ async def analyze_screenshot_endpoint(
 @limiter.limit(AUTH_ANALYZE, exempt_when=is_anon)
 async def analyze_video_async(
     request: Request,
+    response: Response,
     background: BackgroundTasks,
     file: UploadFile = File(...),
     db: Session = Depends(get_db),

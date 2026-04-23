@@ -1,252 +1,370 @@
-import { useEffect, useState } from 'react';
-import { motion } from 'framer-motion';
-import UploadZone from '../components/upload/UploadZone.jsx';
-import TextInput from '../components/upload/TextInput.jsx';
-import ProcessingAnimation from '../components/common/ProcessingAnimation.jsx';
-import LoadingSpinner from '../components/common/LoadingSpinner.jsx';
-import PipelineVisualizer from '../components/common/PipelineVisualizer.jsx';
-import AnalysisResultView from '../components/results/AnalysisResultView.jsx';
-import { analyzeImage, analyzeVideo, analyzeText, analyzeScreenshot, getReadiness } from '../services/analyzeApi.js';
-import { useToast } from '../contexts/ToastContext.jsx';
+import { useEffect, useRef, useState } from 'react';
+import { useNavigate } from 'react-router-dom';
+import { SharedNav, SharedFooter } from '../components/layout/SharedNav.jsx';
+import LayerStack from '../components/layout/LayerStack.jsx';
+import useDottedSurface from '../hooks/useDottedSurface.js';
+import { listHistory } from '../services/historyApi.js';
+import {
+  analyzeImage, analyzeVideo, analyzeText, analyzeScreenshot,
+} from '../services/analyzeApi.js';
+import './deepshield-landing.css';
+import './deepshield-pages.css';
 
-const MODES = {
-  image:      { label: 'Image',      maxMB: 20,  spinner: 'Running ViT + Grad-CAM + artifact scan…', cta: 'Analyze image', analyze: analyzeImage, type: 'file' },
-  video:      { label: 'Video',      maxMB: 100, spinner: 'Sampling frames + classifying…', cta: 'Analyze video', analyze: analyzeVideo, type: 'file' },
-  text:       { label: 'Text',       maxMB: 0,   spinner: 'Running BERT + sensationalism scan…', cta: 'Analyze text', analyze: analyzeText, type: 'text' },
-  screenshot: { label: 'Screenshot', maxMB: 20,  spinner: 'OCR + text + layout scan…', cta: 'Analyze screenshot', analyze: analyzeScreenshot, type: 'file' },
+const MODES = [
+  { k: 'image',      label: 'Image',      icon: '🖼', accept: 'image/*' },
+  { k: 'video',      label: 'Video',      icon: '▶',  accept: 'video/*' },
+  { k: 'text',       label: 'Text',       icon: '¶',  accept: null },
+  { k: 'screenshot', label: 'Screenshot', icon: '▭',  accept: 'image/*' },
+];
+
+const MODE_STAGES = {
+  image:      ['Upload', 'Preprocess', 'ViT + EfficientNet', 'Grad-CAM++', 'ELA + EXIF', 'LLM summary'],
+  video:      ['Upload', 'Extract frames', 'Per-frame classify', 'Temporal consistency', 'Audio lip-sync', 'LLM summary'],
+  text:       ['Paste', 'Tokenize (XLM-R)', 'Sensationalism', 'NER + source lookup', 'Truth-override', 'LLM summary'],
+  screenshot: ['Upload', 'EasyOCR', 'Layout anomaly', 'Claim credibility', 'Phrase map', 'LLM summary'],
 };
 
+const SAMPLE_SRC = 'https://images.unsplash.com/photo-1531123897727-8f129e1688ce?w=640&q=80&auto=format&fit=crop';
+
+async function fetchSampleAsFile(url, filename = 'sample.jpg') {
+  const r = await fetch(url);
+  const b = await r.blob();
+  return new File([b], filename, { type: b.type || 'image/jpeg' });
+}
+
 export default function AnalyzePage() {
+  useDottedSurface();
+  const navigate = useNavigate();
+
   const [mode, setMode] = useState('image');
-  const [file, setFile] = useState(null);
-  const [originalUrl, setOriginalUrl] = useState(null);
-  const [textContent, setTextContent] = useState('');
-  const [loading, setLoading] = useState(false);
-  const [result, setResult] = useState(null);
+  const [stage, setStage] = useState('idle');
+  const [progress, setProgress] = useState(0);
+  const [activeStage, setActiveStage] = useState(0);
+  const [textVal, setTextVal] = useState('');
+  const [cache, setCache] = useState(true);
+  const [urlVal, setUrlVal] = useState('');
+  const [lang, setLang] = useState('en');
   const [error, setError] = useState(null);
-  const toast = useToast();
-  const [ready, setReady] = useState(true); // Phase 19.5 — readiness gate
+  const fileRef = useRef(null);
+  const jobId = useRef(Math.random().toString(36).slice(2, 10).toUpperCase());
+  const [recent, setRecent] = useState([]);
+
+  const segRefs = useRef([]);
+  const [segPill, setSegPill] = useState({ left: 0, width: 0 });
 
   useEffect(() => {
-    let cancelled = false;
-    const check = async () => {
-      const r = await getReadiness();
-      if (!cancelled) setReady(Boolean(r.ready));
-    };
-    check();
-    const id = setInterval(check, 10000);
-    return () => { cancelled = true; clearInterval(id); };
+    const idx = MODES.findIndex(m => m.k === mode);
+    const el = segRefs.current[idx];
+    if (el) setSegPill({ left: el.offsetLeft, width: el.offsetWidth });
+  }, [mode]);
+
+  useEffect(() => {
+    if (stage !== 'processing') return;
+    const stages = MODE_STAGES[mode];
+    let p = progress;
+    const id = setInterval(() => {
+      p = Math.min(92, p + 1.4);
+      setProgress(p);
+      setActiveStage(Math.min(stages.length - 1, Math.floor(p / (100 / stages.length))));
+    }, 80);
+    return () => clearInterval(id);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [stage, mode]);
+
+  useEffect(() => {
+    (async () => {
+      try {
+        const data = await listHistory(6, 0);
+        setRecent(data.items || []);
+      } catch (_e) {
+        setRecent([]);
+      }
+    })();
   }, []);
 
-  const cfg = MODES[mode];
+  const canStart = mode === 'text' ? textVal.trim().length >= 50 : true;
 
-  const onFileAccepted = (f) => {
-    setFile(f);
-    setResult(null);
+  const runAnalysis = async (payload) => {
     setError(null);
-    setOriginalUrl(URL.createObjectURL(f));
+    setProgress(0);
+    setActiveStage(0);
+    setStage('processing');
+    try {
+      let data;
+      if (mode === 'image')           data = await analyzeImage(payload);
+      else if (mode === 'video')      data = await analyzeVideo(payload);
+      else if (mode === 'text')       data = await analyzeText(payload);
+      else if (mode === 'screenshot') data = await analyzeScreenshot(payload);
+      setProgress(100);
+      setActiveStage(MODE_STAGES[mode].length - 1);
+      const id = data?.record_id || data?.analysis_id;
+      setTimeout(() => {
+        if (id) navigate(`/results/${id}`, { state: { result: data } });
+        else setStage('idle');
+      }, 400);
+    } catch (e) {
+      setError(e?.response?.data?.detail || e?.message || 'Analysis failed');
+      setStage('idle');
+    }
   };
 
-  const submitFile = async () => {
+  const onPickFile = (file) => {
     if (!file) return;
-    setLoading(true);
-    setError(null);
-    try {
-      const data = await cfg.analyze(file);
-      setResult(data);
-      toast.success(`Analysis complete: ${data.verdict?.label || 'done'}`);
-    } catch (err) {
-      const msg = err.userMessage || err.message || 'Analysis failed';
-      setError(msg);
-      toast.error(msg);
-    } finally {
-      setLoading(false);
+    runAnalysis(file);
+  };
+
+  const start = async () => {
+    if (mode === 'text') {
+      if (!canStart) return;
+      runAnalysis(textVal);
+      return;
     }
-  };
-
-  const submitText = async (text) => {
-    setTextContent(text);
-    setLoading(true);
-    setError(null);
-    try {
-      const data = await analyzeText(text);
-      setResult(data);
-      toast.success(`Analysis complete: ${data.verdict?.label || 'done'}`);
-    } catch (err) {
-      const msg = err.userMessage || err.message || 'Analysis failed';
-      setError(msg);
-      toast.error(msg);
-    } finally {
-      setLoading(false);
+    if (urlVal.trim()) {
+      try {
+        const f = await fetchSampleAsFile(urlVal.trim(), 'pasted-url');
+        runAnalysis(f);
+      } catch (_e) {
+        setError('Could not fetch that URL');
+      }
+      return;
     }
+    fileRef.current?.click();
   };
 
-  const reset = () => {
-    setFile(null);
-    setResult(null);
-    setError(null);
-    setOriginalUrl(null);
-    setTextContent('');
-  };
-
-  const switchMode = (m) => {
-    if (m === mode) return;
-    setMode(m);
-    reset();
+  const useSample = async () => {
+    try {
+      const f = await fetchSampleAsFile(SAMPLE_SRC, 'sample.jpg');
+      runAnalysis(f);
+    } catch (_e) {
+      setError('Could not load sample');
+    }
   };
 
   return (
-    <section style={{ display: 'grid', gap: 'var(--space-6)' }}>
-      <div>
-        <h2 style={{ marginBottom: 'var(--space-2)' }}>Media Analysis</h2>
-        <p style={{ color: 'var(--color-text-secondary)', margin: 0 }}>
-          Upload an image, video, or paste text to detect deepfake and manipulation signals with explainable AI.
-        </p>
-      </div>
-
-      {/* iOS-style segmented controller */}
-      <div style={{ display: 'flex', justifyContent: 'center' }}>
-        <div
-          style={{
-            display: 'inline-flex',
-            background: 'rgba(118, 118, 128, 0.12)',
-            borderRadius: 'var(--radius-full)',
-            padding: 3,
-          }}
-        >
-          {Object.entries(MODES).map(([key, val]) => (
-            <button
-              key={key}
-              onClick={() => switchMode(key)}
-              style={{
-                position: 'relative',
-                padding: '8px 22px',
-                border: 'none',
-                borderRadius: 'var(--radius-full)',
-                background: 'transparent',
-                color: mode === key ? 'var(--color-text-primary)' : 'var(--color-text-secondary)',
-                fontWeight: mode === key ? 'var(--font-weight-semibold)' : 'var(--font-weight-normal)',
-                fontSize: 'var(--font-size-sm)',
-                cursor: 'pointer',
-                transition: 'color 0.2s',
-                zIndex: 1,
-                userSelect: 'none',
-              }}
-            >
-              {mode === key && (
-                <motion.div
-                  layoutId="seg-pill"
-                  style={{
-                    position: 'absolute',
-                    inset: 0,
-                    background: 'var(--color-surface)',
-                    borderRadius: 'var(--radius-full)',
-                    boxShadow: '0 2px 8px rgba(0,0,0,0.10)',
-                  }}
-                  transition={{ type: 'spring', stiffness: 420, damping: 38 }}
-                />
-              )}
-              <span style={{ position: 'relative', zIndex: 1 }}>{val.label}</span>
-            </button>
-          ))}
+    <>
+      <SharedNav current="analyze" />
+      <section className="analyze-shell page-shell">
+        <div className="page-head">
+          <div className="crumbs">
+            <a onClick={() => navigate('/')} style={{ cursor: 'pointer' }}>Home</a>
+            <span className="sep">/</span>
+            <span>Analyze</span>
+          </div>
+          <span className="eyebrow">Forensic console</span>
+          <h1 className="display">Analyze <em className="italic accent">any media.</em></h1>
+          <p className="sub">Drop an image, video, article, or screenshot. The pipeline routes to the right forensic stack and returns a calm, evidence-backed verdict.</p>
         </div>
-      </div>
 
-      {!result && (
-        <div
-          style={{
-            background: `
-              radial-gradient(at 25% 25%, rgba(30, 136, 229, 0.13) 0px, transparent 50%),
-              radial-gradient(at 75% 75%, rgba(99, 102, 241, 0.10) 0px, transparent 50%),
-              radial-gradient(at 65% 10%, rgba(16, 185, 129, 0.07) 0px, transparent 50%),
-              var(--color-surface)
-            `,
-            borderRadius: 'var(--radius-xl)',
-            padding: 'var(--space-8)',
-            border: '1px solid var(--color-border)',
-            boxShadow: 'var(--shadow-md)',
-          }}
-        >
-          {cfg.type === 'file' && !loading && (
-            <>
-              <UploadZone
-                mediaType={mode}
-                maxSizeMB={cfg.maxMB}
-                onFileAccepted={onFileAccepted}
-                disabled={false}
-              />
-              <div style={{ display: 'flex', gap: 'var(--space-3)', alignItems: 'center', marginTop: 'var(--space-5)' }}>
-                <motion.button
-                  id="file-analyze-btn"
-                  onClick={submitFile}
-                  disabled={!file || !ready}
-                  whileHover={file && ready ? { scale: 1.02 } : {}}
-                  whileTap={file && ready ? { scale: 0.97 } : {}}
-                  title={!ready ? 'Backend is warming up — try again in a moment' : undefined}
-                  style={{
-                    padding: 'var(--space-3) var(--space-8)',
-                    background: (file && ready)
-                      ? 'linear-gradient(135deg, var(--color-primary-500) 0%, var(--color-primary-600) 100%)'
-                      : 'var(--color-border)',
-                    color: 'white',
-                    border: 'none',
-                    borderRadius: 'var(--radius-full)',
-                    cursor: (file && ready) ? 'pointer' : 'not-allowed',
-                    fontWeight: 'var(--font-weight-semibold)',
-                    fontSize: 'var(--font-size-base)',
-                    boxShadow: (file && ready) ? '0 4px 14px rgba(30,136,229,0.30)' : 'none',
-                    transition: 'background 0.2s, box-shadow 0.2s',
-                  }}
+        <div style={{ display: 'flex', justifyContent: 'center', marginBottom: 32 }}>
+          <div className="mode-seg">
+            <div className="mode-seg-pill" style={{ left: segPill.left, width: segPill.width }}/>
+            {MODES.map((m, i) => (
+              <button key={m.k} ref={el => segRefs.current[i] = el}
+                className={`mode-seg-btn ${mode === m.k ? 'active' : ''}`}
+                onClick={() => { setMode(m.k); setStage('idle'); setError(null); }}>
+                <span style={{ opacity: 0.6 }}>{m.icon}</span>{m.label}
+              </button>
+            ))}
+          </div>
+        </div>
+
+        <div className="analyze-panel">
+          <div className="analyze-console">
+            {stage === 'idle' && mode !== 'text' && (
+              <>
+                <div
+                  className="drop-large"
+                  onClick={start}
+                  onDragOver={(e) => e.preventDefault()}
+                  onDrop={(e) => { e.preventDefault(); onPickFile(e.dataTransfer.files?.[0]); }}
                 >
-                  {!ready ? 'Backend warming up…' : cfg.cta}
-                </motion.button>
-              </div>
-            </>
-          )}
-
-          {cfg.type === 'file' && loading && (
-            <ProcessingAnimation imageUrl={originalUrl} mediaType={mode} label={cfg.spinner} />
-          )}
-
-          {cfg.type === 'text' && (
-            <>
-              <TextInput onTextSubmit={submitText} disabled={loading} />
-              {loading && (
-                <div style={{ marginTop: 'var(--space-4)' }}>
-                  <LoadingSpinner label={cfg.spinner} />
+                  <input
+                    ref={fileRef}
+                    type="file"
+                    accept={MODES.find(m => m.k === mode)?.accept}
+                    style={{ display: 'none' }}
+                    onChange={(e) => onPickFile(e.target.files?.[0])}
+                  />
+                  <div className="blob">
+                    <svg viewBox="0 0 200 200">
+                      <defs>
+                        <linearGradient id="blobg" x1="0" y1="0" x2="1" y2="1">
+                          <stop stopColor="#7F8FFF"/><stop offset="1" stopColor="#3DDBB3"/>
+                        </linearGradient>
+                      </defs>
+                      <path d="M100 20 C140 20 170 50 170 90 C170 130 140 170 100 170 C60 170 30 130 30 90 C30 50 60 20 100 20 Z"
+                        fill="none" stroke="url(#blobg)" strokeWidth="1.2" strokeDasharray="5 7" opacity="0.55"/>
+                      <path d="M100 60 L100 120 M80 100 L100 120 L120 100" stroke="url(#blobg)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" fill="none"/>
+                    </svg>
+                  </div>
+                  <h2 className="display">Drop {mode} here</h2>
+                  <p className="hint">{mode === 'image' ? 'PNG · JPEG · WebP · 20MB' : mode === 'video' ? 'MP4 · WebM · MOV · 100MB' : 'PNG · JPEG · 20MB'}</p>
+                  <p className="or-paste">or paste a URL · or click to browse</p>
+                  <button className="btn btn-glass btn-sm" onClick={(e) => { e.stopPropagation(); useSample(); }}>Use sample</button>
+                  {error && <p style={{ color: 'var(--ds-danger)', marginTop: 12, fontSize: 13 }}>{error}</p>}
                 </div>
-              )}
-            </>
-          )}
+                <div className="options-row">
+                  <label className="opt"><input type="checkbox" checked={cache} onChange={e => setCache(e.target.checked)} /> Cache result</label>
+                  <input type="text" placeholder={mode === 'image' ? '…or paste image URL' : '…or paste media URL'} value={urlVal} onChange={e => setUrlVal(e.target.value)} />
+                  <div className="grow"/>
+                  <select value={lang} onChange={e => setLang(e.target.value)}>
+                    <option value="en">English</option>
+                    <option value="hi">Hindi</option>
+                    <option value="ta">Tamil</option>
+                    <option value="bn">Bengali</option>
+                  </select>
+                </div>
+              </>
+            )}
 
-          {loading && (
-            <div style={{ marginTop: 'var(--space-4)' }}>
-              <PipelineVisualizer mediaType={mode} running />
-            </div>
-          )}
+            {stage === 'idle' && mode === 'text' && (
+              <>
+                <div className="text-panel">
+                  <div className="ta-head">
+                    <span className="eyebrow">Paste article text</span>
+                    <span className="ta-meta">{textVal.length} / 10000 chars · min 50</span>
+                  </div>
+                  <textarea
+                    placeholder="Paste a news headline and article body. DeepShield runs XLM-RoBERTa, NER-anchored source lookup, and truth-override against trusted Indian + international domains."
+                    value={textVal}
+                    onChange={e => setTextVal(e.target.value.slice(0, 10000))}
+                  />
+                  <button
+                    className="btn btn-primary btn-lg btn-shiny"
+                    disabled={!canStart}
+                    style={{ alignSelf: 'flex-start', opacity: canStart ? 1 : 0.5, cursor: canStart ? 'pointer' : 'not-allowed' }}
+                    onClick={start}
+                  >
+                    Analyze text →
+                  </button>
+                  {error && <p style={{ color: 'var(--ds-danger)', marginTop: 12, fontSize: 13 }}>{error}</p>}
+                </div>
+                <div className="options-row">
+                  <label className="opt"><input type="checkbox" checked={cache} onChange={e => setCache(e.target.checked)}/> Cache result</label>
+                  <div className="grow"/>
+                  <select value={lang} onChange={e => setLang(e.target.value)}>
+                    <option value="en">English</option>
+                    <option value="hi">Hindi</option>
+                  </select>
+                </div>
+              </>
+            )}
 
-          {error && (
-            <div style={{
-              color: 'var(--color-danger)',
-              background: '#FFEBEE',
-              padding: 'var(--space-3)',
-              borderRadius: 'var(--radius-md)',
-              marginTop: 'var(--space-4)',
-            }}>
-              {error}
-            </div>
-          )}
+            {stage === 'processing' && (
+              <div className="processing-wrap">
+                <div>
+                  {mode !== 'text' ? (
+                    <div className="stack-scene mini" style={{ height: 380 }}>
+                      <LayerStack src={SAMPLE_SRC} density={6} />
+                    </div>
+                  ) : (
+                    <TextProcessingViz />
+                  )}
+                </div>
+                <div>
+                  <div className="p-stages-head">
+                    <span className="eyebrow">Pipeline</span>
+                    <span className="mono" style={{ fontSize: 11, color: 'var(--ds-muted)' }}>{Math.round(progress)}%</span>
+                  </div>
+                  <div className="p-stages-bar"><i style={{ width: `${progress}%` }}/></div>
+                  <ol className="stage-list">
+                    {MODE_STAGES[mode].map((s, i) => (
+                      <li key={s} className={i < activeStage ? 'done' : i === activeStage ? 'active' : ''}>
+                        <span className="stage-dot"/>
+                        <span className="stage-label">{s}</span>
+                        <span className="mono stage-status">{i < activeStage ? '✓' : i === activeStage ? '···' : '—'}</span>
+                      </li>
+                    ))}
+                  </ol>
+                  <p style={{ color: 'var(--ds-muted)', fontSize: 12, marginTop: 20, fontFamily: 'var(--ff-mono)' }}>
+                    job · {jobId.current} · cache · {cache ? 'on' : 'off'} · lang · {lang}
+                  </p>
+                </div>
+              </div>
+            )}
+          </div>
         </div>
-      )}
 
-      {result && (
-        <AnalysisResultView
-          analysis={result}
-          originalUrl={originalUrl}
-          textContent={textContent}
-          onAnalyzeAnother={reset}
-        />
-      )}
-    </section>
+        <div className="recent-rail">
+          <h3>Recent analyses</h3>
+          <div className="recent-grid">
+            {(recent.length > 0 ? recent : DEFAULT_RECENT).map((r, i) => {
+              const score = typeof r.authenticity_score === 'number' ? Math.round(r.authenticity_score) : null;
+              const color = score == null ? 'warn' : score >= 65 ? 'safe' : score >= 40 ? 'warn' : 'danger';
+              const verdictLabel = r.verdict
+                ? r.verdict.toString().slice(0, 4).toUpperCase()
+                : (color === 'safe' ? 'REAL' : color === 'warn' ? 'SUSP' : 'FAKE');
+              const title = r.title || `${r.media_type || 'analysis'} · ${r.id}`;
+              const when = r.created_at ? new Date(r.created_at).toLocaleString() : (r.d || '');
+              return (
+                <a
+                  className="recent-card"
+                  key={r.id || i}
+                  onClick={() => r.id && navigate(`/results/${r.id}`)}
+                  style={{ cursor: r.id ? 'pointer' : 'default' }}
+                >
+                  <div className="recent-thumb" style={{
+                    backgroundImage: r.src ? `url(${r.src})` : undefined,
+                    background: r.src ? undefined : 'linear-gradient(135deg, rgba(108,125,255,0.08), rgba(61,219,179,0.04))',
+                  }}>
+                    <span className={`verdict-dot h-verdict ${color}`} style={{ position: 'absolute', top: 8, right: 8, padding: '2px 7px', fontSize: 9 }}>{verdictLabel}</span>
+                  </div>
+                  <div className="recent-title">{title}</div>
+                  <div className="recent-meta">
+                    <span>id · {String(r.id || '').slice(0, 6)}</span>
+                    <span>{when}</span>
+                  </div>
+                </a>
+              );
+            })}
+          </div>
+        </div>
+      </section>
+      <SharedFooter />
+    </>
   );
 }
+
+function TextProcessingViz() {
+  const [idx, setIdx] = useState(0);
+  const lines = [
+    { t: 'BREAKING: sources allegedly confirm' },
+    { t: 'shocking truth experts refuse to believe' },
+    { t: 'cross-reference · Reuters · matched' },
+    { t: 'sensationalism score 0.74 · truth -0.41' },
+  ];
+  useEffect(() => {
+    const id = setInterval(() => setIdx(i => (i + 1) % lines.length), 900);
+    return () => clearInterval(id);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+  return (
+    <div style={{
+      padding: 24, background: 'rgba(0,0,0,0.4)', border: '1px solid var(--ds-border)',
+      borderRadius: 14, fontFamily: 'var(--ff-mono)', fontSize: 13, color: 'var(--ds-ink-2)',
+      minHeight: 380, display: 'flex', flexDirection: 'column', justifyContent: 'center', gap: 14,
+    }}>
+      {lines.map((line, i) => {
+        const active = i === idx;
+        return (
+          <div key={i} style={{
+            opacity: i <= idx ? 1 : 0.25,
+            transition: 'opacity 400ms, transform 400ms',
+            transform: active ? 'translateX(6px)' : 'translateX(0)',
+            color: active ? 'var(--ds-ink)' : 'var(--ds-ink-2)',
+          }}>
+            <span style={{ color: 'var(--ds-muted)', marginRight: 10 }}>&gt;</span>{line.t}
+            {active && <span style={{ marginLeft: 10, color: 'var(--ds-brand-2)' }}>◉</span>}
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
+const DEFAULT_RECENT = [
+  { src: 'https://images.unsplash.com/photo-1488554378835-f7acf46e6c98?w=300&q=80&auto=format', title: 'Staged portrait', d: '2m ago',  authenticity_score: 18, verdict: 'FAKE' },
+  { src: 'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=300&q=80&auto=format', title: 'Press photo',    d: '14m ago', authenticity_score: 88, verdict: 'REAL' },
+  { src: 'https://images.unsplash.com/photo-1496128858413-b36217c2ce36?w=300&q=80&auto=format', title: 'Social post',    d: '1h ago',  authenticity_score: 52, verdict: 'SUSP' },
+  { src: 'https://images.unsplash.com/photo-1531123897727-8f129e1688ce?w=300&q=80&auto=format', title: 'Pipeline test',  d: '3h ago',  authenticity_score: 12, verdict: 'FAKE' },
+];

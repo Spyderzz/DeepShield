@@ -1,0 +1,22 @@
+2026-04-22 18:24:59.601 | INFO     | main:lifespan:83 - Starting DeepShield backend
+2026-04-22 18:24:59.655 | INFO     | main:lifespan:85 - Database initialized
+2026-04-22 18:24:59.656 | INFO     | models.model_loader:load_image_model:43 - Loading image model: prithivMLmods/Deep-Fake-Detector-v2-Model
+2026-04-22 18:25:06.201 | INFO     | models.model_loader:load_image_model:51 - Image model loaded
+2026-04-22 18:25:06.206 | INFO     | services.report_service:cleanup_expired:151 - Cleaned up 1 expired reports
+2026-04-22 18:26:20.263 | WARNING  | models.model_loader:load_ffpp_model:193 - FFPP ViT checkpoint not found at C:\Users\athar\Desktop\trained_models — skipping
+2026-04-22 18:26:22.700 | INFO     | services.efficientnet_service:__init__:97 - EfficientNetDetector ready: EfficientNetAutoAttB4/DFDC on cpu | calibrator=no
+2026-04-22 18:26:23.034 | INFO     | services.image_service:classify_image:152 - Image classify (average_vit_eff) → Real | vit=0.078 ffpp=n/a eff=0.18335410952568054 → 0.131
+2026-04-22 18:26:28.349 | INFO     | models.model_loader:load_face_detector:142 - Loading MediaPipe FaceMesh
+2026-04-22 18:26:28.390 | INFO     | models.model_loader:load_face_detector:150 - MediaPipe FaceMesh loaded
+2026-04-22 18:26:29.238 | INFO     | models.heatmap_generator:generate_heatmap_base64:186 - Heatmap generated (224x224) source=gradcam++
+2026-04-22 18:26:29.277 | INFO     | services.ela_service:generate_ela_base64:60 - ELA map generated (256x256)
+2026-04-22 18:26:30.141 | INFO     | models.heatmap_generator:generate_boxes_base64:232 - Bounding boxes generated: 5 regions
+2026-04-22 18:26:30.327 | INFO     | services.exif_service:extract_exif:127 - EXIF extracted: make=None, model=None, adjustment=0 (no EXIF metadata found)
+2026-04-22 18:26:30.347 | INFO     | api.v1.analyze:analyze_image:214 - Saved AnalysisRecord id=19 score=13 verdict=Very Likely Fake
+2026-04-22 18:26:30.349 | ERROR    | services.llm_explainer:generate_llm_summary:186 - LLM explainer failed: No module named 'google.generativeai'
+2026-04-22 18:26:30.349 | ERROR    | services.vlm_breakdown:generate_vlm_breakdown:104 - VLM breakdown failed: No module named 'google.generativeai'
+2026-04-22 18:27:58.805 | INFO     | main:lifespan:93 - Shutting down DeepShield backend
+2026-04-22 18:28:09.692 | INFO     | main:lifespan:83 - Starting DeepShield backend
+2026-04-22 18:28:09.698 | INFO     | main:lifespan:85 - Database initialized
+2026-04-22 18:28:09.698 | INFO     | models.model_loader:load_image_model:43 - Loading image model: prithivMLmods/Deep-Fake-Detector-v2-Model
+2026-04-22 18:28:11.556 | INFO     | models.model_loader:load_image_model:51 - Image model loaded
