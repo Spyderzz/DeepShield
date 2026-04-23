@@ -13,6 +13,7 @@ export function SharedNav({ current = '' }) {
   }, []);
 
   const links = [
+    { label: 'Home', to: '/', key: 'home' },
     { label: 'Analyze', to: '/analyze', key: 'analyze' },
     { label: 'History', to: '/history', key: 'history' },
     { label: 'About', to: '/about', key: 'about' },
@@ -34,15 +35,15 @@ export function SharedNav({ current = '' }) {
       <div className="ds-nav-inner">
         <Link to="/" className="ds-logo">
           <svg width="22" height="26" viewBox="0 0 22 26" fill="none">
-            <path d="M11 1L21 5V12.5C21 18.5 16.5 23.5 11 25C5.5 23.5 1 18.5 1 12.5V5L11 1Z" stroke="url(#lgN)" strokeWidth="1.5" fill="rgba(108,125,255,0.1)"/>
-            <path d="M6 11L10 15L16 8" stroke="#6C7DFF" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
-            <defs><linearGradient id="lgN" x1="0" y1="0" x2="22" y2="26"><stop stopColor="#7F8FFF"/><stop offset="1" stopColor="#3DDBB3"/></linearGradient></defs>
+            <path d="M11 1L21 5V12.5C21 18.5 16.5 23.5 11 25C5.5 23.5 1 18.5 1 12.5V5L11 1Z" stroke="url(#lgN)" strokeWidth="1.5" fill="rgba(108,125,255,0.1)" />
+            <path d="M6 11L10 15L16 8" stroke="#6C7DFF" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
+            <defs><linearGradient id="lgN" x1="0" y1="0" x2="22" y2="26"><stop stopColor="#7F8FFF" /><stop offset="1" stopColor="#3DDBB3" /></linearGradient></defs>
           </svg>
           <span>DeepShield</span>
         </Link>
         <nav className="ds-nav-links">
           <div className="slide-tabs" onMouseLeave={() => setHovered(null)}>
-            <div className="slide-tabs-pill" style={{ left: pill.left, width: pill.width, opacity: pill.opacity }}/>
+            <div className="slide-tabs-pill" style={{ left: pill.left, width: pill.width, opacity: pill.opacity }} />
             {links.map((l, i) => (
               <NavLink key={l.key} ref={el => refs.current[i] = el}
                 to={l.to}
@@ -65,7 +66,7 @@ export function SharedNav({ current = '' }) {
           )}
           <Link to="/analyze" className="btn btn-glass btn-sm btn-shiny" style={{ textDecoration: 'none' }}>
             Run analysis
-            <svg width="12" height="12" viewBox="0 0 12 12" fill="none"><path d="M2 6h8m0 0L6 2m4 4L6 10" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/></svg>
+            <svg width="12" height="12" viewBox="0 0 12 12" fill="none"><path d="M2 6h8m0 0L6 2m4 4L6 10" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" /></svg>
           </Link>
         </div>
       </div>
@@ -79,7 +80,7 @@ export function SharedFooter() {
       <div className="ds-container ds-footer-inner">
         <div className="foot-brand">
           <Link to="/" className="ds-logo" style={{ textDecoration: 'none' }}>
-            <svg width="22" height="26" viewBox="0 0 22 26"><path d="M11 1L21 5V12.5C21 18.5 16.5 23.5 11 25C5.5 23.5 1 18.5 1 12.5V5L11 1Z" stroke="#6C7DFF" strokeWidth="1.5" fill="rgba(108,125,255,0.1)"/><path d="M6 11L10 15L16 8" stroke="#6C7DFF" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" fill="none"/></svg>
+            <svg width="22" height="26" viewBox="0 0 22 26"><path d="M11 1L21 5V12.5C21 18.5 16.5 23.5 11 25C5.5 23.5 1 18.5 1 12.5V5L11 1Z" stroke="#6C7DFF" strokeWidth="1.5" fill="rgba(108,125,255,0.1)" /><path d="M6 11L10 15L16 8" stroke="#6C7DFF" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" fill="none" /></svg>
             <span>DeepShield</span>
           </Link>
           <p>Forensic AI for synthetic media. Open models, local-first, no retention.</p>
@@ -94,8 +95,18 @@ export function SharedFooter() {
             <Link to="/history">History</Link>
             <Link to="/">Pipeline</Link>
           </div>
-          <div><h5>Research</h5><a>Model cards</a><a>Benchmarks</a><a>Papers</a></div>
-          <div><h5>Company</h5><Link to="/about">About</Link><a>Privacy</a><a>Contact</a></div>
+          <div>
+            <h5>Research</h5>
+            <Link to="/models">Models</Link>
+            <a href="https://paperswithcode.com/task/deepfake-detection" target="_blank" rel="noreferrer">Benchmarks</a>
+            <a href="https://arxiv.org/abs/1901.08971" target="_blank" rel="noreferrer">Papers</a>
+          </div>
+          <div>
+            <h5>Company</h5>
+            <Link to="/about">About</Link>
+            <a href="https://github.com/Spyderzz/DeepShield" target="_blank" rel="noreferrer">Privacy</a>
+            <Link to="/contact">Contact</Link>
+          </div>
         </div>
       </div>
       <div className="ds-container foot-bottom mono">

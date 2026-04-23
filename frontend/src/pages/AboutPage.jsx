@@ -5,10 +5,9 @@ import './deepshield-landing.css';
 import './deepshield-pages.css';
 
 const TEAM = [
-  { n: 'Arjun Mehta',    r: 'Forensic ML lead',         bio: 'PhD in computer vision, ex-Meta Integrity.',                          init: 'AM' },
-  { n: 'Priya Sharma',   r: 'Research, NLP',            bio: 'Led XLM-R fine-tuning for low-resource Indian languages.',           init: 'PS' },
-  { n: 'Rohan Iyer',     r: 'Systems',                  bio: 'Built the caching layer and on-device inference.',                    init: 'RI' },
-  { n: 'Diya Krishnan',  r: 'Policy + partnerships',    bio: 'Works with Indian newsrooms on verification workflows.',              init: 'DK' },
+  { n: 'Atharva', r: 'Lead Architect & ML', bio: 'Architected the core detection pipeline, inference engine, and main UI application.', init: 'AR' },
+  { n: 'Aadhya Gupta', r: 'Backend & Infrastructure', bio: 'Engineered the secure authentication flow and database architecture.', init: 'AG' },
+  { n: 'Tanishka Tyagi', r: 'Design & QA', bio: 'Drives design ideology and conducts rigorous code reviews.', init: 'TT' },
 ];
 
 const PARTNERS = ['Reuters', 'AP', 'AltNews', 'BoomLive', 'The Hindu', 'PTI', 'BBC', 'NDTV', 'AFP', 'ANI'];
