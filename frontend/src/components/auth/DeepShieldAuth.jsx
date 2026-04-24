@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { SharedNav, SharedFooter } from '../layout/SharedNav.jsx';
 import useDottedSurface from '../../hooks/useDottedSurface.js';
@@ -15,8 +15,13 @@ export default function DeepShieldAuth({ mode: initial = 'login' }) {
   const [remember, setRemember] = useState(true);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState(null);
-  const { login, register } = useAuth();
+  const { login, register, isAuthed } = useAuth();
   const navigate = useNavigate();
+
+  // Redirect already-authenticated users away from the login/register page
+  useEffect(() => {
+    if (isAuthed) navigate('/history', { replace: true });
+  }, [isAuthed, navigate]);
 
   const isLogin = mode === 'login';
 

@@ -138,8 +138,6 @@ def detect_face_based_artifacts(pil_img: Image.Image) -> List[ArtifactIndicator]
     """
     results: List[ArtifactIndicator] = []
     try:
-        import mediapipe as mp  # type: ignore
-
         from models.model_loader import get_model_loader
 
         detector = get_model_loader().load_face_detector()

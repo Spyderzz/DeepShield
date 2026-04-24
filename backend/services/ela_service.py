@@ -10,7 +10,6 @@ from __future__ import annotations
 import base64
 import io
 
-import cv2
 import numpy as np
 from loguru import logger
 from PIL import Image

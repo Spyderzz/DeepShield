@@ -1,4 +1,4 @@
-from datetime import datetime
+from datetime import datetime, timezone
 
 from sqlalchemy import DateTime, ForeignKey, Index, Integer, String, Text
 from sqlalchemy.orm import Mapped, mapped_column, relationship
@@ -13,7 +13,7 @@ class User(Base):
     email: Mapped[str] = mapped_column(String(255), unique=True, index=True, nullable=False)
     password_hash: Mapped[str] = mapped_column(String(255), nullable=False)
     name: Mapped[str | None] = mapped_column(String(255), nullable=True)
-    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
 
     analyses: Mapped[list["AnalysisRecord"]] = relationship(back_populates="user")
 
@@ -22,12 +22,14 @@ class AnalysisRecord(Base):
     __tablename__ = "analyses"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
-    user_id: Mapped[int | None] = mapped_column(ForeignKey("users.id"), nullable=True)
+    user_id: Mapped[int | None] = mapped_column(
+        ForeignKey("users.id", ondelete="SET NULL"), nullable=True,
+    )
     media_type: Mapped[str] = mapped_column(String(32), nullable=False)  # image|video|text|screenshot
     verdict: Mapped[str] = mapped_column(String(32), nullable=False)
     authenticity_score: Mapped[float] = mapped_column(nullable=False)
     result_json: Mapped[str] = mapped_column(Text, nullable=False)
-    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
     # Phase 19.1 / 19.2 — SHA-256 dedup + object storage
     media_hash: Mapped[str | None] = mapped_column(String(64), nullable=True, index=True)
     media_path: Mapped[str | None] = mapped_column(String(512), nullable=True)
@@ -47,8 +49,8 @@ class Report(Base):
     id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
     analysis_id: Mapped[int] = mapped_column(ForeignKey("analyses.id"), nullable=False)
     file_path: Mapped[str] = mapped_column(String(512), nullable=False)
-    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
-    expires_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
+    expires_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
     analysis: Mapped["AnalysisRecord"] = relationship(back_populates="report")
 

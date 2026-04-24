@@ -1,10 +1,18 @@
 import { useEffect, useState } from 'react';
 import { useLocation, useNavigate, useParams } from 'react-router-dom';
+import { generateReport, reportDownloadUrl } from '../services/reportApi.js';
 import { SharedNav, SharedFooter } from '../components/layout/SharedNav.jsx';
 import useDottedSurface from '../hooks/useDottedSurface.js';
 import { getHistoryDetail } from '../services/historyApi.js';
 import './deepshield-landing.css';
 import './deepshield-pages.css';
+
+function resolveMediaUrl(url) {
+  if (!url) return null;
+  if (url.startsWith('http://') || url.startsWith('https://') || url.startsWith('data:')) return url;
+  // Vite dev-server proxies /media/* → backend; ensure leading slash
+  return url.startsWith('/') ? url : `/${url}`;
+}
 
 export default function ResultsPage() {
   useDottedSurface();
@@ -74,12 +82,27 @@ function ResultsView({ result, id }) {
   const [alpha, setAlpha] = useState(0.65);
   const [expanded, setExpanded] = useState(null);
   const [displayScore, setDisplayScore] = useState(0);
+  const [pdfLoading, setPdfLoading] = useState(false);
+
+  const handleDownloadPDF = async () => {
+    if (pdfLoading) return;
+    setPdfLoading(true);
+    try {
+      await generateReport(id);
+      window.open(reportDownloadUrl(id), '_blank');
+    } catch (e) {
+      alert(e?.userMessage || 'PDF generation failed. Try again.');
+    } finally {
+      setPdfLoading(false);
+    }
+  };
 
   const verdict = result.verdict || {};
   const expl = result.explainability || {};
-  const fakeProb = verdict.fake_probability
-    ?? (typeof result.fake_probability === 'number' ? result.fake_probability : 0.5);
-  const authenticityScore = Math.round(Math.max(0, Math.min(1, 1 - fakeProb)) * 100);
+  // Prefer the stored authenticity_score; fall back to fake_probability for text/screenshot responses
+  const authenticityScore = typeof verdict.authenticity_score === 'number'
+    ? verdict.authenticity_score
+    : Math.round(Math.max(0, Math.min(1, 1 - (verdict.fake_probability ?? expl.fake_probability ?? 0.5))) * 100);
   const c = authenticityScore >= 65 ? 'safe' : authenticityScore >= 40 ? 'warn' : 'danger';
   const verdictLabel = (verdict.label || verdict.classification
     || (c === 'safe' ? 'LIKELY REAL' : c === 'warn' ? 'SUSPICIOUS' : 'LIKELY FAKE')).toString().toUpperCase();
@@ -94,7 +117,7 @@ function ResultsView({ result, id }) {
   const heatmapData = expl.heatmap_base64 ? `data:image/png;base64,${expl.heatmap_base64}` : null;
   const elaData = expl.ela_base64 ? `data:image/png;base64,${expl.ela_base64}` : null;
   const boxesData = expl.boxes_base64 ? `data:image/png;base64,${expl.boxes_base64}` : null;
-  const baseImg = result.thumbnail_url || result.media_url || heatmapData;
+  const baseImg = resolveMediaUrl(result.media_path) || resolveMediaUrl(result.thumbnail_url) || resolveMediaUrl(result.media_url) || heatmapData;
 
   const totalMs = result.processing_summary?.total_ms ?? 0;
   const latency = totalMs ? `${(totalMs / 1000).toFixed(2)}s` : '—';
@@ -142,10 +165,9 @@ function ResultsView({ result, id }) {
           </div>
           <div className="actions">
             <a onClick={() => navigate('/analyze')} className="btn btn-ghost btn-sm" style={{ textDecoration: 'none', cursor: 'pointer' }}>↻ New</a>
-            <button className="btn btn-glass btn-sm" onClick={() => {
-              const base = import.meta.env.VITE_API_BASE_URL || '/api/v1';
-              window.open(`${base}/report/${id}.pdf`, '_blank');
-            }}>⤓ PDF</button>
+            <button className="btn btn-glass btn-sm" onClick={handleDownloadPDF} disabled={pdfLoading}>
+              {pdfLoading ? '…' : '⤓ PDF'}
+            </button>
             <button className="btn btn-glass btn-sm" onClick={() => navigator.clipboard?.writeText(window.location.href)}>⎘ Link</button>
             <button className="btn btn-primary btn-sm btn-shiny">Share →</button>
           </div>
@@ -180,7 +202,7 @@ function ResultsView({ result, id }) {
           <ProcessingSummaryCard summary={result.processing_summary} />
         </div>
 
-        <StickyActions id={id} onNew={() => navigate('/analyze')} />
+        <StickyActions id={id} onNew={() => navigate('/analyze')} onPDF={handleDownloadPDF} pdfLoading={pdfLoading} />
       </section>
       <SharedFooter />
     </>
@@ -204,9 +226,9 @@ function VerdictCard({ verdict, displayScore, color, llm }) {
         </div>
       </div>
       <div className="verdict-llm">
-        <span className="eyebrow">Plain-English summary{llm?.model ? ` · ${llm.model}` : ' · Gemini 1.5'}</span>
+        <span className="eyebrow">Plain-English summary{llm?.model_used ? ` · ${llm.model_used}` : ' · Gemini 1.5'}</span>
         <p>
-          {llm?.summary || llm?.text ||
+          {llm?.paragraph ||
             'Model confidence is calibrated from the ensemble forward pass. Review the heatmap, EXIF, and detailed breakdown below for the evidence behind this verdict.'}
         </p>
         {Array.isArray(llm?.bullets) && llm.bullets.length > 0 && (
@@ -241,9 +263,9 @@ function ScoreRing({ value, size = 120, color = 'safe' }) {
 
 /* ==== heatmap ==== */
 function HeatmapCard({ src, heatmapData, elaData, boxesData, heatmapMode, setHeatmapMode, alpha, setAlpha, status }) {
-  const overlayImg = (data, cls) => data
-    ? <img src={data} alt="" className={cls} style={{ opacity: alpha, position: 'absolute', inset: 0, width: '100%', height: '100%', objectFit: 'cover', mixBlendMode: cls === 'heatmap-overlay' ? 'screen' : 'screen' }} />
-    : <div className={cls} style={{ opacity: alpha }} />;
+  const overlayImg = (data, label) => data
+    ? <img src={data} alt="" style={{ opacity: alpha, position: 'absolute', inset: 0, width: '100%', height: '100%', objectFit: 'cover', mixBlendMode: 'screen' }} />
+    : <div className="overlay-unavailable">{label} · not available for cached results</div>;
   return (
     <div className="card heatmap-card">
       <div className="card-head">
@@ -256,8 +278,8 @@ function HeatmapCard({ src, heatmapData, elaData, boxesData, heatmapMode, setHea
       </div>
       <div className="heatmap-stage">
         {src ? <img src={src} alt="" className="heatmap-base"/> : <div className="heatmap-base" style={{ background: '#0A0D18' }}/>}
-        {heatmapMode === 'heatmap' && overlayImg(heatmapData, 'heatmap-overlay')}
-        {heatmapMode === 'ela' && overlayImg(elaData, 'ela-overlay')}
+        {heatmapMode === 'heatmap' && overlayImg(heatmapData, 'Grad-CAM++')}
+        {heatmapMode === 'ela' && overlayImg(elaData, 'ELA')}
         {heatmapMode === 'boxes' && (boxesData
           ? <img src={boxesData} alt="" style={{ opacity: alpha, position: 'absolute', inset: 0, width: '100%', height: '100%', objectFit: 'cover' }} />
           : (
@@ -323,26 +345,25 @@ function EXIFCard({ exif }) {
 /* ==== VLM breakdown ==== */
 function BreakdownCard({ vlm, fallbackHigh, expanded, setExpanded }) {
   const base = [
-    { k: 'Facial symmetry', key: 'facial_symmetry', note: 'Left-right alignment across eye, nose, and jaw landmarks.' },
-    { k: 'Skin texture',    key: 'skin_texture',    note: 'Pore distribution, micro-shading, sebum highlights.' },
-    { k: 'Lighting',        key: 'lighting',        note: 'Light-source direction consistent across face and background.' },
-    { k: 'Background',      key: 'background',      note: 'Depth, focal blur, and edge coherence.' },
-    { k: 'Anatomy',         key: 'anatomy',         note: 'Hands, ears, teeth — typical GAN failure zones.' },
-    { k: 'Context',         key: 'context',         note: 'Objects and environment plausibility.' },
+    { k: 'Facial symmetry', key: 'facial_symmetry',     defaultNote: 'Left-right alignment across eye, nose, and jaw landmarks.' },
+    { k: 'Skin texture',    key: 'skin_texture',         defaultNote: 'Pore distribution, micro-shading, sebum highlights.' },
+    { k: 'Lighting',        key: 'lighting_consistency', defaultNote: 'Light-source direction consistent across face and background.' },
+    { k: 'Background',      key: 'background_coherence', defaultNote: 'Depth, focal blur, and edge coherence.' },
+    { k: 'Anatomy',         key: 'anatomy_hands_eyes',   defaultNote: 'Hands, ears, teeth — typical GAN failure zones.' },
+    { k: 'Context',         key: 'context_objects',      defaultNote: 'Objects and environment plausibility.' },
   ].map(b => {
-    const score = vlm[`${b.key}_score`];
-    const note = vlm[`${b.key}_note`];
+    const component = vlm[b.key];
     return {
       ...b,
-      v: typeof score === 'number' ? Math.round(score) : (fallbackHigh ? 80 : 40),
-      note: note || b.note,
+      v: typeof component?.score === 'number' ? Math.round(component.score) : (fallbackHigh ? 80 : 40),
+      note: component?.notes || b.defaultNote,
     };
   });
   return (
     <div className="breakdown card">
       <div className="card-head">
-        <span className="eyebrow">Detailed breakdown{vlm.model ? ` · ${vlm.model}` : ' · Gemini Vision'}</span>
-        <span className="mono small">6 components · click to expand</span>
+        <span className="eyebrow">Detailed breakdown{vlm.model_used ? ` · ${vlm.model_used}` : ' · Gemini Vision'}</span>
+        <span className="mono small">6 components</span>
       </div>
       <div className="breakdown-grid">
         {base.map((b, i) => (
@@ -351,7 +372,7 @@ function BreakdownCard({ vlm, fallbackHigh, expanded, setExpanded }) {
             <div className="bd-body">
               <div className="bd-title">{b.k}</div>
               <div className="mono bd-score">{b.v}/100</div>
-              {expanded === i && <p className="bd-note">{b.note}</p>}
+              <p className="bd-note">{b.note}</p>
             </div>
           </button>
         ))}
@@ -425,7 +446,7 @@ function ArtifactsCard({ artifacts }) {
           const val = typeof a.score === 'number' ? a.score : typeof a.confidence === 'number' ? a.confidence : 0;
           return (
             <li key={i}>
-              <span>{a.name || a.indicator || a.k}</span>
+              <span style={{ color: 'var(--ds-ink)', fontWeight: 400 }}>{a.name || a.type || a.description || a.indicator || '—'}</span>
               <span className={`art-chip ${lvl}`}>{lvl}</span>
               <span className="mono art-val">{val.toFixed(2)}</span>
             </li>
@@ -487,34 +508,54 @@ function TemporalCard({ expl, mediaType }) {
 
 /* ==== processing summary ==== */
 function ProcessingSummaryCard({ summary }) {
-  const stages = (summary?.stages || []).map(s => [s.t || s.timestamp || '', s.label || s.name || '', s.meta || s.detail || '']);
-  const fallback = [
-    ['', 'Upload received', ''],
-    ['', 'Preprocess (resize 512², BlazeFace gate)', ''],
-    ['', 'Ensemble forward pass (ViT + EfficientNetAutoAttB4)', ''],
-    ['', 'Grad-CAM++ heatmap generated', ''],
-    ['', 'ELA + EXIF pass', ''],
-    ['', 'Gemini 1.5 Flash summary', ''],
-    ['', 'Result cached', ''],
-  ];
-  const steps = stages.length ? stages : fallback;
-  const total = summary?.total_ms ? `${(summary.total_ms / 1000).toFixed(2)}s` : '—';
+  const stages = summary?.stages_completed || [];
+  const totalMs = summary?.total_duration_ms ?? summary?.total_ms ?? 0;
+  const total = totalMs ? `${(totalMs / 1000).toFixed(2)}s` : '—';
+  const models = summary?.models_used?.length ? summary.models_used : summary?.model_used ? [summary.model_used] : [];
+
+  const STAGE_LABELS = {
+    validation: 'Upload & validate',
+    classification: 'ViT + EfficientNet ensemble',
+    artifact_scanning: 'Artifact scan (Grad-CAM, GAN freq, ELA)',
+    heatmap_generation: 'Grad-CAM++ heatmap',
+    ela_generation: 'Error Level Analysis (ELA)',
+    boxes_generation: 'Bounding-box detection',
+    exif_extraction: 'EXIF metadata extraction',
+    llm_explanation: 'LLM plain-English summary',
+    vlm_breakdown: 'VLM detailed breakdown (Gemini Vision)',
+    frame_extraction: 'Frame extraction',
+    frame_classification: 'Per-frame classification',
+    aggregation: 'Frame result aggregation',
+    temporal_analysis: 'Temporal consistency check',
+    audio_analysis: 'Audio deepfake detection',
+    text_classification: 'Text classification (XLM-R)',
+    news_lookup: 'Trusted-source lookup',
+    truth_override: 'Truth-override check',
+    ocr: 'OCR text extraction',
+    layout_anomaly: 'Layout anomaly detection',
+  };
+
   return (
     <div className="card">
       <div className="card-head">
-        <span className="eyebrow">Processing summary · timeline</span>
-        <span className="mono small">{total} · {steps.length} stages</span>
+        <span className="eyebrow">Processing summary · pipeline</span>
+        <span className="mono small">{total} · {stages.length} stages</span>
       </div>
-      <ol style={{ listStyle: 'none', padding: 0, margin: 0, display: 'flex', flexDirection: 'column', gap: 4, fontFamily: 'var(--ff-mono)', fontSize: 12 }}>
-        {steps.map(([t, s, m], i) => (
+      {models.length > 0 && (
+        <p style={{ fontFamily: 'var(--ff-mono)', fontSize: 11, color: 'var(--ds-muted)', margin: '0 0 14px' }}>
+          models · {models.join(' + ')}
+        </p>
+      )}
+      <ol style={{ listStyle: 'none', padding: 0, margin: 0, display: 'flex', flexDirection: 'column', gap: 3, fontFamily: 'var(--ff-mono)', fontSize: 12 }}>
+        {stages.map((s, i) => (
           <li key={i} style={{
-            display: 'grid', gridTemplateColumns: '130px 1fr auto', gap: 14, alignItems: 'center',
-            padding: '8px 12px', background: i % 2 ? 'rgba(255,255,255,0.02)' : 'transparent',
-            borderRadius: 6, color: 'var(--ds-ink-2)',
+            display: 'flex', alignItems: 'center', gap: 10,
+            padding: '7px 12px', background: i % 2 ? 'rgba(255,255,255,0.02)' : 'transparent',
+            borderRadius: 6,
           }}>
-            <span style={{ color: 'var(--ds-muted)' }}>{t}</span>
-            <span style={{ color: 'var(--ds-ink)' }}>{s}</span>
-            <span style={{ color: 'var(--ds-muted)' }}>{m}</span>
+            <span style={{ color: 'var(--ds-safe)', fontSize: 10 }}>✓</span>
+            <span style={{ color: 'var(--ds-muted)', fontSize: 10, minWidth: 18, textAlign: 'right' }}>{String(i + 1).padStart(2, '0')}</span>
+            <span style={{ color: 'var(--ds-ink)' }}>{STAGE_LABELS[s] || s}</span>
           </li>
         ))}
       </ol>
@@ -522,7 +563,7 @@ function ProcessingSummaryCard({ summary }) {
   );
 }
 
-function StickyActions({ id, onNew }) {
+function StickyActions({ id, onNew, onPDF, pdfLoading }) {
   return (
     <div style={{
       position: 'sticky', bottom: 20, maxWidth: 600, margin: '32px auto 0',
@@ -535,10 +576,9 @@ function StickyActions({ id, onNew }) {
       zIndex: 10,
     }}>
       <a onClick={onNew} className="btn btn-glass btn-sm" style={{ textDecoration: 'none', cursor: 'pointer' }}>↻ Analyze another</a>
-      <button className="btn btn-glass btn-sm" onClick={() => {
-        const base = import.meta.env.VITE_API_BASE_URL || '/api/v1';
-        window.open(`${base}/report/${id}.pdf`, '_blank');
-      }}>⤓ PDF report</button>
+      <button className="btn btn-glass btn-sm" onClick={onPDF} disabled={pdfLoading}>
+        {pdfLoading ? 'Generating…' : '⤓ PDF report'}
+      </button>
       <button className="btn btn-glass btn-sm" onClick={() => navigator.clipboard?.writeText(window.location.href)}>⎘ Copy link</button>
       <button className="btn btn-primary btn-sm btn-shiny">Share verdict →</button>
     </div>

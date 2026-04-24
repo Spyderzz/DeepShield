@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import List, Optional, Tuple
+from typing import List, Optional
 from urllib.parse import urlparse
 
 import httpx
@@ -153,11 +153,10 @@ def _compute_truth_override(
 
 
 async def _fetch(q: str, country: Optional[str]) -> list[dict]:
-    target_country = country or "in"
-    params = {"apikey": settings.NEWS_API_KEY, "q": q, "language": "en", "size": 10, "country": "in"}
+    params = {"apikey": settings.NEWS_API_KEY, "q": q, "language": "en", "size": 10, "country": country or "in"}
 
     try:
-        async with httpx.AsyncClient(timeout=8.0) as c:
+        async with httpx.AsyncClient(timeout=httpx.Timeout(5.0, connect=2.0)) as c:
             r = await c.get(settings.NEWS_API_BASE_URL, params=params)
             r.raise_for_status()
             return (r.json() or {}).get("results") or []

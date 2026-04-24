@@ -185,3 +185,14 @@
     gap: 30px;
   }
 }
+
+/* Phone-only overrides */
+@media (max-width: 640px) {
+  .models-shell { padding: 100px 20px 60px !important; }
+  .models-hero .display { font-size: clamp(32px, 9vw, 48px); }
+  .model-card { padding: 22px; }
+  .model-card h3 { font-size: 20px; }
+  .model-meta-grid { grid-template-columns: 1fr !important; gap: 12px !important; }
+  .dataset-row { flex-direction: column; gap: 20px; }
+  .bench-table { overflow-x: auto; -webkit-overflow-scrolling: touch; }
+}

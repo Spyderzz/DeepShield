@@ -1,13 +1,12 @@
 from __future__ import annotations
 
+import asyncio
 import io
 import os
 import tempfile
 from typing import Iterable
 
 from fastapi import HTTPException, UploadFile, status
-
-from config import settings
 
 IMAGE_MAGIC_BYTES: dict[bytes, str] = {
     b"\xff\xd8\xff": "image/jpeg",
@@ -34,6 +33,11 @@ async def read_upload_bytes(
     Returns (raw_bytes, detected_mime). Raises HTTPException on failure.
     """
     data = await file.read()
+    if not data:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="Empty file — no bytes received",
+        )
     size_mb = len(data) / (1024 * 1024)
     if size_mb > max_size_mb:
         raise HTTPException(
@@ -86,7 +90,7 @@ async def save_upload_to_tempfile(
                         status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
                         detail=f"File too large (> {max_size_mb} MB)",
                     )
-                out.write(chunk)
+                await asyncio.to_thread(out.write, chunk)
     except Exception:
         try:
             os.unlink(path)

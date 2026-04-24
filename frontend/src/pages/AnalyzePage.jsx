@@ -48,6 +48,12 @@ export default function AnalyzePage() {
   const fileRef = useRef(null);
   const jobId = useRef(Math.random().toString(36).slice(2, 10).toUpperCase());
   const [recent, setRecent] = useState([]);
+  const [previewUrl, setPreviewUrl] = useState(null);
+  const previewRef = useRef(null);
+
+  useEffect(() => {
+    return () => { if (previewRef.current) URL.revokeObjectURL(previewRef.current); };
+  }, []);
 
   const segRefs = useRef([]);
   const [segPill, setSegPill] = useState({ left: 0, width: 0 });
@@ -110,6 +116,15 @@ export default function AnalyzePage() {
 
   const onPickFile = (file) => {
     if (!file) return;
+    if (previewRef.current) URL.revokeObjectURL(previewRef.current);
+    if (file instanceof File && file.type.startsWith('image/')) {
+      const url = URL.createObjectURL(file);
+      previewRef.current = url;
+      setPreviewUrl(url);
+    } else {
+      previewRef.current = null;
+      setPreviewUrl(null);
+    }
     runAnalysis(file);
   };
 
@@ -255,7 +270,7 @@ export default function AnalyzePage() {
                 <div>
                   {mode !== 'text' ? (
                     <div className="stack-scene mini" style={{ height: 380 }}>
-                      <LayerStack src={SAMPLE_SRC} density={6} />
+                      <LayerStack src={previewUrl || SAMPLE_SRC} density={6} />
                     </div>
                   ) : (
                     <TextProcessingViz />

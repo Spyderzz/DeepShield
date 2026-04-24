@@ -6,7 +6,7 @@ sampled video frames to produce a temporal_score (0–100, higher = more natural
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import List, Optional, Tuple
+from typing import List, Tuple
 
 import cv2
 import numpy as np

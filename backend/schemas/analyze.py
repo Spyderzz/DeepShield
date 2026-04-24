@@ -190,6 +190,7 @@ class ImageAnalysisResponse(BaseModel):
     record_id: int = 0
     cached: bool = False
     thumbnail_url: str | None = None
+    media_path: str | None = None
     media_type: str = "image"
     timestamp: str
     verdict: Verdict

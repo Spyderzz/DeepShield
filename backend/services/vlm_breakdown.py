@@ -14,6 +14,7 @@ from PIL import Image
 
 from config import settings
 from schemas.common import VLMBreakdown, VLMComponentScore
+from services.llm_explainer import is_rate_limited, mark_rate_limited, _is_quota_error
 
 _cache: dict[str, VLMBreakdown] = {}
 
@@ -81,6 +82,11 @@ def generate_vlm_breakdown(
         logger.debug("LLM_API_KEY not set — skipping VLM breakdown")
         return None
 
+    # Shared circuit breaker with llm_explainer — skip during cooldown
+    if is_rate_limited():
+        logger.debug("VLM in cooldown — skipping")
+        return None
+
     provider = settings.LLM_PROVIDER.lower()
     model_id = settings.LLM_MODEL
 
@@ -101,16 +107,19 @@ def generate_vlm_breakdown(
         logger.error(f"VLM breakdown: unparseable JSON from LLM: {e}")
         return None
     except Exception as e:
+        if _is_quota_error(e):
+            mark_rate_limited()
+            logger.warning(f"VLM quota hit ({type(e).__name__}) — circuit open")
+            return None
         logger.error(f"VLM breakdown failed: {e}")
         return None
 
 
 def _call_gemini(image: Image.Image, model_id: str) -> VLMBreakdown:
-    import google.generativeai as genai  # type: ignore
-    genai.configure(api_key=settings.LLM_API_KEY)
-    model = genai.GenerativeModel(model_id)
-    response = model.generate_content([_PROMPT, image])
-    return _build_breakdown(_parse_response(response.text))
+    from google import genai
+    client = genai.Client(api_key=settings.LLM_API_KEY)
+    response = client.models.generate_content(model=model_id, contents=[_PROMPT, image])
+    return _build_breakdown(_parse_response(response.text or ""))
 
 
 def _call_openai(image: Image.Image, model_id: str) -> VLMBreakdown:

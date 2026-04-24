@@ -10,12 +10,33 @@ from loguru import logger
 from slowapi import _rate_limit_exceeded_handler
 from slowapi.errors import RateLimitExceeded
 
+from starlette.middleware.base import BaseHTTPMiddleware
+from starlette.responses import JSONResponse
+
 from api.router import api_router
 from config import settings
 from db.database import init_db
 from models.model_loader import get_model_loader
 from services.rate_limit import RateLimitContextMiddleware, limiter
 from services.report_service import cleanup_expired
+
+
+class ContentLengthLimitMiddleware(BaseHTTPMiddleware):
+    """Reject oversized uploads via Content-Length header before reading body.
+    Saves bandwidth + memory vs letting read_upload_bytes reject post-read."""
+
+    def __init__(self, app, max_bytes: int) -> None:
+        super().__init__(app)
+        self._max = max_bytes
+
+    async def dispatch(self, request, call_next):
+        cl = request.headers.get("content-length")
+        if cl and cl.isdigit() and int(cl) > self._max:
+            return JSONResponse(
+                status_code=413,
+                content={"detail": f"Upload exceeds {self._max // (1024 * 1024)} MB limit"},
+            )
+        return await call_next(request)
 
 
 # === Phase 15.3 — JWT / CORS / logging hardening ===
@@ -25,16 +46,20 @@ _DEFAULT_JWT_SECRET = "change-me-in-production"
 
 def _enforce_production_hardening() -> None:
     """Refuse to start in production with unsafe defaults (Phase 15.3)."""
-    if settings.DEBUG:
-        return
     if settings.JWT_SECRET_KEY == _DEFAULT_JWT_SECRET or not settings.JWT_SECRET_KEY:
         example = secrets.token_urlsafe(48)
-        logger.error(
-            "Refusing to start: JWT_SECRET_KEY is unset or default. "
-            f"Set JWT_SECRET_KEY in your environment. Example: {example}"
-        )
-        sys.exit(1)
-    if "*" in settings.CORS_ORIGINS:
+        if settings.DEBUG:
+            logger.warning(
+                "JWT_SECRET_KEY is unset or default — safe in dev only. "
+                f"Set it before deploying. Example: {example}"
+            )
+        else:
+            logger.error(
+                "Refusing to start: JWT_SECRET_KEY is unset or default. "
+                f"Set JWT_SECRET_KEY in your environment. Example: {example}"
+            )
+            sys.exit(1)
+    if "*" in settings.CORS_ORIGINS and not settings.DEBUG:
         logger.error(
             "Refusing to start: CORS_ORIGINS contains '*' while allow_credentials=True. "
             "Set an explicit origin list."
@@ -66,7 +91,6 @@ def _configure_logging() -> None:
 
 
 _configure_logging()
-_enforce_production_hardening()
 
 
 async def _report_cleanup_loop():
@@ -80,6 +104,7 @@ async def _report_cleanup_loop():
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    _enforce_production_hardening()
     logger.info("Starting DeepShield backend")
     init_db()
     logger.info("Database initialized")
@@ -106,6 +131,8 @@ app.state.limiter = limiter
 
 app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
 app.add_middleware(RateLimitContextMiddleware)
+# Phase 15.3 — reject oversized uploads before reading body
+app.add_middleware(ContentLengthLimitMiddleware, max_bytes=settings.MAX_UPLOAD_SIZE_MB * 1024 * 1024)
 
 # Phase 15.3 — explicit CORS methods/headers (no wildcards with credentials)
 app.add_middleware(

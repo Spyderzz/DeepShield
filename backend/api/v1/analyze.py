@@ -38,11 +38,10 @@ from services.screenshot_service import (
 )
 from services.ela_service import generate_ela_base64
 from services.exif_service import extract_exif
-from services.image_service import load_image_from_bytes
+from services.image_service import load_image_from_bytes, preprocess_and_classify
 from services.llm_explainer import generate_llm_summary
 from schemas.common import ProcessingSummary, Verdict
 from services.artifact_detector import scan_artifacts
-from services.image_service import preprocess_and_classify
 from services.news_lookup import search_news_full
 from services.vlm_breakdown import generate_vlm_breakdown
 from services.text_service import (
@@ -74,6 +73,18 @@ router = APIRouter(prefix="/analyze", tags=["analyze"])
 IMAGE_MAX_MB = 20
 VIDEO_MAX_MB = 100
 VIDEO_NUM_FRAMES = 16
+
+_IMAGE_EXCLUDE = {"explainability": {"heatmap_base64", "ela_base64", "boxes_base64"}}
+
+
+def _compute_llm_summary(resp, *, record_id: int, user, media_kind: str, exclude: dict | None = None):
+    """Generate the LLM summary for `resp`. Swallows provider errors gracefully."""
+    try:
+        payload = resp.model_dump(exclude=exclude) if exclude else resp.model_dump()
+        return generate_llm_summary(payload=payload, record_id=str(record_id))
+    except Exception as e:  # noqa: BLE001
+        logger.warning(f"LLM explainer failed for {media_kind}: {e}")
+        return None
 
 
 @router.post("/image", response_model=ImageAnalysisResponse)
@@ -157,7 +168,7 @@ async def analyze_image(
 
     analysis_id = str(uuid.uuid4())
 
-    response = ImageAnalysisResponse(
+    resp = ImageAnalysisResponse(
         analysis_id=analysis_id,
         media_type="image",
         timestamp=datetime.now(timezone.utc).isoformat(),
@@ -194,14 +205,16 @@ async def analyze_image(
         logger.warning(f"media save failed: {e}")
         media_path = None
     thumbnail_url = make_image_thumbnail(pil, media_hash)
-    response.thumbnail_url = thumbnail_url
+    resp.thumbnail_url = thumbnail_url
+    if media_path:
+        resp.media_path = media_path
 
     record = AnalysisRecord(
         user_id=user.id if user else None,
         media_type="image",
         verdict=label,
         authenticity_score=float(score),
-        result_json=json.dumps(response.model_dump(
+        result_json=json.dumps(resp.model_dump(
             exclude={"explainability": {"heatmap_base64", "ela_base64", "boxes_base64"}}
         )),
         media_hash=media_hash,
@@ -211,32 +224,25 @@ async def analyze_image(
     db.add(record)
     db.commit()
     db.refresh(record)
-    response.record_id = record.id
+    resp.record_id = record.id
     logger.info(f"Saved AnalysisRecord id={record.id} score={score} verdict={label}")
 
-    # ── Phase 12: LLM explainability card (runs after DB save so we have record_id) ──
-    try:
-        llm_summary = generate_llm_summary(
-            payload=response.model_dump(
-                exclude={"explainability": {"heatmap_base64", "ela_base64", "boxes_base64"}}
-            ),
-            record_id=str(record.id),
-        )
-        response.explainability.llm_summary = llm_summary
+    # ── Phase 12+14: LLM + VLM cards (authed users only — conserves LLM quota) ──
+    llm_summary = _compute_llm_summary(resp, record_id=record.id, user=user, media_kind="image", exclude=_IMAGE_EXCLUDE)
+    if llm_summary:
+        resp.explainability.llm_summary = llm_summary
         stages.append("llm_explanation")
-    except Exception as e:  # noqa: BLE001
-        logger.warning(f"LLM explainer failed, continuing: {e}")
 
-    # ── Phase 14: VLM detailed breakdown (vision LLM scores 6 perceptual components) ──
-    try:
-        vlm_bd = generate_vlm_breakdown(pil, record_id=str(record.id))
-        if vlm_bd:
-            response.explainability.vlm_breakdown = vlm_bd
-            stages.append("vlm_breakdown")
-    except Exception as e:  # noqa: BLE001
-        logger.warning(f"VLM breakdown failed, continuing: {e}")
+    if user is not None:
+        try:
+            vlm_bd = generate_vlm_breakdown(pil, record_id=str(record.id))
+            if vlm_bd:
+                resp.explainability.vlm_breakdown = vlm_bd
+                stages.append("vlm_breakdown")
+        except Exception as e:  # noqa: BLE001
+            logger.warning(f"VLM breakdown failed, continuing: {e}")
 
-    return response
+    return resp
 
 
 @router.post("/video", response_model=VideoAnalysisResponse)
@@ -324,7 +330,7 @@ async def analyze_video_endpoint(
             notes=audio_result.notes,
         )
 
-    response = VideoAnalysisResponse(
+    resp = VideoAnalysisResponse(
         analysis_id=str(uuid.uuid4()),
         media_type="video",
         timestamp=datetime.now(timezone.utc).isoformat(),
@@ -378,14 +384,14 @@ async def analyze_video_endpoint(
         logger.warning(f"video media save failed: {e}")
         media_path = None
     thumbnail_url = make_video_thumbnail(path, media_hash)
-    response.thumbnail_url = thumbnail_url
+    resp.thumbnail_url = thumbnail_url
 
     record = AnalysisRecord(
         user_id=user.id if user else None,
         media_type="video",
         verdict=label,
         authenticity_score=float(score),
-        result_json=json.dumps(response.model_dump()),
+        result_json=json.dumps(resp.model_dump()),
         media_hash=media_hash,
         media_path=media_path,
         thumbnail_url=thumbnail_url,
@@ -393,7 +399,7 @@ async def analyze_video_endpoint(
     db.add(record)
     db.commit()
     db.refresh(record)
-    response.record_id = record.id
+    resp.record_id = record.id
     logger.info(
         f"Saved AnalysisRecord id={record.id} video score={score} verdict={label} "
         f"frames={agg.num_frames_sampled} susp={agg.num_suspicious_frames}"
@@ -416,15 +422,12 @@ async def analyze_video_endpoint(
         except OSError:
             pass
 
-    # Phase 12: LLM explainability card
-    try:
-        response.llm_summary = generate_llm_summary(
-            payload=response.model_dump(), record_id=str(record.id),
-        )
-    except Exception as e:  # noqa: BLE001
-        logger.warning(f"LLM explainer failed for video: {e}")
+    # Phase 12: LLM explainability card (authed users only — conserves LLM quota)
+    llm = _compute_llm_summary(resp, record_id=record.id, user=user, media_kind="video")
+    if llm:
+        resp.llm_summary = llm
 
-    return response
+    return resp
 
 
 class TextAnalyzeBody(BaseModel):
@@ -488,7 +491,7 @@ async def analyze_text_endpoint(
         else settings.TEXT_MODEL_ID
     )
 
-    response = TextAnalysisResponse(
+    resp = TextAnalysisResponse(
         analysis_id=str(uuid.uuid4()),
         media_type="text",
         timestamp=datetime.now(timezone.utc).isoformat(),
@@ -541,23 +544,20 @@ async def analyze_text_endpoint(
         media_type="text",
         verdict=label,
         authenticity_score=float(score),
-        result_json=json.dumps(response.model_dump()),
+        result_json=json.dumps(resp.model_dump()),
     )
     db.add(record)
     db.commit()
     db.refresh(record)
-    response.record_id = record.id
+    resp.record_id = record.id
     logger.info(f"Saved AnalysisRecord id={record.id} text score={score} verdict={label}")
 
-    # Phase 12: LLM explainability card
-    try:
-        response.llm_summary = generate_llm_summary(
-            payload=response.model_dump(), record_id=str(record.id),
-        )
-    except Exception as e:  # noqa: BLE001
-        logger.warning(f"LLM explainer failed for text: {e}")
+    # Phase 12: LLM explainability card (authed users only — conserves LLM quota)
+    llm = _compute_llm_summary(resp, record_id=record.id, user=user, media_kind="text")
+    if llm:
+        resp.llm_summary = llm
 
-    return response
+    return resp
 
 
 @router.post("/screenshot", response_model=ScreenshotAnalysisResponse)
@@ -654,7 +654,7 @@ async def analyze_screenshot_endpoint(
         else f"{settings.TEXT_MODEL_ID} + EasyOCR"
     )
 
-    response = ScreenshotAnalysisResponse(
+    resp = ScreenshotAnalysisResponse(
         analysis_id=str(uuid.uuid4()),
         media_type="screenshot",
         timestamp=datetime.now(timezone.utc).isoformat(),
@@ -708,14 +708,14 @@ async def analyze_screenshot_endpoint(
         logger.warning(f"screenshot media save failed: {e}")
         media_path = None
     thumbnail_url = make_image_thumbnail(pil, media_hash)
-    response.thumbnail_url = thumbnail_url
+    resp.thumbnail_url = thumbnail_url
 
     record = AnalysisRecord(
         user_id=user.id if user else None,
         media_type="screenshot",
         verdict=label,
         authenticity_score=float(score),
-        result_json=json.dumps(response.model_dump()),
+        result_json=json.dumps(resp.model_dump()),
         media_hash=media_hash,
         media_path=media_path,
         thumbnail_url=thumbnail_url,
@@ -723,18 +723,15 @@ async def analyze_screenshot_endpoint(
     db.add(record)
     db.commit()
     db.refresh(record)
-    response.record_id = record.id
+    resp.record_id = record.id
     logger.info(f"Saved AnalysisRecord id={record.id} screenshot score={score} verdict={label}")
 
-    # Phase 12: LLM explainability card
-    try:
-        response.llm_summary = generate_llm_summary(
-            payload=response.model_dump(), record_id=str(record.id),
-        )
-    except Exception as e:  # noqa: BLE001
-        logger.warning(f"LLM explainer failed for screenshot: {e}")
+    # Phase 12: LLM explainability card (authed users only — conserves LLM quota)
+    llm = _compute_llm_summary(resp, record_id=record.id, user=user, media_kind="screenshot")
+    if llm:
+        resp.llm_summary = llm
 
-    return response
+    return resp
 
 
 # ───────────────────────── Phase 19.3 — async video + jobs ─────────────────────────

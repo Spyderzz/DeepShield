@@ -1077,7 +1077,7 @@ body {
 .verdict-bullets { display: flex; flex-direction: column; gap: 4px; font-size: 12px; color: var(--ds-muted); font-family: var(--ff-mono); }
 .result-reset { position: relative; z-index: 1; align-self: flex-start; }
 
-.score-ring { flex-shrink: 0; }
+.score-ring { flex-shrink: 0; overflow: visible; display: block; }
 
 .result-grid {
   display: grid;
@@ -1132,21 +1132,22 @@ body {
 .heatmap-base { width: 100%; height: 100%; object-fit: cover; }
 .heatmap-overlay {
   position: absolute; inset: 0;
-  background:
-    radial-gradient(120px 150px at 38% 36%, rgba(255,94,122,0.8), transparent 65%),
-    radial-gradient(90px 120px at 48% 58%, rgba(255,179,71,0.7), transparent 65%),
-    radial-gradient(80px 90px at 30% 72%, rgba(108,125,255,0.5), transparent 70%);
-  mix-blend-mode: screen;
   transition: opacity 300ms;
 }
 .ela-overlay {
   position: absolute; inset: 0;
-  background:
-    repeating-linear-gradient(45deg, rgba(108,125,255,0.1) 0 2px, transparent 2px 6px),
-    radial-gradient(circle at 40% 40%, rgba(255,255,255,0.2), transparent 50%);
-  mix-blend-mode: difference;
-  filter: contrast(2) saturate(2);
   transition: opacity 300ms;
+}
+/* shown when no real overlay image is available */
+.overlay-unavailable {
+  position: absolute; inset: 0;
+  display: flex; align-items: center; justify-content: center;
+  background: rgba(0,0,0,0.45);
+  font-family: var(--ff-mono);
+  font-size: 11px;
+  color: var(--ds-muted);
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
 }
 .heatmap-boxes { position: absolute; inset: 0; width: 100%; height: 100%; }
 
@@ -1188,24 +1189,24 @@ body {
 .bd-cell {
   display: grid;
   grid-template-columns: 56px 1fr;
-  gap: 14px;
-  align-items: center;
+  grid-template-rows: auto auto;
+  gap: 10px 14px;
+  align-items: start;
   padding: 14px;
   border: 1px solid var(--ds-border);
   background: rgba(255,255,255,0.02);
   border-radius: 10px;
-  cursor: pointer;
+  cursor: default;
   text-align: left;
   color: var(--ds-ink);
-  transition: all 200ms;
+  transition: background 200ms, border-color 200ms;
 }
-.bd-cell:hover, .bd-cell.open { background: rgba(108,125,255,0.06); border-color: rgba(108,125,255,0.3); }
-.bd-body { min-width: 0; }
+.bd-cell:hover { background: rgba(108,125,255,0.06); border-color: rgba(108,125,255,0.3); }
+.bd-cell > svg { grid-row: 1; grid-column: 1; align-self: center; }
+.bd-body { min-width: 0; grid-row: 1; grid-column: 2; }
 .bd-title { font-size: 14px; }
 .bd-score { font-size: 11px; color: var(--ds-muted); margin-top: 2px; }
-.bd-note { font-size: 11px; color: var(--ds-ink-2); margin: 8px 0 0; grid-column: 1/-1; }
-.bd-cell.open { grid-template-columns: 56px 1fr; grid-template-rows: auto auto; }
-.bd-cell.open .bd-note { grid-column: 2; }
+.bd-note { font-size: 11px; color: var(--ds-ink-2); margin: 0; grid-column: 1 / -1; grid-row: 2; line-height: 1.5; }
 
 .sources-card, .artifact-card { min-height: 280px; }
 .src-list { list-style: none; padding: 0; margin: 0; display: flex; flex-direction: column; gap: 12px; }
@@ -1454,3 +1455,157 @@ body {
   -webkit-mask-image: radial-gradient(ellipse at center, rgba(0,0,0,1) 0%, rgba(0,0,0,0.8) 55%, rgba(0,0,0,0.35) 85%, transparent 100%);
 }
 #ds-bg-surface { position: fixed; inset: 0; z-index: 0; pointer-events: none; }
+
+
+/* =====================================================
+   MOBILE PHONE OVERRIDES (<=640px only)
+   Desktop/tablet layout untouched.
+   ===================================================== */
+@media (max-width: 640px) {
+  /* Nav — compact, keep hamburger feel even though links are already hidden */
+  .ds-nav { padding: 12px 0; }
+  .ds-nav-inner { padding: 0 16px; gap: 8px; }
+  .ds-nav-right .btn-sm { padding: 7px 10px; font-size: 12px; }
+  .ds-nav-right .btn-sm svg { display: none; }
+  .ds-logo span { font-size: 14px; }
+
+  /* Hero */
+  .ds-hero { padding: 110px 0 60px; }
+  .ds-hero-inner { padding: 0 20px; gap: 32px; }
+  .ds-hero-title { font-size: clamp(40px, 10vw, 56px); margin: 14px 0 18px; line-height: 1.04; }
+  .ds-hero-sub { font-size: 15px; margin-bottom: 24px; }
+  .ds-hero-cta { gap: 10px; margin-bottom: 36px; }
+  .ds-hero-cta .btn-lg { padding: 12px 18px; font-size: 14px; flex: 1 1 auto; justify-content: center; }
+  .ds-hero-proof { grid-template-columns: repeat(2, 1fr); gap: 18px; padding-top: 22px; }
+  .ds-hero-proof span { font-size: 26px; }
+  .ds-hero-proof small { font-size: 11px; }
+
+  /* 3D Layer Stack — scaled down so it fits the viewport on phones */
+  .ds-hero-right { display: flex; justify-content: center; overflow: visible; }
+  .stack-scene {
+    height: 360px;
+    perspective: 900px;
+    transform: scale(0.7);
+    transform-origin: center center;
+    margin: -40px auto;
+  }
+  .stack-telemetry {
+    right: 0; bottom: -10px;
+    width: 220px; padding: 10px;
+    transform: scale(0.95);
+    transform-origin: right bottom;
+  }
+
+  /* Statement */
+  .ds-statement { padding: 90px 0; }
+  .ds-statement-inner { padding: 0 20px; }
+  .ds-statement-text { font-size: clamp(32px, 9vw, 48px); max-width: 100%; }
+
+  /* Modality section */
+  .ds-modality { padding: 80px 0; }
+  .ds-section-head { margin-bottom: 32px; }
+  .ds-section-head .display { font-size: clamp(34px, 9vw, 48px); }
+  .mod-card { padding: 22px; min-height: auto; gap: 14px; }
+  .mod-title { font-size: 22px; }
+  .mod-desc { font-size: 14px; }
+
+  /* Analyze console */
+  .ds-analyze { padding: 80px 0; }
+  .console { border-radius: 16px; }
+  .console-chrome { padding: 10px 14px; gap: 10px; flex-wrap: wrap; }
+  .chrome-title, .chrome-meta { font-size: 10px; }
+  .console-body { padding: 18px; }
+  .drop-zone { padding: 32px 18px; }
+  .drop-zone h3 { font-size: 24px; }
+  .drop-liquid svg { width: 84px; height: 84px; }
+  .console-idle { gap: 22px; }
+  .console-side { padding: 16px; }
+  .sample-row img { width: 44px; height: 44px; }
+  .console-processing { gap: 24px; }
+  .proc-stack { min-height: 320px; overflow: hidden; }
+  .proc-stack .stack-scene { transform: scale(0.55); height: 320px; margin: -60px auto; }
+
+  /* Result view */
+  .verdict-card {
+    grid-template-columns: 1fr;
+    padding: 20px;
+    gap: 16px;
+    text-align: left;
+  }
+  .verdict-left { flex-direction: row; align-items: center; gap: 14px; }
+  .verdict-label { font-size: 26px; }
+  .verdict-meta { font-size: 10px; flex-wrap: wrap; }
+  .result-reset { position: static; align-self: flex-start; }
+  .card { padding: 18px; }
+  .heatmap-stage { aspect-ratio: 4/3; }
+  .breakdown-grid { grid-template-columns: 1fr !important; }
+  .sticky-actions { flex-wrap: wrap; padding: 12px; bottom: 10px; gap: 6px; }
+  .sticky-actions .btn-sm { flex: 1 1 auto; font-size: 12px; padding: 8px 10px; }
+
+  /* Comparison — horizontal scroll rather than cramping */
+  .ds-compare { padding: 80px 0; }
+  .cmp { overflow-x: auto; -webkit-overflow-scrolling: touch; }
+  .cmp-row { min-width: 560px; }
+
+  /* Marquee */
+  .ds-marquee { padding: 80px 0; }
+  .mq-card { min-width: 240px; padding: 18px; }
+  .mq-card h4 { font-size: 15px; }
+
+  /* FAQ */
+  .ds-faq { padding: 80px 0; }
+  .faq-left .display { font-size: clamp(32px, 9vw, 44px); }
+  .faq-item { padding: 16px 0; }
+  .faq-q { font-size: 15px; gap: 12px; }
+
+  /* CTA + Footer */
+  .ds-cta { padding: 80px 0; }
+  .cta-card { padding: 36px 22px; }
+  .cta-card .display { font-size: clamp(30px, 8.5vw, 44px); }
+  .cta-row { flex-direction: column; gap: 10px; }
+  .cta-row .btn-lg { width: 100%; justify-content: center; }
+  .ds-footer { padding: 60px 0 32px; }
+  .ds-footer-inner { padding: 0 20px; }
+  .foot-cols { grid-template-columns: repeat(2, 1fr); gap: 28px; }
+  .foot-bottom { flex-direction: column; gap: 8px; text-align: center; padding: 24px 20px 0; }
+}
+
+/* =====================================================
+   iOS / iPhone polish — safe-area, tap targets, 100dvh
+   Scoped to phones; desktop unaffected.
+   ===================================================== */
+@media (max-width: 640px) {
+  /* Kill the blue tap flash on iOS Safari */
+  a, button, [role="button"] { -webkit-tap-highlight-color: transparent; }
+
+  /* Respect notch + Dynamic Island + home indicator */
+  .ds-nav-inner {
+    padding-left: max(16px, env(safe-area-inset-left));
+    padding-right: max(16px, env(safe-area-inset-right));
+  }
+  .ds-hero-inner,
+  .ds-statement-inner,
+  .ds-footer-inner,
+  .ds-container {
+    padding-left: max(20px, env(safe-area-inset-left));
+    padding-right: max(20px, env(safe-area-inset-right));
+  }
+  .ds-footer { padding-bottom: max(32px, env(safe-area-inset-bottom)); }
+  .sticky-actions {
+    bottom: max(10px, env(safe-area-inset-bottom));
+    padding-left: max(12px, env(safe-area-inset-left));
+    padding-right: max(12px, env(safe-area-inset-right));
+  }
+
+  /* 44×44pt minimum touch targets (Apple HIG) */
+  .btn-sm,
+  .slide-tab,
+  .faq-plus,
+  .seg-control button,
+  .sample-row,
+  .mode-seg-btn {
+    min-height: 44px;
+  }
+  .chrome-dots span { /* keep visual, don't enlarge decorative dots */ }
+}
+

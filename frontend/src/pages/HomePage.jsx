@@ -4,11 +4,13 @@ import './deepshield-landing.css';
 import { analyzeImage } from '../services/analyzeApi.js';
 import useDottedSurface from '../hooks/useDottedSurface.js';
 import ScrollReveal from '../components/common/ScrollReveal.jsx';
+import { useAuth } from '../contexts/AuthContext.jsx';
 
 /* ============ NAV ============ */
 function Nav() {
   const navigate = useNavigate();
   const [scrolled, setScrolled] = useState(false);
+  const { user, logout } = useAuth();
   useEffect(() => {
     const onScroll = () => setScrolled(window.scrollY > 20);
     window.addEventListener('scroll', onScroll, { passive: true });
@@ -43,10 +45,17 @@ function Nav() {
           ]} />
         </nav>
         <div className="ds-nav-right">
-          <button className="btn btn-ghost btn-sm" onClick={() => navigate('/login')}>Sign in</button>
+          {user ? (
+            <>
+              <span className="btn btn-ghost btn-sm" style={{ cursor: 'default' }}>{user.name || user.email}</span>
+              <button className="btn btn-ghost btn-sm" onClick={() => { logout(); }}>Sign out</button>
+            </>
+          ) : (
+            <button className="btn btn-ghost btn-sm" onClick={() => navigate('/login')}>Sign in</button>
+          )}
           <button
             className="btn btn-glass btn-sm btn-shiny"
-            onClick={() => document.getElementById('analyze')?.scrollIntoView({ behavior: 'smooth', block: 'start' })}
+            onClick={() => navigate('/analyze')}
           >
             Run analysis
             <svg width="12" height="12" viewBox="0 0 12 12" fill="none"><path d="M2 6h8m0 0L6 2m4 4L6 10" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" /></svg>

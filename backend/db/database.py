@@ -1,4 +1,4 @@
-from sqlalchemy import create_engine
+from sqlalchemy import create_engine, event
 from sqlalchemy.orm import DeclarativeBase, sessionmaker
 
 from config import settings
@@ -9,6 +9,17 @@ engine = create_engine(
     pool_pre_ping=True,
     pool_recycle=300,
 )
+
+
+if settings.DATABASE_URL.startswith("sqlite"):
+    @event.listens_for(engine, "connect")
+    def _sqlite_on_connect(dbapi_conn, _):
+        # Enforce FK constraints (needed for ON DELETE SET NULL) + WAL for better
+        # concurrent reads while a writer is active.
+        cur = dbapi_conn.cursor()
+        cur.execute("PRAGMA foreign_keys=ON")
+        cur.execute("PRAGMA journal_mode=WAL")
+        cur.close()
 
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 

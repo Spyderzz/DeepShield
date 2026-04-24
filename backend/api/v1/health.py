@@ -2,7 +2,9 @@ from fastapi import APIRouter, Response, status
 from loguru import logger
 from sqlalchemy import text
 
+from config import settings
 from db.database import engine
+from services.llm_explainer import is_rate_limited
 
 router = APIRouter(tags=["health"])
 
@@ -54,3 +56,24 @@ def health_ready(response: Response):
     if not ok:
         response.status_code = status.HTTP_503_SERVICE_UNAVAILABLE
     return {"status": "ready" if ok else "not_ready", "checks": checks}
+
+
+@router.get("/health/llm")
+def health_llm(response: Response):
+    """LLM availability probe — lets the frontend decide whether to request/show
+    the AI summary card. Doesn't spend tokens; only checks config + breaker state.
+    """
+    has_primary = bool(settings.LLM_API_KEY)
+    has_fallback = bool(settings.GROQ_API_KEY)
+    cooldown = is_rate_limited()
+
+    # Available if (any provider configured) AND (not rate-limited OR fallback exists)
+    available = (has_primary or has_fallback) and (not cooldown or has_fallback)
+    if not available:
+        response.status_code = status.HTTP_503_SERVICE_UNAVAILABLE
+    return {
+        "available": available,
+        "primary": f"{settings.LLM_PROVIDER}/{settings.LLM_MODEL}" if has_primary else None,
+        "fallback": f"groq/{settings.GROQ_MODEL}" if has_fallback else None,
+        "rate_limited": cooldown,
+    }

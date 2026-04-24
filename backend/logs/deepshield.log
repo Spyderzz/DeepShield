@@ -20,3 +20,888 @@
 2026-04-22 18:28:09.698 | INFO     | main:lifespan:85 - Database initialized
 2026-04-22 18:28:09.698 | INFO     | models.model_loader:load_image_model:43 - Loading image model: prithivMLmods/Deep-Fake-Detector-v2-Model
 2026-04-22 18:28:11.556 | INFO     | models.model_loader:load_image_model:51 - Image model loaded
+2026-04-24 01:50:58.220 | WARNING  | models.model_loader:load_ffpp_model:193 - FFPP ViT checkpoint not found at C:\Users\athar\Desktop\trained_models — skipping
+2026-04-24 01:51:03.592 | INFO     | services.efficientnet_service:__init__:97 - EfficientNetDetector ready: EfficientNetAutoAttB4/DFDC on cpu | calibrator=no
+2026-04-24 01:51:03.887 | INFO     | services.image_service:classify_image:152 - Image classify (vit_only) → Fake | vit=0.597 ffpp=n/a eff=n/a → 0.597
+2026-04-24 01:51:12.975 | INFO     | models.model_loader:load_face_detector:142 - Loading MediaPipe FaceMesh
+2026-04-24 01:51:13.089 | INFO     | models.model_loader:load_face_detector:150 - MediaPipe FaceMesh loaded
+2026-04-24 01:51:13.255 | INFO     | models.heatmap_generator:generate_heatmap_base64:176 - EfficientNet heatmap skipped — no face detected
+2026-04-24 01:51:13.320 | INFO     | services.ela_service:generate_ela_base64:60 - ELA map generated (640x427)
+2026-04-24 01:51:14.648 | INFO     | models.heatmap_generator:generate_boxes_base64:232 - Bounding boxes generated: 1 regions
+2026-04-24 01:51:14.933 | INFO     | services.exif_service:extract_exif:127 - EXIF extracted: make=None, model=None, adjustment=0 (no EXIF metadata found)
+2026-04-24 01:51:14.979 | INFO     | api.v1.analyze:analyze_image:215 - Saved AnalysisRecord id=20 score=40 verdict=Likely Fake
+2026-04-24 01:51:14.982 | ERROR    | services.llm_explainer:generate_llm_summary:186 - LLM explainer failed: No module named 'google.generativeai'
+2026-04-24 01:51:14.984 | ERROR    | services.vlm_breakdown:generate_vlm_breakdown:104 - VLM breakdown failed: No module named 'google.generativeai'
+2026-04-24 07:35:53.458 | INFO     | models.model_loader:load_text_model:57 - Loading text model: jy46604790/Fake-News-Bert-Detect
+2026-04-24 07:36:02.194 | INFO     | models.model_loader:load_text_model:65 - Text model loaded
+2026-04-24 07:36:03.057 | INFO     | services.text_service:classify_text:159 - Text classify [en] → LABEL_0 @ 0.999 fake_p=0.999
+2026-04-24 07:36:03.058 | INFO     | services.text_service:score_sensationalism:193 - Sensationalism → 68 (High) excl=4 caps=3 cb=1 emo=1
+2026-04-24 07:36:03.061 | INFO     | services.text_service:detect_manipulation_indicators:213 - Manipulation indicators → 3 found
+2026-04-24 07:36:05.585 | WARNING  | models.model_loader:load_spacy_nlp:98 - spaCy model 'en_core_web_sm' not found. Run: python -m spacy download en_core_web_sm
+2026-04-24 07:36:06.959 | INFO     | api.v1.analyze:analyze_text_endpoint:550 - Saved AnalysisRecord id=21 text score=15 verdict=Very Likely Fake
+2026-04-24 07:36:08.561 | ERROR    | services.llm_explainer:generate_llm_summary:186 - LLM explainer failed: 429 You exceeded your current quota, please check your plan and billing details. For more information on this error, head to: https://ai.google.dev/gemini-api/docs/rate-limits. To monitor your current usage, head to: https://ai.dev/rate-limit. 
+* Quota exceeded for metric: generativelanguage.googleapis.com/generate_content_free_tier_input_token_count, limit: 0, model: gemini-2.5-pro
+* Quota exceeded for metric: generativelanguage.googleapis.com/generate_content_free_tier_requests, limit: 0, model: gemini-2.5-pro
+* Quota exceeded for metric: generativelanguage.googleapis.com/generate_content_free_tier_requests, limit: 0, model: gemini-2.5-pro
+* Quota exceeded for metric: generativelanguage.googleapis.com/generate_content_free_tier_input_token_count, limit: 0, model: gemini-2.5-pro
+Please retry in 51.884484839s. [links {
+  description: "Learn more about Gemini API quotas"
+  url: "https://ai.google.dev/gemini-api/docs/rate-limits"
+}
+, violations {
+  quota_metric: "generativelanguage.googleapis.com/generate_content_free_tier_input_token_count"
+  quota_id: "GenerateContentInputTokensPerModelPerMinute-FreeTier"
+  quota_dimensions {
+    key: "model"
+    value: "gemini-2.5-pro"
+  }
+  quota_dimensions {
+    key: "location"
+    value: "global"
+  }
+}
+violations {
+  quota_metric: "generativelanguage.googleapis.com/generate_content_free_tier_requests"
+  quota_id: "GenerateRequestsPerMinutePerProjectPerModel-FreeTier"
+  quota_dimensions {
+    key: "model"
+    value: "gemini-2.5-pro"
+  }
+  quota_dimensions {
+    key: "location"
+    value: "global"
+  }
+}
+violations {
+  quota_metric: "generativelanguage.googleapis.com/generate_content_free_tier_requests"
+  quota_id: "GenerateRequestsPerDayPerProjectPerModel-FreeTier"
+  quota_dimensions {
+    key: "model"
+    value: "gemini-2.5-pro"
+  }
+  quota_dimensions {
+    key: "location"
+    value: "global"
+  }
+}
+violations {
+  quota_metric: "generativelanguage.googleapis.com/generate_content_free_tier_input_token_count"
+  quota_id: "GenerateContentInputTokensPerModelPerDay-FreeTier"
+  quota_dimensions {
+    key: "model"
+    value: "gemini-2.5-pro"
+  }
+  quota_dimensions {
+    key: "location"
+    value: "global"
+  }
+}
+, retry_delay {
+  seconds: 51
+}
+]
+2026-04-24 07:36:41.979 | INFO     | models.model_loader:load_image_model:43 - Loading image model: prithivMLmods/Deep-Fake-Detector-v2-Model
+2026-04-24 07:36:47.524 | INFO     | models.model_loader:load_image_model:51 - Image model loaded
+2026-04-24 07:36:48.484 | WARNING  | models.model_loader:load_ffpp_model:193 - FFPP ViT checkpoint not found at C:\Users\athar\Desktop\trained_models — skipping
+2026-04-24 07:36:49.759 | INFO     | services.efficientnet_service:__init__:97 - EfficientNetDetector ready: EfficientNetAutoAttB4/DFDC on cpu | calibrator=no
+2026-04-24 07:36:49.848 | INFO     | services.image_service:classify_image:152 - Image classify (vit_only) → Fake | vit=0.521 ffpp=n/a eff=n/a → 0.521
+2026-04-24 07:36:51.638 | INFO     | models.model_loader:load_face_detector:142 - Loading MediaPipe FaceMesh
+2026-04-24 07:36:51.638 | WARNING  | services.artifact_detector:detect_face_based_artifacts:213 - Face-based artifact detection failed: module 'mediapipe' has no attribute 'solutions'
+2026-04-24 07:36:51.649 | INFO     | models.heatmap_generator:generate_heatmap_base64:176 - EfficientNet heatmap skipped — no face detected
+2026-04-24 07:36:51.696 | INFO     | services.ela_service:generate_ela_base64:60 - ELA map generated (512x512)
+2026-04-24 07:36:52.470 | INFO     | models.heatmap_generator:generate_boxes_base64:232 - Bounding boxes generated: 5 regions
+2026-04-24 07:36:52.519 | INFO     | services.exif_service:extract_exif:127 - EXIF extracted: make=None, model=None, adjustment=0 (no EXIF metadata found)
+2026-04-24 07:36:52.542 | INFO     | api.v1.analyze:analyze_image:215 - Saved AnalysisRecord id=22 score=48 verdict=Possibly Manipulated
+2026-04-24 07:36:53.674 | ERROR    | services.llm_explainer:generate_llm_summary:186 - LLM explainer failed: 429 You exceeded your current quota, please check your plan and billing details. For more information on this error, head to: https://ai.google.dev/gemini-api/docs/rate-limits. To monitor your current usage, head to: https://ai.dev/rate-limit. 
+* Quota exceeded for metric: generativelanguage.googleapis.com/generate_content_free_tier_input_token_count, limit: 0, model: gemini-2.5-pro
+* Quota exceeded for metric: generativelanguage.googleapis.com/generate_content_free_tier_requests, limit: 0, model: gemini-2.5-pro
+* Quota exceeded for metric: generativelanguage.googleapis.com/generate_content_free_tier_requests, limit: 0, model: gemini-2.5-pro
+* Quota exceeded for metric: generativelanguage.googleapis.com/generate_content_free_tier_input_token_count, limit: 0, model: gemini-2.5-pro
+Please retry in 6.748563195s. [links {
+  description: "Learn more about Gemini API quotas"
+  url: "https://ai.google.dev/gemini-api/docs/rate-limits"
+}
+, violations {
+  quota_metric: "generativelanguage.googleapis.com/generate_content_free_tier_input_token_count"
+  quota_id: "GenerateContentInputTokensPerModelPerMinute-FreeTier"
+  quota_dimensions {
+    key: "model"
+    value: "gemini-2.5-pro"
+  }
+  quota_dimensions {
+    key: "location"
+    value: "global"
+  }
+}
+violations {
+  quota_metric: "generativelanguage.googleapis.com/generate_content_free_tier_requests"
+  quota_id: "GenerateRequestsPerMinutePerProjectPerModel-FreeTier"
+  quota_dimensions {
+    key: "model"
+    value: "gemini-2.5-pro"
+  }
+  quota_dimensions {
+    key: "location"
+    value: "global"
+  }
+}
+violations {
+  quota_metric: "generativelanguage.googleapis.com/generate_content_free_tier_requests"
+  quota_id: "GenerateRequestsPerDayPerProjectPerModel-FreeTier"
+  quota_dimensions {
+    key: "model"
+    value: "gemini-2.5-pro"
+  }
+  quota_dimensions {
+    key: "location"
+    value: "global"
+  }
+}
+violations {
+  quota_metric: "generativelanguage.googleapis.com/generate_content_free_tier_input_token_count"
+  quota_id: "GenerateContentInputTokensPerModelPerDay-FreeTier"
+  quota_dimensions {
+    key: "model"
+    value: "gemini-2.5-pro"
+  }
+  quota_dimensions {
+    key: "location"
+    value: "global"
+  }
+}
+, retry_delay {
+  seconds: 6
+}
+]
+2026-04-24 07:36:54.760 | ERROR    | services.vlm_breakdown:generate_vlm_breakdown:104 - VLM breakdown failed: 429 You exceeded your current quota, please check your plan and billing details. For more information on this error, head to: https://ai.google.dev/gemini-api/docs/rate-limits. To monitor your current usage, head to: https://ai.dev/rate-limit. 
+* Quota exceeded for metric: generativelanguage.googleapis.com/generate_content_free_tier_input_token_count, limit: 0, model: gemini-2.5-pro
+* Quota exceeded for metric: generativelanguage.googleapis.com/generate_content_free_tier_requests, limit: 0, model: gemini-2.5-pro
+* Quota exceeded for metric: generativelanguage.googleapis.com/generate_content_free_tier_requests, limit: 0, model: gemini-2.5-pro
+* Quota exceeded for metric: generativelanguage.googleapis.com/generate_content_free_tier_input_token_count, limit: 0, model: gemini-2.5-pro
+Please retry in 5.653927512s. [links {
+  description: "Learn more about Gemini API quotas"
+  url: "https://ai.google.dev/gemini-api/docs/rate-limits"
+}
+, violations {
+  quota_metric: "generativelanguage.googleapis.com/generate_content_free_tier_input_token_count"
+  quota_id: "GenerateContentInputTokensPerModelPerMinute-FreeTier"
+  quota_dimensions {
+    key: "model"
+    value: "gemini-2.5-pro"
+  }
+  quota_dimensions {
+    key: "location"
+    value: "global"
+  }
+}
+violations {
+  quota_metric: "generativelanguage.googleapis.com/generate_content_free_tier_requests"
+  quota_id: "GenerateRequestsPerMinutePerProjectPerModel-FreeTier"
+  quota_dimensions {
+    key: "model"
+    value: "gemini-2.5-pro"
+  }
+  quota_dimensions {
+    key: "location"
+    value: "global"
+  }
+}
+violations {
+  quota_metric: "generativelanguage.googleapis.com/generate_content_free_tier_requests"
+  quota_id: "GenerateRequestsPerDayPerProjectPerModel-FreeTier"
+  quota_dimensions {
+    key: "model"
+    value: "gemini-2.5-pro"
+  }
+  quota_dimensions {
+    key: "location"
+    value: "global"
+  }
+}
+violations {
+  quota_metric: "generativelanguage.googleapis.com/generate_content_free_tier_input_token_count"
+  quota_id: "GenerateContentInputTokensPerModelPerDay-FreeTier"
+  quota_dimensions {
+    key: "model"
+    value: "gemini-2.5-pro"
+  }
+  quota_dimensions {
+    key: "location"
+    value: "global"
+  }
+}
+, retry_delay {
+  seconds: 5
+}
+]
+2026-04-24 15:16:36.138 | INFO     | models.model_loader:load_text_model:57 - Loading text model: jy46604790/Fake-News-Bert-Detect
+2026-04-24 15:16:43.946 | INFO     | models.model_loader:load_text_model:65 - Text model loaded
+2026-04-24 15:16:44.719 | INFO     | services.text_service:classify_text:159 - Text classify [en] → LABEL_0 @ 0.998 fake_p=0.998
+2026-04-24 15:16:44.721 | INFO     | services.text_service:score_sensationalism:193 - Sensationalism → 67 (High) excl=3 caps=2 cb=1 emo=1
+2026-04-24 15:16:44.723 | INFO     | services.text_service:detect_manipulation_indicators:213 - Manipulation indicators → 3 found
+2026-04-24 15:16:45.864 | WARNING  | models.model_loader:load_spacy_nlp:98 - spaCy model 'en_core_web_sm' not found. Run: python -m spacy download en_core_web_sm
+2026-04-24 15:16:47.113 | INFO     | api.v1.analyze:analyze_text_endpoint:549 - Saved AnalysisRecord id=23 text score=15 verdict=Very Likely Fake
+2026-04-24 15:16:48.348 | ERROR    | services.llm_explainer:generate_llm_summary:186 - LLM explainer failed: 429 You exceeded your current quota, please check your plan and billing details. For more information on this error, head to: https://ai.google.dev/gemini-api/docs/rate-limits. To monitor your current usage, head to: https://ai.dev/rate-limit. 
+* Quota exceeded for metric: generativelanguage.googleapis.com/generate_content_free_tier_input_token_count, limit: 0, model: gemini-2.5-pro
+* Quota exceeded for metric: generativelanguage.googleapis.com/generate_content_free_tier_requests, limit: 0, model: gemini-2.5-pro
+* Quota exceeded for metric: generativelanguage.googleapis.com/generate_content_free_tier_requests, limit: 0, model: gemini-2.5-pro
+* Quota exceeded for metric: generativelanguage.googleapis.com/generate_content_free_tier_input_token_count, limit: 0, model: gemini-2.5-pro
+Please retry in 12.294521515s. [links {
+  description: "Learn more about Gemini API quotas"
+  url: "https://ai.google.dev/gemini-api/docs/rate-limits"
+}
+, violations {
+  quota_metric: "generativelanguage.googleapis.com/generate_content_free_tier_input_token_count"
+  quota_id: "GenerateContentInputTokensPerModelPerMinute-FreeTier"
+  quota_dimensions {
+    key: "model"
+    value: "gemini-2.5-pro"
+  }
+  quota_dimensions {
+    key: "location"
+    value: "global"
+  }
+}
+violations {
+  quota_metric: "generativelanguage.googleapis.com/generate_content_free_tier_requests"
+  quota_id: "GenerateRequestsPerMinutePerProjectPerModel-FreeTier"
+  quota_dimensions {
+    key: "model"
+    value: "gemini-2.5-pro"
+  }
+  quota_dimensions {
+    key: "location"
+    value: "global"
+  }
+}
+violations {
+  quota_metric: "generativelanguage.googleapis.com/generate_content_free_tier_requests"
+  quota_id: "GenerateRequestsPerDayPerProjectPerModel-FreeTier"
+  quota_dimensions {
+    key: "model"
+    value: "gemini-2.5-pro"
+  }
+  quota_dimensions {
+    key: "location"
+    value: "global"
+  }
+}
+violations {
+  quota_metric: "generativelanguage.googleapis.com/generate_content_free_tier_input_token_count"
+  quota_id: "GenerateContentInputTokensPerModelPerDay-FreeTier"
+  quota_dimensions {
+    key: "model"
+    value: "gemini-2.5-pro"
+  }
+  quota_dimensions {
+    key: "location"
+    value: "global"
+  }
+}
+, retry_delay {
+  seconds: 12
+}
+]
+2026-04-24 15:16:48.553 | INFO     | models.model_loader:load_image_model:43 - Loading image model: prithivMLmods/Deep-Fake-Detector-v2-Model
+2026-04-24 15:16:50.111 | INFO     | models.model_loader:load_image_model:51 - Image model loaded
+2026-04-24 15:16:51.265 | WARNING  | models.model_loader:load_ffpp_model:193 - FFPP ViT checkpoint not found at C:\Users\athar\Desktop\trained_models — skipping
+2026-04-24 15:16:52.685 | INFO     | services.efficientnet_service:__init__:97 - EfficientNetDetector ready: EfficientNetAutoAttB4/DFDC on cpu | calibrator=no
+2026-04-24 15:16:52.723 | INFO     | services.image_service:classify_image:152 - Image classify (vit_only) → Fake | vit=0.517 ffpp=n/a eff=n/a → 0.517
+2026-04-24 15:16:52.735 | INFO     | models.model_loader:load_face_detector:142 - Loading MediaPipe FaceMesh
+2026-04-24 15:16:54.934 | WARNING  | services.artifact_detector:detect_face_based_artifacts:211 - Face-based artifact detection failed: module 'mediapipe' has no attribute 'solutions'
+2026-04-24 15:16:54.949 | INFO     | models.heatmap_generator:generate_heatmap_base64:176 - EfficientNet heatmap skipped — no face detected
+2026-04-24 15:16:54.965 | INFO     | services.ela_service:generate_ela_base64:59 - ELA map generated (256x256)
+2026-04-24 15:16:55.916 | INFO     | models.heatmap_generator:generate_boxes_base64:232 - Bounding boxes generated: 5 regions
+2026-04-24 15:16:55.975 | INFO     | services.exif_service:extract_exif:127 - EXIF extracted: make=None, model=None, adjustment=0 (no EXIF metadata found)
+2026-04-24 15:16:55.989 | INFO     | api.v1.analyze:analyze_image:214 - Saved AnalysisRecord id=24 score=48 verdict=Possibly Manipulated
+2026-04-24 15:16:56.236 | ERROR    | services.llm_explainer:generate_llm_summary:186 - LLM explainer failed: 429 You exceeded your current quota, please check your plan and billing details. For more information on this error, head to: https://ai.google.dev/gemini-api/docs/rate-limits. To monitor your current usage, head to: https://ai.dev/rate-limit. 
+* Quota exceeded for metric: generativelanguage.googleapis.com/generate_content_free_tier_input_token_count, limit: 0, model: gemini-2.5-pro
+* Quota exceeded for metric: generativelanguage.googleapis.com/generate_content_free_tier_requests, limit: 0, model: gemini-2.5-pro
+* Quota exceeded for metric: generativelanguage.googleapis.com/generate_content_free_tier_requests, limit: 0, model: gemini-2.5-pro
+* Quota exceeded for metric: generativelanguage.googleapis.com/generate_content_free_tier_input_token_count, limit: 0, model: gemini-2.5-pro
+Please retry in 4.477916448s. [links {
+  description: "Learn more about Gemini API quotas"
+  url: "https://ai.google.dev/gemini-api/docs/rate-limits"
+}
+, violations {
+  quota_metric: "generativelanguage.googleapis.com/generate_content_free_tier_input_token_count"
+  quota_id: "GenerateContentInputTokensPerModelPerMinute-FreeTier"
+  quota_dimensions {
+    key: "model"
+    value: "gemini-2.5-pro"
+  }
+  quota_dimensions {
+    key: "location"
+    value: "global"
+  }
+}
+violations {
+  quota_metric: "generativelanguage.googleapis.com/generate_content_free_tier_requests"
+  quota_id: "GenerateRequestsPerMinutePerProjectPerModel-FreeTier"
+  quota_dimensions {
+    key: "model"
+    value: "gemini-2.5-pro"
+  }
+  quota_dimensions {
+    key: "location"
+    value: "global"
+  }
+}
+violations {
+  quota_metric: "generativelanguage.googleapis.com/generate_content_free_tier_requests"
+  quota_id: "GenerateRequestsPerDayPerProjectPerModel-FreeTier"
+  quota_dimensions {
+    key: "model"
+    value: "gemini-2.5-pro"
+  }
+  quota_dimensions {
+    key: "location"
+    value: "global"
+  }
+}
+violations {
+  quota_metric: "generativelanguage.googleapis.com/generate_content_free_tier_input_token_count"
+  quota_id: "GenerateContentInputTokensPerModelPerDay-FreeTier"
+  quota_dimensions {
+    key: "model"
+    value: "gemini-2.5-pro"
+  }
+  quota_dimensions {
+    key: "location"
+    value: "global"
+  }
+}
+, retry_delay {
+  seconds: 4
+}
+]
+2026-04-24 15:16:57.419 | ERROR    | services.vlm_breakdown:generate_vlm_breakdown:104 - VLM breakdown failed: 429 You exceeded your current quota, please check your plan and billing details. For more information on this error, head to: https://ai.google.dev/gemini-api/docs/rate-limits. To monitor your current usage, head to: https://ai.dev/rate-limit. 
+* Quota exceeded for metric: generativelanguage.googleapis.com/generate_content_free_tier_input_token_count, limit: 0, model: gemini-2.5-pro
+* Quota exceeded for metric: generativelanguage.googleapis.com/generate_content_free_tier_requests, limit: 0, model: gemini-2.5-pro
+* Quota exceeded for metric: generativelanguage.googleapis.com/generate_content_free_tier_requests, limit: 0, model: gemini-2.5-pro
+* Quota exceeded for metric: generativelanguage.googleapis.com/generate_content_free_tier_input_token_count, limit: 0, model: gemini-2.5-pro
+Please retry in 3.282459328s. [links {
+  description: "Learn more about Gemini API quotas"
+  url: "https://ai.google.dev/gemini-api/docs/rate-limits"
+}
+, violations {
+  quota_metric: "generativelanguage.googleapis.com/generate_content_free_tier_input_token_count"
+  quota_id: "GenerateContentInputTokensPerModelPerDay-FreeTier"
+  quota_dimensions {
+    key: "model"
+    value: "gemini-2.5-pro"
+  }
+  quota_dimensions {
+    key: "location"
+    value: "global"
+  }
+}
+violations {
+  quota_metric: "generativelanguage.googleapis.com/generate_content_free_tier_requests"
+  quota_id: "GenerateRequestsPerDayPerProjectPerModel-FreeTier"
+  quota_dimensions {
+    key: "model"
+    value: "gemini-2.5-pro"
+  }
+  quota_dimensions {
+    key: "location"
+    value: "global"
+  }
+}
+violations {
+  quota_metric: "generativelanguage.googleapis.com/generate_content_free_tier_requests"
+  quota_id: "GenerateRequestsPerMinutePerProjectPerModel-FreeTier"
+  quota_dimensions {
+    key: "model"
+    value: "gemini-2.5-pro"
+  }
+  quota_dimensions {
+    key: "location"
+    value: "global"
+  }
+}
+violations {
+  quota_metric: "generativelanguage.googleapis.com/generate_content_free_tier_input_token_count"
+  quota_id: "GenerateContentInputTokensPerModelPerMinute-FreeTier"
+  quota_dimensions {
+    key: "model"
+    value: "gemini-2.5-pro"
+  }
+  quota_dimensions {
+    key: "location"
+    value: "global"
+  }
+}
+, retry_delay {
+  seconds: 3
+}
+]
+2026-04-24 15:16:57.445 | INFO     | models.model_loader:load_ocr_engine:130 - Loading EasyOCR reader (langs: ['en', 'hi'])
+2026-04-24 15:17:27.399 | INFO     | models.model_loader:load_ocr_engine:136 - EasyOCR loaded
+2026-04-24 15:17:27.870 | INFO     | services.screenshot_service:run_ocr:48 - OCR extracted 0 text regions
+2026-04-24 15:17:27.881 | INFO     | api.v1.analyze:analyze_screenshot_endpoint:726 - Saved AnalysisRecord id=25 screenshot score=50 verdict=Possibly Manipulated
+2026-04-24 15:17:28.066 | ERROR    | services.llm_explainer:generate_llm_summary:186 - LLM explainer failed: 429 You exceeded your current quota, please check your plan and billing details. For more information on this error, head to: https://ai.google.dev/gemini-api/docs/rate-limits. To monitor your current usage, head to: https://ai.dev/rate-limit. 
+* Quota exceeded for metric: generativelanguage.googleapis.com/generate_content_free_tier_input_token_count, limit: 0, model: gemini-2.5-pro
+* Quota exceeded for metric: generativelanguage.googleapis.com/generate_content_free_tier_input_token_count, limit: 0, model: gemini-2.5-pro
+* Quota exceeded for metric: generativelanguage.googleapis.com/generate_content_free_tier_requests, limit: 0, model: gemini-2.5-pro
+* Quota exceeded for metric: generativelanguage.googleapis.com/generate_content_free_tier_requests, limit: 0, model: gemini-2.5-pro
+Please retry in 32.593323033s. [links {
+  description: "Learn more about Gemini API quotas"
+  url: "https://ai.google.dev/gemini-api/docs/rate-limits"
+}
+, violations {
+  quota_metric: "generativelanguage.googleapis.com/generate_content_free_tier_input_token_count"
+  quota_id: "GenerateContentInputTokensPerModelPerDay-FreeTier"
+  quota_dimensions {
+    key: "model"
+    value: "gemini-2.5-pro"
+  }
+  quota_dimensions {
+    key: "location"
+    value: "global"
+  }
+}
+violations {
+  quota_metric: "generativelanguage.googleapis.com/generate_content_free_tier_input_token_count"
+  quota_id: "GenerateContentInputTokensPerModelPerMinute-FreeTier"
+  quota_dimensions {
+    key: "model"
+    value: "gemini-2.5-pro"
+  }
+  quota_dimensions {
+    key: "location"
+    value: "global"
+  }
+}
+violations {
+  quota_metric: "generativelanguage.googleapis.com/generate_content_free_tier_requests"
+  quota_id: "GenerateRequestsPerMinutePerProjectPerModel-FreeTier"
+  quota_dimensions {
+    key: "model"
+    value: "gemini-2.5-pro"
+  }
+  quota_dimensions {
+    key: "location"
+    value: "global"
+  }
+}
+violations {
+  quota_metric: "generativelanguage.googleapis.com/generate_content_free_tier_requests"
+  quota_id: "GenerateRequestsPerDayPerProjectPerModel-FreeTier"
+  quota_dimensions {
+    key: "model"
+    value: "gemini-2.5-pro"
+  }
+  quota_dimensions {
+    key: "location"
+    value: "global"
+  }
+}
+, retry_delay {
+  seconds: 32
+}
+]
+2026-04-24 15:17:54.819 | INFO     | models.model_loader:load_text_model:57 - Loading text model: jy46604790/Fake-News-Bert-Detect
+2026-04-24 15:18:00.795 | INFO     | models.model_loader:load_text_model:65 - Text model loaded
+2026-04-24 15:18:00.888 | INFO     | services.text_service:classify_text:159 - Text classify [en] → LABEL_0 @ 0.998 fake_p=0.998
+2026-04-24 15:18:00.889 | INFO     | services.text_service:score_sensationalism:193 - Sensationalism → 67 (High) excl=3 caps=2 cb=1 emo=1
+2026-04-24 15:18:00.891 | INFO     | services.text_service:detect_manipulation_indicators:213 - Manipulation indicators → 3 found
+2026-04-24 15:18:01.659 | WARNING  | models.model_loader:load_spacy_nlp:98 - spaCy model 'en_core_web_sm' not found. Run: python -m spacy download en_core_web_sm
+2026-04-24 15:18:02.878 | INFO     | api.v1.analyze:analyze_text_endpoint:549 - Saved AnalysisRecord id=26 text score=15 verdict=Very Likely Fake
+2026-04-24 15:18:03.994 | ERROR    | services.llm_explainer:generate_llm_summary:186 - LLM explainer failed: 429 You exceeded your current quota, please check your plan and billing details. For more information on this error, head to: https://ai.google.dev/gemini-api/docs/rate-limits. To monitor your current usage, head to: https://ai.dev/rate-limit. 
+* Quota exceeded for metric: generativelanguage.googleapis.com/generate_content_free_tier_requests, limit: 0, model: gemini-2.5-pro
+* Quota exceeded for metric: generativelanguage.googleapis.com/generate_content_free_tier_requests, limit: 0, model: gemini-2.5-pro
+* Quota exceeded for metric: generativelanguage.googleapis.com/generate_content_free_tier_input_token_count, limit: 0, model: gemini-2.5-pro
+* Quota exceeded for metric: generativelanguage.googleapis.com/generate_content_free_tier_input_token_count, limit: 0, model: gemini-2.5-pro
+Please retry in 56.638939454s. [links {
+  description: "Learn more about Gemini API quotas"
+  url: "https://ai.google.dev/gemini-api/docs/rate-limits"
+}
+, violations {
+  quota_metric: "generativelanguage.googleapis.com/generate_content_free_tier_requests"
+  quota_id: "GenerateRequestsPerDayPerProjectPerModel-FreeTier"
+  quota_dimensions {
+    key: "model"
+    value: "gemini-2.5-pro"
+  }
+  quota_dimensions {
+    key: "location"
+    value: "global"
+  }
+}
+violations {
+  quota_metric: "generativelanguage.googleapis.com/generate_content_free_tier_requests"
+  quota_id: "GenerateRequestsPerMinutePerProjectPerModel-FreeTier"
+  quota_dimensions {
+    key: "model"
+    value: "gemini-2.5-pro"
+  }
+  quota_dimensions {
+    key: "location"
+    value: "global"
+  }
+}
+violations {
+  quota_metric: "generativelanguage.googleapis.com/generate_content_free_tier_input_token_count"
+  quota_id: "GenerateContentInputTokensPerModelPerMinute-FreeTier"
+  quota_dimensions {
+    key: "model"
+    value: "gemini-2.5-pro"
+  }
+  quota_dimensions {
+    key: "location"
+    value: "global"
+  }
+}
+violations {
+  quota_metric: "generativelanguage.googleapis.com/generate_content_free_tier_input_token_count"
+  quota_id: "GenerateContentInputTokensPerModelPerDay-FreeTier"
+  quota_dimensions {
+    key: "model"
+    value: "gemini-2.5-pro"
+  }
+  quota_dimensions {
+    key: "location"
+    value: "global"
+  }
+}
+, retry_delay {
+  seconds: 56
+}
+]
+2026-04-24 15:20:38.285 | INFO     | models.model_loader:load_text_model:57 - Loading text model: jy46604790/Fake-News-Bert-Detect
+2026-04-24 15:20:43.929 | INFO     | models.model_loader:load_text_model:65 - Text model loaded
+2026-04-24 15:20:44.034 | INFO     | services.text_service:classify_text:159 - Text classify [en] → LABEL_0 @ 0.998 fake_p=0.998
+2026-04-24 15:20:44.035 | INFO     | services.text_service:score_sensationalism:193 - Sensationalism → 67 (High) excl=3 caps=2 cb=1 emo=1
+2026-04-24 15:20:44.037 | INFO     | services.text_service:detect_manipulation_indicators:213 - Manipulation indicators → 3 found
+2026-04-24 15:20:44.806 | WARNING  | models.model_loader:load_spacy_nlp:98 - spaCy model 'en_core_web_sm' not found. Run: python -m spacy download en_core_web_sm
+2026-04-24 15:20:46.001 | INFO     | api.v1.analyze:analyze_text_endpoint:549 - Saved AnalysisRecord id=27 text score=15 verdict=Very Likely Fake
+2026-04-24 15:20:56.376 | INFO     | services.llm_explainer:generate_llm_summary:175 - LLM summary generated via gemini/gemini-2.5-flash
+2026-04-24 15:33:56.592 | INFO     | api.v1.auth:register:33 - Registered user id=3 email=***@example.com
+2026-04-24 15:33:57.227 | INFO     | api.v1.auth:login:42 - Login user id=3 email=***@example.com
+2026-04-24 15:33:57.553 | INFO     | models.model_loader:load_text_model:57 - Loading text model: jy46604790/Fake-News-Bert-Detect
+2026-04-24 15:34:06.986 | INFO     | models.model_loader:load_text_model:65 - Text model loaded
+2026-04-24 15:34:07.731 | INFO     | services.text_service:classify_text:159 - Text classify [en] → LABEL_0 @ 0.997 fake_p=0.997
+2026-04-24 15:34:07.733 | INFO     | services.text_service:score_sensationalism:193 - Sensationalism → 0 (Low) excl=0 caps=0 cb=0 emo=0
+2026-04-24 15:34:07.736 | INFO     | services.text_service:detect_manipulation_indicators:213 - Manipulation indicators → 0 found
+2026-04-24 15:34:09.017 | WARNING  | models.model_loader:load_spacy_nlp:98 - spaCy model 'en_core_web_sm' not found. Run: python -m spacy download en_core_web_sm
+2026-04-24 15:34:10.285 | INFO     | api.v1.analyze:analyze_text_endpoint:549 - Saved AnalysisRecord id=28 text score=30 verdict=Likely Fake
+2026-04-24 15:34:41.718 | ERROR    | services.llm_explainer:generate_llm_summary:186 - LLM explainer failed: 429 You exceeded your current quota, please check your plan and billing details. For more information on this error, head to: https://ai.google.dev/gemini-api/docs/rate-limits. To monitor your current usage, head to: https://ai.dev/rate-limit. 
+* Quota exceeded for metric: generativelanguage.googleapis.com/generate_content_free_tier_requests, limit: 5, model: gemini-2.5-flash
+Please retry in 19.188761533s. [links {
+  description: "Learn more about Gemini API quotas"
+  url: "https://ai.google.dev/gemini-api/docs/rate-limits"
+}
+, violations {
+  quota_metric: "generativelanguage.googleapis.com/generate_content_free_tier_requests"
+  quota_id: "GenerateRequestsPerMinutePerProjectPerModel-FreeTier"
+  quota_dimensions {
+    key: "model"
+    value: "gemini-2.5-flash"
+  }
+  quota_dimensions {
+    key: "location"
+    value: "global"
+  }
+  quota_value: 5
+}
+, retry_delay {
+  seconds: 19
+}
+]
+2026-04-24 15:34:41.788 | INFO     | services.text_service:classify_text:159 - Text classify [en] → LABEL_0 @ 0.997 fake_p=0.997
+2026-04-24 15:34:41.788 | INFO     | services.text_service:score_sensationalism:193 - Sensationalism → 76 (High) excl=3 caps=2 cb=1 emo=3
+2026-04-24 15:34:41.789 | INFO     | services.text_service:detect_manipulation_indicators:213 - Manipulation indicators → 0 found
+2026-04-24 15:34:41.791 | WARNING  | models.model_loader:load_spacy_nlp:98 - spaCy model 'en_core_web_sm' not found. Run: python -m spacy download en_core_web_sm
+2026-04-24 15:34:43.147 | INFO     | api.v1.analyze:analyze_text_endpoint:549 - Saved AnalysisRecord id=29 text score=15 verdict=Very Likely Fake
+2026-04-24 15:34:43.555 | ERROR    | services.llm_explainer:generate_llm_summary:186 - LLM explainer failed: 429 You exceeded your current quota, please check your plan and billing details. For more information on this error, head to: https://ai.google.dev/gemini-api/docs/rate-limits. To monitor your current usage, head to: https://ai.dev/rate-limit. 
+* Quota exceeded for metric: generativelanguage.googleapis.com/generate_content_free_tier_requests, limit: 5, model: gemini-2.5-flash
+Please retry in 17.333464233s. [links {
+  description: "Learn more about Gemini API quotas"
+  url: "https://ai.google.dev/gemini-api/docs/rate-limits"
+}
+, violations {
+  quota_metric: "generativelanguage.googleapis.com/generate_content_free_tier_requests"
+  quota_id: "GenerateRequestsPerMinutePerProjectPerModel-FreeTier"
+  quota_dimensions {
+    key: "model"
+    value: "gemini-2.5-flash"
+  }
+  quota_dimensions {
+    key: "location"
+    value: "global"
+  }
+  quota_value: 5
+}
+, retry_delay {
+  seconds: 17
+}
+]
+2026-04-24 15:34:43.615 | INFO     | services.text_service:classify_text:159 - Text classify [en] → LABEL_0 @ 0.996 fake_p=0.996
+2026-04-24 15:34:43.616 | INFO     | services.text_service:score_sensationalism:193 - Sensationalism → 0 (Low) excl=0 caps=0 cb=0 emo=0
+2026-04-24 15:34:43.616 | INFO     | services.text_service:detect_manipulation_indicators:213 - Manipulation indicators → 0 found
+2026-04-24 15:34:43.618 | WARNING  | models.model_loader:load_spacy_nlp:98 - spaCy model 'en_core_web_sm' not found. Run: python -m spacy download en_core_web_sm
+2026-04-24 15:34:44.924 | INFO     | api.v1.analyze:analyze_text_endpoint:549 - Saved AnalysisRecord id=30 text score=30 verdict=Likely Fake
+2026-04-24 15:34:45.353 | ERROR    | services.llm_explainer:generate_llm_summary:186 - LLM explainer failed: 429 You exceeded your current quota, please check your plan and billing details. For more information on this error, head to: https://ai.google.dev/gemini-api/docs/rate-limits. To monitor your current usage, head to: https://ai.dev/rate-limit. 
+* Quota exceeded for metric: generativelanguage.googleapis.com/generate_content_free_tier_requests, limit: 5, model: gemini-2.5-flash
+Please retry in 15.553103918s. [links {
+  description: "Learn more about Gemini API quotas"
+  url: "https://ai.google.dev/gemini-api/docs/rate-limits"
+}
+, violations {
+  quota_metric: "generativelanguage.googleapis.com/generate_content_free_tier_requests"
+  quota_id: "GenerateRequestsPerMinutePerProjectPerModel-FreeTier"
+  quota_dimensions {
+    key: "model"
+    value: "gemini-2.5-flash"
+  }
+  quota_dimensions {
+    key: "location"
+    value: "global"
+  }
+  quota_value: 5
+}
+, retry_delay {
+  seconds: 15
+}
+]
+2026-04-24 15:43:27.438 | INFO     | api.v1.auth:register:33 - Registered user id=4 email=***@example.com
+2026-04-24 15:43:27.463 | INFO     | models.model_loader:load_text_model:57 - Loading text model: jy46604790/Fake-News-Bert-Detect
+2026-04-24 15:43:33.684 | INFO     | models.model_loader:load_text_model:65 - Text model loaded
+2026-04-24 15:43:33.796 | INFO     | services.text_service:classify_text:159 - Text classify [en] → LABEL_0 @ 0.991 fake_p=0.991
+2026-04-24 15:43:33.797 | INFO     | services.text_service:score_sensationalism:193 - Sensationalism → 0 (Low) excl=0 caps=0 cb=0 emo=0
+2026-04-24 15:43:33.799 | INFO     | services.text_service:detect_manipulation_indicators:213 - Manipulation indicators → 0 found
+2026-04-24 15:43:35.106 | INFO     | models.model_loader:load_spacy_nlp:96 - spaCy en_core_web_sm loaded
+2026-04-24 15:43:35.120 | INFO     | services.text_service:extract_entities:253 - NER extracted 3 entities: ['India', 'Elon Musk', 'New Delhi']
+2026-04-24 15:43:36.284 | INFO     | api.v1.analyze:analyze_text_endpoint:550 - Saved AnalysisRecord id=31 text score=31 verdict=Likely Fake
+2026-04-24 15:43:36.352 | INFO     | services.text_service:classify_text:159 - Text classify [en] → LABEL_0 @ 0.991 fake_p=0.991
+2026-04-24 15:43:36.352 | INFO     | services.text_service:score_sensationalism:193 - Sensationalism → 0 (Low) excl=0 caps=0 cb=0 emo=0
+2026-04-24 15:43:36.353 | INFO     | services.text_service:detect_manipulation_indicators:213 - Manipulation indicators → 0 found
+2026-04-24 15:43:36.370 | INFO     | services.text_service:extract_entities:253 - NER extracted 3 entities: ['India', 'Elon Musk', 'New Delhi']
+2026-04-24 15:43:37.567 | INFO     | api.v1.analyze:analyze_text_endpoint:550 - Saved AnalysisRecord id=32 text score=31 verdict=Likely Fake
+2026-04-24 15:43:47.549 | INFO     | services.llm_explainer:generate_llm_summary:207 - LLM summary generated via gemini/gemini-2.5-flash
+2026-04-24 15:43:47.614 | INFO     | services.text_service:classify_text:159 - Text classify [en] → LABEL_0 @ 0.991 fake_p=0.991
+2026-04-24 15:43:47.614 | INFO     | services.text_service:score_sensationalism:193 - Sensationalism → 0 (Low) excl=0 caps=0 cb=0 emo=0
+2026-04-24 15:43:47.615 | INFO     | services.text_service:detect_manipulation_indicators:213 - Manipulation indicators → 0 found
+2026-04-24 15:43:47.630 | INFO     | services.text_service:extract_entities:253 - NER extracted 3 entities: ['India', 'Elon Musk', 'New Delhi']
+2026-04-24 15:43:49.134 | INFO     | api.v1.analyze:analyze_text_endpoint:550 - Saved AnalysisRecord id=33 text score=31 verdict=Likely Fake
+2026-04-24 15:44:11.346 | WARNING  | services.llm_explainer:mark_rate_limited:42 - LLM rate-limited — pausing all LLM calls for 300s
+2026-04-24 15:44:11.346 | WARNING  | services.llm_explainer:generate_llm_summary:220 - LLM quota hit (ResourceExhausted) — circuit open for 300s
+2026-04-24 15:44:11.352 | WARNING  | services.llm_explainer:mark_rate_limited:42 - LLM rate-limited — pausing all LLM calls for 5s
+2026-04-24 15:44:11.404 | INFO     | services.text_service:classify_text:159 - Text classify [en] → LABEL_0 @ 0.999 fake_p=0.999
+2026-04-24 15:44:11.404 | INFO     | services.text_service:score_sensationalism:193 - Sensationalism → 0 (Low) excl=0 caps=0 cb=0 emo=0
+2026-04-24 15:44:11.405 | INFO     | services.text_service:detect_manipulation_indicators:213 - Manipulation indicators → 0 found
+2026-04-24 15:44:12.724 | INFO     | api.v1.analyze:analyze_text_endpoint:550 - Saved AnalysisRecord id=34 text score=30 verdict=Likely Fake
+2026-04-24 15:57:39.916 | INFO     | api.v1.auth:register:33 - Registered user id=5 email=***@example.com
+2026-04-24 15:57:39.958 | INFO     | models.model_loader:load_text_model:57 - Loading text model: jy46604790/Fake-News-Bert-Detect
+2026-04-24 15:57:46.475 | INFO     | models.model_loader:load_text_model:65 - Text model loaded
+2026-04-24 15:57:46.582 | INFO     | services.text_service:classify_text:159 - Text classify [en] → LABEL_0 @ 0.999 fake_p=0.999
+2026-04-24 15:57:46.584 | INFO     | services.text_service:score_sensationalism:193 - Sensationalism → 0 (Low) excl=0 caps=0 cb=0 emo=0
+2026-04-24 15:57:46.586 | INFO     | services.text_service:detect_manipulation_indicators:213 - Manipulation indicators → 0 found
+2026-04-24 15:57:47.954 | INFO     | models.model_loader:load_spacy_nlp:96 - spaCy en_core_web_sm loaded
+2026-04-24 15:57:49.166 | INFO     | api.v1.analyze:analyze_text_endpoint:555 - Saved AnalysisRecord id=35 text score=30 verdict=Likely Fake
+2026-04-24 15:57:58.130 | INFO     | services.llm_explainer:generate_llm_summary:271 - LLM summary generated via gemini/gemini-2.5-flash
+2026-04-24 15:57:58.196 | INFO     | services.text_service:classify_text:159 - Text classify [en] → LABEL_0 @ 0.999 fake_p=0.999
+2026-04-24 15:57:58.197 | INFO     | services.text_service:score_sensationalism:193 - Sensationalism → 0 (Low) excl=0 caps=0 cb=0 emo=0
+2026-04-24 15:57:58.197 | INFO     | services.text_service:detect_manipulation_indicators:213 - Manipulation indicators → 0 found
+2026-04-24 15:57:59.705 | INFO     | api.v1.analyze:analyze_text_endpoint:555 - Saved AnalysisRecord id=36 text score=30 verdict=Likely Fake
+2026-04-24 15:58:02.948 | ERROR    | services.llm_explainer:generate_llm_summary:287 - LLM explainer failed: 503 UNAVAILABLE. {'error': {'code': 503, 'message': 'This model is currently experiencing high demand. Spikes in demand are usually temporary. Please try again later.', 'status': 'UNAVAILABLE'}}
+2026-04-24 15:58:03.008 | INFO     | services.text_service:classify_text:159 - Text classify [en] → LABEL_0 @ 0.999 fake_p=0.999
+2026-04-24 15:58:03.008 | INFO     | services.text_service:score_sensationalism:193 - Sensationalism → 0 (Low) excl=0 caps=0 cb=0 emo=0
+2026-04-24 15:58:03.009 | INFO     | services.text_service:detect_manipulation_indicators:213 - Manipulation indicators → 0 found
+2026-04-24 15:58:04.488 | INFO     | api.v1.analyze:analyze_text_endpoint:555 - Saved AnalysisRecord id=37 text score=30 verdict=Likely Fake
+2026-04-24 15:59:52.694 | INFO     | services.llm_explainer:_get_provider:176 - LLM chain initialized: gemini/gemini-2.5-flash → groq/llama-3.3-70b-versatile
+2026-04-24 15:59:52.695 | INFO     | services.llm_explainer:generate:161 - gemini/gemini-2.5-flash quota hit — failing over to groq/llama-3.3-70b-versatile
+2026-04-24 23:15:36.409 | INFO     | main:lifespan:108 - Starting DeepShield backend
+2026-04-24 23:15:36.470 | INFO     | main:lifespan:110 - Database initialized
+2026-04-24 23:15:36.470 | INFO     | models.model_loader:load_image_model:43 - Loading image model: prithivMLmods/Deep-Fake-Detector-v2-Model
+2026-04-24 23:15:46.404 | INFO     | models.model_loader:load_image_model:51 - Image model loaded
+2026-04-24 23:15:57.188 | INFO     | api.v1.analyze:analyze_image:118 - cache hit image sha=6de55b9fc5bd record=19
+2026-04-24 23:16:59.860 | WARNING  | models.model_loader:load_ffpp_model:193 - FFPP ViT checkpoint not found at C:\Users\athar\Desktop\trained_models — skipping
+2026-04-24 23:17:03.920 | INFO     | services.efficientnet_service:__init__:97 - EfficientNetDetector ready: EfficientNetAutoAttB4/DFDC on cpu | calibrator=no
+2026-04-24 23:17:04.519 | INFO     | services.image_service:classify_image:152 - Image classify (average_vit_eff) → Real | vit=0.868 ffpp=n/a eff=0.03269108012318611 → 0.450
+2026-04-24 23:17:04.569 | INFO     | models.model_loader:load_face_detector:142 - Loading MediaPipe FaceMesh
+2026-04-24 23:17:13.315 | INFO     | models.model_loader:load_face_detector:150 - MediaPipe FaceMesh loaded
+2026-04-24 23:17:16.988 | INFO     | models.heatmap_generator:generate_heatmap_base64:186 - Heatmap generated (224x224) source=gradcam++
+2026-04-24 23:17:17.131 | INFO     | services.ela_service:generate_ela_base64:59 - ELA map generated (800x450)
+2026-04-24 23:17:18.394 | INFO     | models.heatmap_generator:generate_boxes_base64:232 - Bounding boxes generated: 5 regions
+2026-04-24 23:17:18.714 | INFO     | services.exif_service:extract_exif:127 - EXIF extracted: make=None, model=None, adjustment=0 (no EXIF metadata found)
+2026-04-24 23:17:18.757 | INFO     | api.v1.analyze:analyze_image:230 - Saved AnalysisRecord id=38 score=45 verdict=Possibly Manipulated
+2026-04-24 23:29:04.622 | WARNING  | models.model_loader:load_ffpp_model:193 - FFPP ViT checkpoint not found at C:\Users\athar\Desktop\trained_models — skipping
+2026-04-24 23:29:05.312 | INFO     | services.image_service:classify_image:152 - Image classify (average_vit_eff) → Fake | vit=0.767 ffpp=n/a eff=0.36121347546577454 → 0.564
+2026-04-24 23:29:06.604 | INFO     | models.heatmap_generator:generate_heatmap_base64:186 - Heatmap generated (224x224) source=gradcam++
+2026-04-24 23:29:10.091 | INFO     | services.ela_service:generate_ela_base64:59 - ELA map generated (2393x4096)
+2026-04-24 23:29:11.326 | INFO     | models.heatmap_generator:generate_boxes_base64:232 - Bounding boxes generated: 5 regions
+2026-04-24 23:29:11.344 | INFO     | services.exif_service:extract_exif:127 - EXIF extracted: make=None, model=None, adjustment=0 (no EXIF metadata found)
+2026-04-24 23:29:11.436 | INFO     | api.v1.analyze:analyze_image:230 - Saved AnalysisRecord id=39 score=44 verdict=Possibly Manipulated
+2026-04-24 23:30:58.303 | ERROR    | api.v1.report:generate:51 - Report generation failed: int() argument must be a string, a bytes-like object or a real number, not 'NoneType'
+Traceback (most recent call last):
+
+  File "C:\Program Files\WindowsApps\PythonSoftwareFoundation.Python.3.11_3.11.2544.0_x64__qbz5n2kfra8p0\Lib\threading.py", line 1002, in _bootstrap
+    self._bootstrap_inner()
+    │    └ <function Thread._bootstrap_inner at 0x000001A73BF11A80>
+    └ <WorkerThread(AnyIO worker thread, started 18584)>
+  File "C:\Program Files\WindowsApps\PythonSoftwareFoundation.Python.3.11_3.11.2544.0_x64__qbz5n2kfra8p0\Lib\threading.py", line 1045, in _bootstrap_inner
+    self.run()
+    │    └ <function WorkerThread.run at 0x000001A7030349A0>
+    └ <WorkerThread(AnyIO worker thread, started 18584)>
+  File "C:\Users\athar\Desktop\minor2\backend\.venv\Lib\site-packages\anyio\_backends\_asyncio.py", line 1002, in run
+    result = context.run(func, *args)
+             │       │   │      └ ()
+             │       │   └ functools.partial(<function generate at 0x000001A7011BA0C0>, db=<sqlalchemy.orm.session.Session object at 0x000001A70D16E390>...
+             │       └ <method 'run' of '_contextvars.Context' objects>
+             └ <_contextvars.Context object at 0x000001A70D16CD40>
+  File "C:\Users\athar\Desktop\minor2\backend\.venv\Lib\site-packages\slowapi\extension.py", line 766, in sync_wrapper
+    response = func(*args, **kwargs)
+               │     │       └ {'db': <sqlalchemy.orm.session.Session object at 0x000001A70D16E390>, 'user': None, 'analysis_id': 39, 'request': <starlette....
+               │     └ ()
+               └ <function generate at 0x000001A7011BA160>
+  File "C:\Users\athar\Desktop\minor2\backend\.venv\Lib\site-packages\slowapi\extension.py", line 766, in sync_wrapper
+    response = func(*args, **kwargs)
+               │     │       └ {'db': <sqlalchemy.orm.session.Session object at 0x000001A70D16E390>, 'user': None, 'analysis_id': 39, 'request': <starlette....
+               │     └ ()
+               └ <function generate at 0x000001A7011BA020>
+
+> File "C:\Users\athar\Desktop\minor2\backend\api\v1\report.py", line 49, in generate
+    path = generate_report(record)
+           │               └ <db.models.AnalysisRecord object at 0x000001A70D17A2D0>
+           └ <function generate_report at 0x000001A7011B9D00>
+
+  File "C:\Users\athar\Desktop\minor2\backend\services\report_service.py", line 119, in generate_report
+    html_to_pdf(html, out_path)
+    │           │     └ WindowsPath('temp_reports/deepshield_39_c2b71295.pdf')
+    │           └ '<!DOCTYPE html>\n<html>\n<head>\n  <meta charset="utf-8" />\n  <title>DeepShield Analysis Report — c9f44067-528d-4e96-9365-2...
+    └ <function html_to_pdf at 0x000001A7011B9C60>
+
+  File "C:\Users\athar\Desktop\minor2\backend\services\report_service.py", line 107, in html_to_pdf
+    result = pisa.CreatePDF(html, dest=f)
+             │    │         │          └ <_io.BufferedWriter name='temp_reports\\deepshield_39_c2b71295.pdf'>
+             │    │         └ '<!DOCTYPE html>\n<html>\n<head>\n  <meta charset="utf-8" />\n  <title>DeepShield Analysis Report — c9f44067-528d-4e96-9365-2...
+             │    └ <function pisaDocument at 0x000001A7011B9440>
+             └ <module 'xhtml2pdf.pisa' from 'C:\\Users\\athar\\Desktop\\minor2\\backend\\.venv\\Lib\\site-packages\\xhtml2pdf\\pisa.py'>
+
+  File "C:\Users\athar\Desktop\minor2\backend\.venv\Lib\site-packages\xhtml2pdf\document.py", line 196, in pisaDocument
+    doc.build(context.story)
+    │   │     │       └ [PmlParagraph(
+    │   │     │           'dir'
+    │   │     │               'dir'
+    │   │     │           'caseSensitive'
+    │   │     │               'caseSensitive'
+    │   │     │           'encoding'
+    │   │     │               'encoding'
+    │   │     │           'text'
+    │   │     │               'text...
+    │   │     └ <xhtml2pdf.context.pisaContext object at 0x000001A703A22990>
+    │   └ <function BaseDocTemplate.build at 0x000001A77EFA8E00>
+    └ <xhtml2pdf.xhtml2pdf_reportlab.PmlBaseDoc object at 0x000001A703756C10>
+  File "C:\Users\athar\Desktop\minor2\backend\.venv\Lib\site-packages\reportlab\platypus\doctemplate.py", line 1083, in build
+    self.handle_flowable(flowables)
+    │    │               └ [PmlParagraph(
+    │    │                   'dir'
+    │    │                       'dir'
+    │    │                   'caseSensitive'
+    │    │                       'caseSensitive'
+    │    │                   'encoding'
+    │    │                       'encoding'
+    │    │                   'text'
+    │    │                       'text...
+    │    └ <function BaseDocTemplate.handle_flowable at 0x000001A77EFA8B80>
+    └ <xhtml2pdf.xhtml2pdf_reportlab.PmlBaseDoc object at 0x000001A703756C10>
+  File "C:\Users\athar\Desktop\minor2\backend\.venv\Lib\site-packages\reportlab\platypus\doctemplate.py", line 932, in handle_flowable
+    if frame.add(f, canv, trySplit=self.allowSplitting):
+       │     │   │  │              │    └ 1
+       │     │   │  │              └ <xhtml2pdf.xhtml2pdf_reportlab.PmlBaseDoc object at 0x000001A703756C10>
+       │     │   │  └ <reportlab.pdfgen.canvas.Canvas object at 0x000001A70D1DED50>
+       │     │   └ PmlTable(
+       │     │      rowHeights=[None],
+       │     │      colWidths=[4.93228346456693, 488.29606299212605],
+       │     │     [[(<xhtml2pdf.xhtml2pdf_reportlab.PmlKeepInF...
+       │     └ <function Frame._add at 0x000001A77EECDF80>
+       └ <reportlab.platypus.frames.Frame object at 0x000001A70344D6D0>
+  File "C:\Users\athar\Desktop\minor2\backend\.venv\Lib\site-packages\reportlab\platypus\frames.py", line 158, in _add
+    w, h = flowable.wrap(aW, h)
+           │        │    │   └ 751.1811023622049
+           │        │    └ 493.228346456693
+           │        └ <function PmlTable.wrap at 0x000001A7011719E0>
+           └ PmlTable(
+              rowHeights=[None],
+              colWidths=[4.93228346456693, 488.29606299212605],
+             [[(<xhtml2pdf.xhtml2pdf_reportlab.PmlKeepInF...
+  File "C:\Users\athar\Desktop\minor2\backend\.venv\Lib\site-packages\xhtml2pdf\xhtml2pdf_reportlab.py", line 858, in wrap
+    return Table.wrap(self, availWidth, availHeight)
+           │     │    │     │           └ 751.1811023622049
+           │     │    │     └ 493.228346456693
+           │     │    └ PmlTable(
+           │     │       rowHeights=[None],
+           │     │       colWidths=[4.93228346456693, 488.29606299212605],
+           │     │      [[(<xhtml2pdf.xhtml2pdf_reportlab.PmlKeepInF...
+           │     └ <function Table.wrap at 0x000001A77EFAC400>
+           └ <class 'reportlab.platypus.tables.Table'>
+  File "C:\Users\athar\Desktop\minor2\backend\.venv\Lib\site-packages\reportlab\platypus\tables.py", line 1354, in wrap
+    self._calc(availWidth, availHeight)
+    │    │     │           └ 751.1811023622049
+    │    │     └ 493.228346456693
+    │    └ <function Table._calc at 0x000001A77EFAB600>
+    └ PmlTable(
+       rowHeights=[None],
+       colWidths=[4.93228346456693, 488.29606299212605],
+      [[(<xhtml2pdf.xhtml2pdf_reportlab.PmlKeepInF...
+  File "C:\Users\athar\Desktop\minor2\backend\.venv\Lib\site-packages\reportlab\platypus\tables.py", line 740, in _calc
+    self._calc_height(availHeight,availWidth,W=W)
+    │    │            │           │            └ None
+    │    │            │           └ 493.228346456693
+    │    │            └ 751.1811023622049
+    │    └ <function Table._calc_height at 0x000001A77EFAB560>
+    └ PmlTable(
+       rowHeights=[None],
+       colWidths=[4.93228346456693, 488.29606299212605],
+      [[(<xhtml2pdf.xhtml2pdf_reportlab.PmlKeepInF...
+  File "C:\Users\athar\Desktop\minor2\backend\.venv\Lib\site-packages\reportlab\platypus\tables.py", line 664, in _calc_height
+    dW,t = self._listCellGeom(v,w or self._listValueWidth(v),s)
+           │    │             │ │    │    │               │  └ <CellStyle '(0, 0)'>
+           │    │             │ │    │    │               └ (<xhtml2pdf.xhtml2pdf_reportlab.PmlKeepInFrame object at 0x000001A70D1F4950>,)
+           │    │             │ │    │    └ <function Table._listValueWidth at 0x000001A77EFAB380>
+           │    │             │ │    └ PmlTable(
+           │    │             │ │       rowHeights=[None],
+           │    │             │ │       colWidths=[4.93228346456693, 488.29606299212605],
+           │    │             │ │      [[(<xhtml2pdf.xhtml2pdf_reportlab.PmlKeepInF...
+           │    │             │ └ 4.93228346456693
+           │    │             └ (<xhtml2pdf.xhtml2pdf_reportlab.PmlKeepInFrame object at 0x000001A70D1F4950>,)
+           │    └ <function PmlTable._listCellGeom at 0x000001A701171940>
+           └ PmlTable(
+              rowHeights=[None],
+              colWidths=[4.93228346456693, 488.29606299212605],
+             [[(<xhtml2pdf.xhtml2pdf_reportlab.PmlKeepInF...
+  File "C:\Users\athar\Desktop\minor2\backend\.venv\Lib\site-packages\xhtml2pdf\xhtml2pdf_reportlab.py", line 810, in _listCellGeom
+    return Table._listCellGeom(self, V, w, s, W=W, H=H, aH=aH)
+           │     │             │     │  │  │    │    │     └ 751.1811023622049
+           │     │             │     │  │  │    │    └ None
+           │     │             │     │  │  │    └ None
+           │     │             │     │  │  └ <CellStyle '(0, 0)'>
+           │     │             │     │  └ 4.93228346456693
+           │     │             │     └ (<xhtml2pdf.xhtml2pdf_reportlab.PmlKeepInFrame object at 0x000001A70D1F4950>,)
+           │     │             └ PmlTable(
+           │     │                rowHeights=[None],
+           │     │                colWidths=[4.93228346456693, 488.29606299212605],
+           │     │               [[(<xhtml2pdf.xhtml2pdf_reportlab.PmlKeepInF...
+           │     └ <function Table._listCellGeom at 0x000001A77EFAB2E0>
+           └ <class 'reportlab.platypus.tables.Table'>
+  File "C:\Users\athar\Desktop\minor2\backend\.venv\Lib\site-packages\reportlab\platypus\tables.py", line 490, in _listCellGeom
+    raise ValueError(f'{self.identity()}: flowable given negative availWidth={aW} == width={w} - leftPadding={s.leftPadding} - rightPadding={s.rightPadding}')
+  File "C:\Users\athar\Desktop\minor2\backend\.venv\Lib\site-packages\reportlab\platypus\tables.py", line 440, in identity
+    tallest = '(tallest row %d)' % int(max(rh))
+                                           └ [None]
+
+TypeError: int() argument must be a string, a bytes-like object or a real number, not 'NoneType'
+2026-04-24 23:44:20.465 | INFO     | api.v1.auth:register:33 - Registered user id=6 email=***@gmail.com
+2026-04-24 23:45:54.152 | WARNING  | models.model_loader:load_ffpp_model:193 - FFPP ViT checkpoint not found at C:\Users\athar\Desktop\trained_models — skipping
+2026-04-24 23:45:54.595 | INFO     | services.image_service:classify_image:152 - Image classify (average_vit_eff) → Real | vit=0.668 ffpp=n/a eff=0.00913542602211237 → 0.339
+2026-04-24 23:45:55.772 | INFO     | models.heatmap_generator:generate_heatmap_base64:186 - Heatmap generated (224x224) source=gradcam++
+2026-04-24 23:45:58.926 | INFO     | services.ela_service:generate_ela_base64:59 - ELA map generated (2268x4032)
+2026-04-24 23:46:00.276 | INFO     | models.heatmap_generator:generate_boxes_base64:232 - Bounding boxes generated: 2 regions
+2026-04-24 23:46:00.291 | INFO     | services.exif_service:extract_exif:127 - EXIF extracted: make=Google, model=Pixel 7 Pro, adjustment=-20 (valid camera metadata (Make/Model/DateTime); GPS coordinates present)
+2026-04-24 23:46:00.379 | INFO     | api.v1.analyze:analyze_image:230 - Saved AnalysisRecord id=40 score=14 verdict=Very Likely Fake
+2026-04-24 23:46:00.382 | ERROR    | services.llm_explainer:generate_llm_summary:296 - LLM explainer failed: cannot import name 'genai' from 'google' (unknown location)
+2026-04-24 23:46:00.386 | ERROR    | services.vlm_breakdown:generate_vlm_breakdown:114 - VLM breakdown failed: cannot import name 'genai' from 'google' (unknown location)
+2026-04-24 23:47:37.291 | INFO     | services.report_service:generate_report:120 - Report generated id=40 path=temp_reports\deepshield_40_3f0f8ff7.pdf size=14978B
+2026-04-24 23:50:59.570 | INFO     | api.v1.auth:login:42 - Login user id=6 email=***@gmail.com

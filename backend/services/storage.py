@@ -10,7 +10,6 @@ Local-disk implementation only; an S3 adapter can slot in at the same API.
 from __future__ import annotations
 
 import hashlib
-import io
 import os
 from pathlib import Path
 

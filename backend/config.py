@@ -44,7 +44,12 @@ class Settings(BaseSettings):
     # LLM Explainability (Phase 12)
     LLM_PROVIDER: str = "gemini"  # "gemini" | "openai"
     LLM_API_KEY: str = ""
-    LLM_MODEL: str = "gemini-2.5-pro"  # or "gpt-4o"
+    LLM_MODEL: str = "gemini-2.5-flash"  # flash is ~12x cheaper + larger free-tier quota than pro. Use "gemini-2.5-pro" for harder reasoning.
+
+    # LLM fallback — Groq (Llama 3.3 70B by default). Used automatically when the
+    # primary provider returns 429/quota exceeded. Leave empty to disable fallback.
+    GROQ_API_KEY: str = ""
+    GROQ_MODEL: str = "llama-3.3-70b-versatile"
 
     # EfficientNet (ICPR2020 / DeepShield1 merge)
     EFFICIENTNET_MODEL: str = "EfficientNetAutoAttB4"

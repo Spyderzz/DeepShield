@@ -1410,3 +1410,66 @@ body.ds-page {
     radial-gradient(900px 600px at 95% 5%, rgba(61,219,179,0.06), transparent 60%),
     linear-gradient(180deg, #07090F 0%, #0A0D18 100%) !important;
 }
+
+/* =====================================================
+   MOBILE PHONE OVERRIDES (<=640px only)
+   Desktop/tablet layout untouched.
+   ===================================================== */
+@media (max-width: 640px) {
+  .page-shell, .analyze-shell, .results-shell, .history-shell, .about-shell {
+    padding-left: 0; padding-right: 0;
+  }
+  .page-head { padding: 0 20px; }
+  .page-head .display { font-size: clamp(32px, 9vw, 44px); }
+
+  /* Analyze page */
+  .analyze-shell { padding-top: 100px; }
+  .mode-seg { flex-wrap: wrap; }
+  .mode-seg-btn { flex: 1 1 auto; font-size: 12px; padding: 8px 10px; }
+  .analyze-panel, .analyze-console { padding: 18px; border-radius: 16px; }
+  .drop-large { padding: 40px 18px; }
+  .drop-large h3 { font-size: 22px; }
+  .options-row { flex-wrap: wrap; gap: 8px; }
+  .text-panel { padding: 16px; }
+
+  .processing-wrap { gap: 20px; }
+  .recent-grid { grid-template-columns: 1fr !important; }
+
+  /* Results page */
+  .results-shell { padding-top: 90px; }
+  .results-header { grid-template-columns: 1fr; gap: 16px; padding: 0 20px; }
+  .results-header .actions { flex-wrap: wrap; }
+
+  /* History page */
+  .history-shell { padding-top: 100px; }
+  .history-wrap { padding: 0 20px; }
+  .hist-stats { grid-template-columns: repeat(2, 1fr) !important; gap: 12px; }
+  .hist-toolbar { flex-direction: column; align-items: stretch; gap: 10px; }
+  .history-toolbar { flex-direction: column; align-items: stretch; gap: 10px; }
+  .history-search { width: 100%; }
+  .h-row { grid-template-columns: 48px 1fr auto !important; gap: 10px; padding: 12px; }
+  .h-row .h-type-chip, .h-row .h-date, .h-row .h-score-bar { display: none; }
+
+  /* Auth pages — stacked single column */
+  .auth-shell { min-height: auto; }
+  .auth-left { padding: 80px 24px 40px; min-height: 260px; }
+  .auth-left .display { font-size: clamp(30px, 8vw, 40px); }
+  .auth-quote { font-size: 15px; }
+  .auth-stats { grid-template-columns: repeat(3, 1fr); gap: 12px; }
+  .auth-right { padding: 40px 24px 60px; }
+  .auth-form { max-width: 100%; }
+
+  /* About page */
+  .about-shell { padding: 100px 0 60px; }
+  .about-hero, .about-body, .about-diagram { padding-left: 20px; padding-right: 20px; }
+  .about-hero .display { font-size: clamp(34px, 10vw, 52px); }
+  .diagram-steps { grid-template-columns: 1fr !important; }
+  .team-grid { grid-template-columns: 1fr !important; }
+
+  /* Manifesto / Contact / Models subpages */
+  .manifesto-grid { grid-template-columns: 1fr !important; }
+  .metric-row { grid-template-columns: repeat(2, 1fr) !important; gap: 24px !important; }
+
+  /* 404 */
+  .notfound-shell { padding: 0 20px; }
+}

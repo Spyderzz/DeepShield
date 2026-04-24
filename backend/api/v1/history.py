@@ -60,7 +60,13 @@ def get_history_detail(
     if not r or r.user_id != user.id:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Analysis not found")
     try:
-        return json.loads(r.result_json)
+        payload = json.loads(r.result_json)
+        # Inject storage fields from DB columns so the frontend can display full-size media
+        if r.media_path and not payload.get("media_path"):
+            payload["media_path"] = r.media_path
+        if r.thumbnail_url and not payload.get("thumbnail_url"):
+            payload["thumbnail_url"] = r.thumbnail_url
+        return payload
     except Exception:
         raise HTTPException(status.HTTP_500_INTERNAL_SERVER_ERROR, "Corrupt result payload")
 
