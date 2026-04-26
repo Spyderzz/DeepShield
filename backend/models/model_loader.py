@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import os
 from pathlib import Path
 from threading import Lock
 from typing import Optional, Tuple
@@ -203,6 +204,39 @@ class ModelLoader:
         return self._efficientnet_detector
 
     # ---------- FFPP-fine-tuned ViT (Phase 11.3) ----------
+    def _download_ffpp_checkpoint(self) -> Optional[Path]:
+        repo_id = settings.FFPP_MODEL_REPO_ID.strip()
+        if not repo_id:
+            return None
+
+        try:
+            from huggingface_hub import snapshot_download
+        except Exception as e:
+            logger.warning(f"huggingface_hub unavailable for FFPP checkpoint download: {e}")
+            return None
+
+        try:
+            revision = settings.FFPP_MODEL_REVISION.strip() or "main"
+            token = os.getenv("HF_TOKEN") or None
+            logger.info(f"Downloading FFPP ViT checkpoint from Hub: {repo_id}@{revision}")
+            snapshot_dir = snapshot_download(
+                repo_id=repo_id,
+                repo_type="model",
+                revision=revision,
+                allow_patterns=["config.json", "model.safetensors"],
+                token=token,
+            )
+            checkpoint_dir = Path(snapshot_dir)
+            if not (checkpoint_dir / "config.json").exists():
+                logger.warning(
+                    f"Downloaded FFPP checkpoint from {repo_id} but config.json is missing"
+                )
+                return None
+            return checkpoint_dir
+        except Exception as e:
+            logger.warning(f"FFPP checkpoint download failed from {repo_id}: {e}")
+            return None
+
     def load_ffpp_model(self) -> Optional[Tuple[object, object]]:
         """Lazy-load the FaceForensics++ fine-tuned ViT from a local checkpoint.
 
@@ -228,9 +262,13 @@ class ModelLoader:
         ckpt_path = next((p for p in candidates if (p / "config.json").exists()), candidates[0])
 
         if not (ckpt_path / "config.json").exists():
-            tried = ", ".join(str(p) for p in candidates)
-            logger.warning(f"FFPP ViT checkpoint not found. Tried: {tried} — skipping")
-            return None
+            downloaded = self._download_ffpp_checkpoint()
+            if downloaded is not None:
+                ckpt_path = downloaded
+            else:
+                tried = ", ".join(str(p) for p in candidates)
+                logger.warning(f"FFPP ViT checkpoint not found. Tried: {tried} — skipping")
+                return None
 
         try:
             from transformers import AutoImageProcessor, AutoModelForImageClassification

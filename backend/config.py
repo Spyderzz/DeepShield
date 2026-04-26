@@ -61,6 +61,10 @@ class Settings(BaseSettings):
     # The checkpoint lives at <repo_root>/trained_models/ (the `trained_models/` dir
     # at the project root, alongside `backend/` and `frontend/`).
     FFPP_MODEL_PATH: str = "trained_models"
+    # Optional: pull FFPP checkpoint from Hugging Face Hub when local checkpoint
+    # is missing (keeps large model files out of GitHub source repo).
+    FFPP_MODEL_REPO_ID: str = ""
+    FFPP_MODEL_REVISION: str = "main"
     FFPP_BASE_PROCESSOR_ID: str = "google/vit-base-patch16-224-in21k"
     FFPP_ENABLED: bool = True
     # Ensemble weights — FFPP is trained on a better (face-specific FFPP c40) dataset
