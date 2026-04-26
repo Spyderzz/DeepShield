@@ -947,3 +947,5 @@ TypeError: int() argument must be a string, a bytes-like object or a real number
 2026-04-26 22:07:52.752 | ERROR    | services.llm_explainer:generate_llm_summary:296 - LLM explainer failed: cannot import name 'genai' from 'google' (unknown location)
 2026-04-26 22:07:52.756 | ERROR    | services.vlm_breakdown:generate_vlm_breakdown:114 - VLM breakdown failed: cannot import name 'genai' from 'google' (unknown location)
 2026-04-26 22:09:45.469 | INFO     | services.report_service:generate_report:120 - Report generated id=43 path=temp_reports\deepshield_43_262befa5.pdf size=15602B
+2026-04-26 23:15:58.262 | INFO     | services.report_service:cleanup_expired:149 - Cleaned up 2 expired reports
+2026-04-27 01:22:14.691 | INFO     | services.report_service:cleanup_expired:149 - Cleaned up 2 expired reports

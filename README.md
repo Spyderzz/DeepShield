@@ -1,3 +1,12 @@
+---
+title: DeepShield
+emoji: 🛡️
+colorFrom: blue
+colorTo: purple
+sdk: docker
+pinned: false
+---
+
 <div align="center">
 
 # 🛡️ DeepShield

@@ -1,0 +1,12 @@
+# backend/.dockerignore
+.env
+.venv
+venv
+__pycache__
+*.pyc
+*.pyo
+*.db
+temp_uploads/
+.cache/
+tests/
+*.ipynb

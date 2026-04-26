@@ -13,6 +13,27 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6
+      - name: Build sync payload (preserve trained_models)
+        env:
+          HF_TOKEN: ${{ secrets.HF_TOKEN }}
+        run: |
+          set -e
+          rm -rf .hf-sync .hf-space-current
+          mkdir -p .hf-sync
+
+          cp -R backend/. .hf-sync/
+
+          git clone https://user:${HF_TOKEN}@huggingface.co/spaces/ar07xd/deepshield .hf-space-current
+
+          if [ -d .hf-space-current/trained_models ]; then
+            mkdir -p .hf-sync/trained_models
+            cp -R .hf-space-current/trained_models/. .hf-sync/trained_models/
+          fi
+
+          if [ -d backend/trained_models ]; then
+            mkdir -p .hf-sync/trained_models
+            cp -R backend/trained_models/. .hf-sync/trained_models/
+          fi
       - uses: huggingface/hub-sync@v0.1.0
         with:
           github_repo_id: ${{ github.repository }}
@@ -20,4 +41,4 @@ jobs:
           repo_type: space
           space_sdk: docker
           hf_token: ${{ secrets.HF_TOKEN }}
-          subdirectory: backend
+          subdirectory: .hf-sync
