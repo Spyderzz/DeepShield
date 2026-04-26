@@ -1,4 +1,5 @@
 import json
+from urllib.parse import parse_qsl, urlencode
 from typing import Any
 from pydantic import field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
@@ -42,6 +43,41 @@ def _normalize_origin(origin: str) -> str:
     return cleaned
 
 
+def _fix_postgres_url(raw: str) -> str:
+    """Normalize common Postgres URL mistakes from deployment envs.
+
+    - Converts postgres:// to postgresql://
+    - Encodes stray '@' in credentials (usually from unescaped passwords)
+    - Ensures sslmode=require for Supabase URLs when missing
+    """
+    url = raw.strip()
+    if url.startswith("postgres://"):
+        url = "postgresql://" + url[len("postgres://") :]
+
+    if not url.startswith("postgresql://"):
+        return url
+
+    # Split scheme + authority/path safely without full URL parsing.
+    rest = url[len("postgresql://") :]
+    if "@" in rest:
+        userinfo, remainder = rest.rsplit("@", 1)
+        # Any '@' left in userinfo belongs to credentials and must be percent-encoded.
+        userinfo = userinfo.replace("@", "%40")
+        url = "postgresql://" + userinfo + "@" + remainder
+
+    if "supabase.co" in url:
+        if "?" in url:
+            base, query = url.split("?", 1)
+            params = dict(parse_qsl(query, keep_blank_values=True))
+            if "sslmode" not in params:
+                params["sslmode"] = "require"
+            url = base + "?" + urlencode(params)
+        else:
+            url = url + "?sslmode=require"
+
+    return url
+
+
 class Settings(BaseSettings):
     # Server
     APP_HOST: str = "0.0.0.0"
@@ -82,9 +118,7 @@ class Settings(BaseSettings):
             raw = v.strip()
             if not raw:
                 return "sqlite:///./deepshield.db"
-            if raw.startswith("postgres://"):
-                return "postgresql://" + raw[len("postgres://") :]
-            return raw
+            return _fix_postgres_url(raw)
         return str(v)
 
     # File Upload
