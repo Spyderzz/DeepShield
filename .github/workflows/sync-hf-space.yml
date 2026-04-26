@@ -30,7 +30,11 @@ jobs:
             cp -R .hf-space-current/trained_models/. .hf-sync/trained_models/
           fi
 
-          if [ -d backend/trained_models ]; then
+          # Prioritize root trained_models, fallback to backend/trained_models
+          if [ -d trained_models ]; then
+            mkdir -p .hf-sync/trained_models
+            cp -R trained_models/. .hf-sync/trained_models/
+          elif [ -d backend/trained_models ]; then
             mkdir -p .hf-sync/trained_models
             cp -R backend/trained_models/. .hf-sync/trained_models/
           fi
