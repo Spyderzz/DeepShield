@@ -1,11 +1,13 @@
 import { useEffect, useRef, useState } from 'react';
-import { Link, NavLink, useNavigate } from 'react-router-dom';
+import { Link, NavLink, useNavigate, useLocation } from 'react-router-dom';
 import { useAuth } from '../../contexts/AuthContext.jsx';
+import logoImg from '../../assets/logo.png';
 
 export function SharedNav({ current = '' }) {
   const [scrolled, setScrolled] = useState(false);
   const { user, logout } = useAuth();
   const navigate = useNavigate();
+  const location = useLocation();
   useEffect(() => {
     const onScroll = () => setScrolled(window.scrollY > 20);
     window.addEventListener('scroll', onScroll, { passive: true });
@@ -34,12 +36,7 @@ export function SharedNav({ current = '' }) {
     <header className={`ds-nav ${scrolled ? 'scrolled' : ''}`}>
       <div className="ds-nav-inner">
         <Link to="/" className="ds-logo">
-          <svg width="22" height="26" viewBox="0 0 22 26" fill="none">
-            <path d="M11 1L21 5V12.5C21 18.5 16.5 23.5 11 25C5.5 23.5 1 18.5 1 12.5V5L11 1Z" stroke="url(#lgN)" strokeWidth="1.5" fill="rgba(108,125,255,0.1)" />
-            <path d="M6 11L10 15L16 8" stroke="#6C7DFF" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
-            <defs><linearGradient id="lgN" x1="0" y1="0" x2="22" y2="26"><stop stopColor="#7F8FFF" /><stop offset="1" stopColor="#3DDBB3" /></linearGradient></defs>
-          </svg>
-          <span>DeepShield</span>
+          <img src={logoImg} alt="DeepShield Logo" className="ds-logo-img" />
         </Link>
         <nav className="ds-nav-links">
           <div className="slide-tabs" onMouseLeave={() => setHovered(null)}>
@@ -62,7 +59,7 @@ export function SharedNav({ current = '' }) {
               <button className="btn btn-ghost btn-sm" onClick={() => { logout(); navigate('/'); }}>Sign out</button>
             </>
           ) : (
-            <Link to="/login" className="btn btn-ghost btn-sm" style={{ textDecoration: 'none' }}>Sign in</Link>
+            <Link to="/login" state={{ from: location.pathname }} className="btn btn-ghost btn-sm" style={{ textDecoration: 'none' }}>Sign in</Link>
           )}
           <Link to="/analyze" className="btn btn-glass btn-sm btn-shiny" style={{ textDecoration: 'none' }}>
             Run analysis
@@ -80,8 +77,7 @@ export function SharedFooter() {
       <div className="ds-container ds-footer-inner">
         <div className="foot-brand">
           <Link to="/" className="ds-logo" style={{ textDecoration: 'none' }}>
-            <svg width="22" height="26" viewBox="0 0 22 26"><path d="M11 1L21 5V12.5C21 18.5 16.5 23.5 11 25C5.5 23.5 1 18.5 1 12.5V5L11 1Z" stroke="#6C7DFF" strokeWidth="1.5" fill="rgba(108,125,255,0.1)" /><path d="M6 11L10 15L16 8" stroke="#6C7DFF" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" fill="none" /></svg>
-            <span>DeepShield</span>
+            <img src={logoImg} alt="DeepShield Logo" className="ds-logo-img" />
           </Link>
           <p>Forensic AI for synthetic media. Open models, local-first, no retention.</p>
           <div className="foot-trust mono">

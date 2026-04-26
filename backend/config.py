@@ -20,6 +20,7 @@ class Settings(BaseSettings):
 
     # AI Models
     IMAGE_MODEL_ID: str = "prithivMLmods/Deep-Fake-Detector-v2-Model"
+    GENERAL_IMAGE_MODEL_ID: str = "umm-maybe/AI-image-detector"
     TEXT_MODEL_ID: str = "jy46604790/Fake-News-Bert-Detect"
     # Multilingual text model for non-English (Hindi etc.). Leave empty to fall back to TEXT_MODEL_ID.
     TEXT_MULTILANG_MODEL_ID: str = ""
@@ -56,9 +57,10 @@ class Settings(BaseSettings):
     EFFICIENTNET_TRAIN_DB: str = "DFDC"
     ENSEMBLE_MODE: bool = True  # run both ViT + EfficientNet and average scores
 
-    # Phase 11.3: FFPP-fine-tuned ViT (local checkpoint in ../trained_models)
-    # Path is resolved relative to the repo root (backend's parent) when not absolute.
-    FFPP_MODEL_PATH: str = "../trained_models"
+    # Phase 11.3: FFPP-fine-tuned ViT. Path is resolved relative to the repo root.
+    # The checkpoint lives at <repo_root>/trained_models/ (the `trained_models/` dir
+    # at the project root, alongside `backend/` and `frontend/`).
+    FFPP_MODEL_PATH: str = "trained_models"
     FFPP_BASE_PROCESSOR_ID: str = "google/vit-base-patch16-224-in21k"
     FFPP_ENABLED: bool = True
     # Ensemble weights — FFPP is trained on a better (face-specific FFPP c40) dataset
@@ -69,6 +71,10 @@ class Settings(BaseSettings):
     EFFNET_WEIGHT_FACE: float = 0.25
     FFPP_WEIGHT_NOFACE: float = 0.35     # no-face ensemble weight
     VIT_WEIGHT_NOFACE: float = 0.65
+    NOFACE_GENERAL_WEIGHT: float = 0.60
+    NOFACE_FORENSICS_WEIGHT: float = 0.20
+    NOFACE_EXIF_WEIGHT: float = 0.10
+    NOFACE_VLM_WEIGHT: float = 0.10
     VIDEO_SAMPLE_FRAMES: int = 16  # frames to sample per video for inference
     EXIFTOOL_PATH: str = ""  # full path to ExifTool binary; empty = metadata write disabled
 

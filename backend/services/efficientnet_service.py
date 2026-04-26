@@ -6,6 +6,7 @@ import sys
 from pathlib import Path
 from typing import List, Optional
 
+import cv2
 import numpy as np
 import torch
 from loguru import logger
@@ -99,6 +100,69 @@ class EfficientNetDetector:
             f"| calibrator={'yes' if self.calibrator_applied else 'no'}"
         )
 
+    def _crop_with_margin(
+        self,
+        img_array: np.ndarray,
+        x0: int,
+        y0: int,
+        x1: int,
+        y1: int,
+        margin: float = 0.22,
+    ) -> Optional[np.ndarray]:
+        h, w = img_array.shape[:2]
+        bw = max(1, x1 - x0)
+        bh = max(1, y1 - y0)
+        pad = int(max(bw, bh) * margin)
+        x0 = max(0, x0 - pad)
+        y0 = max(0, y0 - pad)
+        x1 = min(w, x1 + pad)
+        y1 = min(h, y1 + pad)
+        if x1 <= x0 + 8 or y1 <= y0 + 8:
+            return None
+        return img_array[y0:y1, x0:x1]
+
+    def _fallback_face_crop(self, img_array: np.ndarray) -> Optional[np.ndarray]:
+        """Fallback face crop for real-world still photos where BlazeFace misses.
+
+        BlazeFace is tuned for the ICPR2020 pipeline. Real phone portraits can be
+        large, soft, or vertically framed, so use MediaPipe/Haar only to recover a
+        crop and still score it with the same EfficientNet model.
+        """
+        try:
+            from models.model_loader import get_model_loader
+
+            detector = get_model_loader().load_face_detector()
+            mp_result = detector.process(img_array) if detector is not None else None
+            if mp_result is not None and getattr(mp_result, "multi_face_landmarks", None):
+                landmarks = mp_result.multi_face_landmarks[0].landmark
+                h, w = img_array.shape[:2]
+                xs = [lm.x * w for lm in landmarks]
+                ys = [lm.y * h for lm in landmarks]
+                crop = self._crop_with_margin(
+                    img_array,
+                    int(min(xs)),
+                    int(min(ys)),
+                    int(max(xs)),
+                    int(max(ys)),
+                )
+                if crop is not None:
+                    return crop
+        except Exception as exc:  # noqa: BLE001
+            logger.debug(f"MediaPipe fallback face crop failed: {exc}")
+
+        try:
+            gray = cv2.cvtColor(img_array, cv2.COLOR_RGB2GRAY)
+            cascade_path = cv2.data.haarcascades + "haarcascade_frontalface_default.xml"
+            cascade = cv2.CascadeClassifier(cascade_path)
+            faces = cascade.detectMultiScale(gray, scaleFactor=1.08, minNeighbors=4, minSize=(32, 32))
+            if len(faces) == 0:
+                return None
+            x, y, w, h = max(faces, key=lambda box: box[2] * box[3])
+            return self._crop_with_margin(img_array, int(x), int(y), int(x + w), int(y + h))
+        except Exception as exc:  # noqa: BLE001
+            logger.debug(f"OpenCV fallback face crop failed: {exc}")
+            return None
+
     def _face_tensor(self, face_np: np.ndarray) -> torch.Tensor:
         """Apply albumentations transform to a cropped face array and return a CHW tensor."""
         result = self.transf(image=face_np)
@@ -140,15 +204,20 @@ class EfficientNetDetector:
 
         frame_data = self.face_extractor.process_image(img=img_array)
         faces: list = frame_data.get("faces", [])
+        detector_used = "blazeface"
         if not faces:
-            logger.debug("EfficientNetDetector.detect_image: no face detected")
-            return {
-                "error": "no_face",
-                "score": None,
-                "result": None,
-                "model": f"{self.model_name}_{self.train_db}",
-                "calibrator_applied": False,
-            }
+            fallback_crop = self._fallback_face_crop(img_array)
+            if fallback_crop is None:
+                logger.debug("EfficientNetDetector.detect_image: no face detected")
+                return {
+                    "error": "no_face",
+                    "score": None,
+                    "result": None,
+                    "model": f"{self.model_name}_{self.train_db}",
+                    "calibrator_applied": False,
+                }
+            faces = [fallback_crop]
+            detector_used = "mediapipe_or_haar_fallback"
 
         face_t = self._face_tensor(faces[0])
         with torch.inference_mode():
@@ -162,6 +231,7 @@ class EfficientNetDetector:
             "model": f"{self.model_name}_{self.train_db}",
             "error": None,
             "calibrator_applied": self.calibrator_applied,
+            "face_detector": detector_used,
         }
 
     def detect_video_frames(self, frames: List[np.ndarray]) -> dict:
@@ -182,6 +252,10 @@ class EfficientNetDetector:
             faces: list = frame_data.get("faces", [])
             if faces:
                 face_tensors.append(self._face_tensor(faces[0]))
+            else:
+                fallback_crop = self._fallback_face_crop(frame_rgb)
+                if fallback_crop is not None:
+                    face_tensors.append(self._face_tensor(fallback_crop))
 
         if not face_tensors:
             logger.debug("EfficientNetDetector.detect_video_frames: no faces in any frame")

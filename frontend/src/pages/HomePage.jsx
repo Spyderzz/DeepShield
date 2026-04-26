@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
 import './deepshield-landing.css';
+import logoImg from '../assets/logo.png';
 import { analyzeImage } from '../services/analyzeApi.js';
 import useDottedSurface from '../hooks/useDottedSurface.js';
 import ScrollReveal from '../components/common/ScrollReveal.jsx';
@@ -20,20 +21,7 @@ function Nav() {
     <header className={`ds-nav ${scrolled ? 'scrolled' : ''}`}>
       <div className="ds-nav-inner">
         <a href="#top" className="ds-logo">
-          <svg width="22" height="26" viewBox="0 0 22 26" fill="none">
-            <path d="M11 1L21 5V12.5C21 18.5 16.5 23.5 11 25C5.5 23.5 1 18.5 1 12.5V5L11 1Z"
-              stroke="url(#lg)" strokeWidth="1.5" fill="url(#lgf)" />
-            <path d="M6 11L10 15L16 8" stroke="#6C7DFF" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
-            <defs>
-              <linearGradient id="lg" x1="0" y1="0" x2="22" y2="26">
-                <stop stopColor="#7F8FFF" /><stop offset="1" stopColor="#3DDBB3" />
-              </linearGradient>
-              <linearGradient id="lgf" x1="0" y1="0" x2="0" y2="26">
-                <stop stopColor="rgba(108,125,255,0.15)" /><stop offset="1" stopColor="rgba(61,219,179,0.05)" />
-              </linearGradient>
-            </defs>
-          </svg>
-          <span>DeepShield</span>
+          <img src={logoImg} alt="DeepShield Logo" className="ds-logo-img" />
         </a>
         <nav className="ds-nav-links">
           <SlideTabs tabs={[
@@ -51,7 +39,7 @@ function Nav() {
               <button className="btn btn-ghost btn-sm" onClick={() => { logout(); }}>Sign out</button>
             </>
           ) : (
-            <button className="btn btn-ghost btn-sm" onClick={() => navigate('/login')}>Sign in</button>
+            <button className="btn btn-ghost btn-sm" onClick={() => navigate('/login', { state: { from: '/analyze' } })}>Sign in</button>
           )}
           <button
             className="btn btn-glass btn-sm btn-shiny"
@@ -673,9 +661,10 @@ function ResultView({ result, imgUrl, onReset }) {
   const [expanded, setExpanded] = useState(null);
 
   const verdict = result.verdict || {};
-  // fake_probability commonly 0..1 where 1 = definitely fake. authenticity = 1 - fake_prob.
-  const fakeProb = verdict.fake_probability ?? verdict.confidence ?? 0.5;
-  const score = Math.round(Math.max(0, Math.min(1, 1 - fakeProb)) * 100);
+  const fakeProb = verdict.fake_probability ?? expl.fake_probability ?? verdict.confidence ?? 0.5;
+  const score = typeof verdict.authenticity_score === 'number'
+    ? Math.round(verdict.authenticity_score)
+    : Math.round(Math.max(0, Math.min(1, 1 - fakeProb)) * 100);
   const verdictColor = score > 65 ? 'safe' : score > 40 ? 'warn' : 'danger';
   const verdictLabel = (verdict.label || verdict.classification || (score < 40 ? 'LIKELY FAKE' : score < 65 ? 'SUSPICIOUS' : 'LIKELY REAL')).toString().toUpperCase();
 
@@ -726,7 +715,7 @@ function ResultView({ result, imgUrl, onReset }) {
             {llm?.summary
               || llm?.text
               || verdict.reasoning
-              || `Model confidence ${(fakeProb * 100).toFixed(1)}% that this media is synthetic. Review the heatmap, EXIF, and detailed breakdown below for the evidence behind this verdict.`}
+              || `Review the heatmap, EXIF, and detailed breakdown below for the evidence behind this verdict.`}
           </p>
           {Array.isArray(llm?.bullets) && llm.bullets.length > 0 && (
             <div className="verdict-bullets">
@@ -780,13 +769,13 @@ function ResultView({ result, imgUrl, onReset }) {
         <div className="card exif-card">
           <div className="card-head">
             <span className="eyebrow">EXIF metadata</span>
-            <span className="mono small">{exif.trust_delta != null ? (exif.trust_delta > 0 ? `+${exif.trust_delta} trust` : `${exif.trust_delta} trust`) : '—'}</span>
+            <span className="mono small">{(exif.trust_adjustment ?? exif.trust_delta) != null ? `${exif.trust_adjustment ?? exif.trust_delta} trust` : '—'}</span>
           </div>
           <ul className="exif-list mono">
             {[
               ['Make', exif.make],
               ['Model', exif.model],
-              ['DateTimeOriginal', exif.date_time_original || exif.datetime],
+              ['DateTimeOriginal', exif.datetime_original || exif.date_time_original || exif.datetime],
               ['GPSInfo', exif.gps || exif.gps_info],
               ['Software', exif.software],
               ['LensModel', exif.lens_model || exif.lens],
@@ -1063,8 +1052,7 @@ function CTAFooter() {
         <div className="ds-container ds-footer-inner">
           <div className="foot-brand">
             <div className="ds-logo">
-              <svg width="22" height="26" viewBox="0 0 22 26"><path d="M11 1L21 5V12.5C21 18.5 16.5 23.5 11 25C5.5 23.5 1 18.5 1 12.5V5L11 1Z" stroke="#6C7DFF" strokeWidth="1.5" fill="rgba(108,125,255,0.1)" /><path d="M6 11L10 15L16 8" stroke="#6C7DFF" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" fill="none" /></svg>
-              <span>DeepShield</span>
+              <img src={logoImg} alt="DeepShield Logo" className="ds-logo-img" />
             </div>
             <p>Forensic AI for synthetic media. Open models, local-first, no retention.</p>
             <div className="foot-trust mono">

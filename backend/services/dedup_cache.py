@@ -15,6 +15,7 @@ from loguru import logger
 from sqlalchemy.orm import Session
 
 from db.models import AnalysisRecord
+from schemas.common import ANALYSIS_CACHE_VERSION
 
 CACHE_TTL_DAYS = int(os.environ.get("CACHE_TTL_DAYS", "30"))
 
@@ -44,10 +45,8 @@ def lookup_cached(
         .order_by(AnalysisRecord.created_at.desc())
     )
     if user_id is not None:
-        own = q.filter(AnalysisRecord.user_id == user_id).first()
-        if own is not None:
-            return own
-    return q.first()
+        return q.filter(AnalysisRecord.user_id == user_id).first()
+    return q.filter(AnalysisRecord.user_id.is_(None)).first()
 
 
 def cached_payload(record: AnalysisRecord) -> dict | None:
@@ -56,6 +55,10 @@ def cached_payload(record: AnalysisRecord) -> dict | None:
         payload = json.loads(record.result_json)
     except Exception as e:  # noqa: BLE001
         logger.warning(f"cached payload decode failed for record {record.id}: {e}")
+        return None
+    summary = payload.get("processing_summary") or {}
+    if summary.get("analysis_version") != ANALYSIS_CACHE_VERSION:
+        logger.info(f"cache stale for record {record.id}: analysis_version mismatch")
         return None
     payload["cached"] = True
     payload["record_id"] = record.id

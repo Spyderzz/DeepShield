@@ -1,6 +1,6 @@
 import { createContext, useContext, useEffect, useState } from 'react';
 import {
-  clearAuth, getStoredToken, getStoredUser, setAuth,
+  clearAuth, clearLegacyAuth, getStoredToken, getStoredUser, setAuth,
   login as apiLogin, register as apiRegister, fetchMe,
 } from '../services/authApi.js';
 
@@ -18,13 +18,16 @@ export function AuthProvider({ children }) {
   });
 
   useEffect(() => {
-    if (token && !user) {
+    clearLegacyAuth();
+    if (token) {
       fetchMe()
         .then(setUser)
         .catch(() => { clearAuth(); setUser(null); setToken(null); })
         .finally(() => setAuthReady(true));
+    } else {
+      setAuthReady(true);
     }
-  }, [token, user]);
+  }, [token]);
 
   const login = async (email, password) => {
     setLoading(true);
@@ -58,7 +61,7 @@ export function AuthProvider({ children }) {
   };
 
   return (
-    <AuthContext.Provider value={{ user, token, loading, authReady, login, register, logout, isAuthed: !!token }}>
+    <AuthContext.Provider value={{ user, token, loading, authReady, login, register, logout, isAuthed: !!token && !!user }}>
       {children}
     </AuthContext.Provider>
   );

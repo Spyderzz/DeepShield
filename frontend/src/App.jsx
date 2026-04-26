@@ -1,4 +1,4 @@
-import { Routes, Route, useLocation } from 'react-router-dom';
+import { Routes, Route, Navigate, useLocation } from 'react-router-dom';
 import { useEffect } from 'react';
 import HomePage from './pages/HomePage.jsx';
 import AnalyzePage from './pages/AnalyzePage.jsx';
@@ -20,6 +20,16 @@ function ScrollToTop() {
   return null;
 }
 
+/** Redirects unauthenticated users to /login, preserving the intended path. */
+function ProtectedRoute({ children }) {
+  const { isAuthed } = useAuth();
+  const location = useLocation();
+  if (!isAuthed) {
+    return <Navigate to="/login" state={{ from: location.pathname }} replace />;
+  }
+  return children;
+}
+
 export default function App() {
   const { authReady } = useAuth();
 
@@ -36,15 +46,15 @@ export default function App() {
       <ScrollToTop />
       <Routes>
         <Route path="/" element={<HomePage />} />
-        <Route path="/analyze" element={<AnalyzePage />} />
-        <Route path="/results/:id" element={<ResultsPage />} />
-        <Route path="/history" element={<HistoryPage />} />
-        <Route path="/login" element={<LoginPage />} />
+        <Route path="/analyze"     element={<ProtectedRoute><AnalyzePage /></ProtectedRoute>} />
+        <Route path="/results/:id" element={<ProtectedRoute><ResultsPage /></ProtectedRoute>} />
+        <Route path="/history"     element={<ProtectedRoute><HistoryPage /></ProtectedRoute>} />
+        <Route path="/login"    element={<LoginPage />} />
         <Route path="/register" element={<RegisterPage />} />
-        <Route path="/about" element={<AboutPage />} />
-        <Route path="/contact" element={<ContactPage />} />
-        <Route path="/models" element={<ModelsPage />} />
-        <Route path="*" element={<NotFoundPage />} />
+        <Route path="/about"    element={<AboutPage />} />
+        <Route path="/contact"  element={<ContactPage />} />
+        <Route path="/models"   element={<ModelsPage />} />
+        <Route path="*"         element={<NotFoundPage />} />
       </Routes>
     </>
   );

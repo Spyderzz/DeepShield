@@ -51,8 +51,10 @@ def _domain_of(url: str) -> str:
 
 
 def _is_factcheck(url: str, title: str) -> bool:
-    dom = _domain_of(url)
-    if any(fc in dom for fc in FACTCHECK_DOMAINS):
+    parsed = urlparse(url or "")
+    dom = parsed.netloc.lower().replace("www.", "")
+    path_key = f"{dom}{parsed.path}".lower()
+    if any(fc in dom or fc in path_key for fc in FACTCHECK_DOMAINS):
         return True
     tl = (title or "").lower()
     return any(kw in tl for kw in ("fact check", "fact-check", "debunked", "false claim", "misleading", "hoax"))
@@ -99,11 +101,20 @@ def _compute_truth_override(
     try:
         import numpy as np
 
-        # Encode input text and all high-trust headlines
-        source_texts = [
-            f"{s.title}" for s in high_trust
-        ]
-        all_texts = [input_text[:512]] + source_texts
+        high_trust = [s for s in high_trust if (s.description or "").strip()]
+        if not high_trust:
+            return None
+
+        # Encode input text and high-trust headline+description pairs. Headline
+        # overlap alone is too weak to override the classifier.
+        source_texts = [f"{s.title}. {s.description}" for s in high_trust]
+        input_cmp = input_text[:512]
+        input_terms = {
+            t for t in input_cmp.lower().split()
+            if len(t.strip(".,!?;:()[]{}\"'")) >= 5
+            for t in [t.strip(".,!?;:()[]{}\"'")]
+        }
+        all_texts = [input_cmp] + source_texts
 
         embeddings = st_model.encode(all_texts, convert_to_numpy=True, normalize_embeddings=True)
         query_vec = embeddings[0]       # (D,)
@@ -121,7 +132,14 @@ def _compute_truth_override(
             f"source={best_source.source_name} url={best_source.url}"
         )
 
-        if best_sim >= _OVERRIDE_SIMILARITY_THRESHOLD:
+        best_terms = {
+            t for t in f"{best_source.title} {best_source.description or ''}".lower().split()
+            if len(t.strip(".,!?;:()[]{}\"'")) >= 5
+            for t in [t.strip(".,!?;:()[]{}\"'")]
+        }
+        lexical_overlap = len(input_terms & best_terms) / max(len(input_terms), 1)
+
+        if best_sim >= _OVERRIDE_SIMILARITY_THRESHOLD and lexical_overlap >= 0.35:
             new_fake_prob = min(
                 current_fake_prob * _OVERRIDE_FAKE_PROB_MULTIPLIER,
                 _OVERRIDE_FAKE_PROB_CAP,
@@ -221,6 +239,7 @@ async def search_news_full(
             source_name=src_name,
             title=title,
             url=url,
+            description=art.get("description") or art.get("content"),
             published_at=art.get("pubDate"),
             relevance_score=_relevance(url),
         ))

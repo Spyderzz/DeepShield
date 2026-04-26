@@ -41,6 +41,8 @@ def _decode_gps(gps_info: dict) -> Optional[str]:
 
         lat = _to_decimal(gps_info.get(2, (0, 0, 0)), gps_info.get(1, "N"))
         lon = _to_decimal(gps_info.get(4, (0, 0, 0)), gps_info.get(3, "E"))
+        if abs(lat) < 1e-9 and abs(lon) < 1e-9:
+            return None
         return f"{lat:.6f}, {lon:.6f}"
     except Exception:
         return None
@@ -105,12 +107,17 @@ def extract_exif(pil_img: Image.Image, raw_bytes: bytes) -> ExifSummary:
 
     has_camera_meta = summary.make and summary.model and summary.datetime_original
     if has_camera_meta:
-        adjustment -= 15
+        adjustment -= 8
         reasons.append("valid camera metadata (Make/Model/DateTime)")
 
     if summary.gps_info:
-        adjustment -= 5
+        adjustment -= 2
         reasons.append("GPS coordinates present")
+
+    # Lens metadata is useful but spoofable; keep it as a weak corroborating signal.
+    if summary.lens_model:
+        adjustment -= 3
+        reasons.append("lens model metadata present")
 
     if summary.software:
         sw_lower = summary.software.lower()
@@ -118,8 +125,10 @@ def extract_exif(pil_img: Image.Image, raw_bytes: bytes) -> ExifSummary:
             adjustment += 10
             reasons.append(f"editing software detected: {summary.software}")
         elif any(s in sw_lower for s in _CAMERA_SOFTWARE):
-            adjustment -= 2
+            adjustment -= 1
             reasons.append("camera firmware in Software field")
+
+    adjustment = max(-12, min(12, adjustment))
 
     summary.trust_adjustment = adjustment
     summary.trust_reason = "; ".join(reasons) if reasons else "no EXIF metadata found"

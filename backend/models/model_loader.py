@@ -22,10 +22,14 @@ class ModelLoader:
                     cls._instance = super().__new__(cls)
                     cls._instance._image_model = None
                     cls._instance._image_processor = None
+                    cls._instance._general_image_model = None
+                    cls._instance._general_image_processor = None
+                    cls._instance._general_image_unavailable = False
                     cls._instance._text_pipeline = None
                     cls._instance._multilang_text_pipeline = None
                     cls._instance._ocr_reader = None
                     cls._instance._face_detector = None
+                    cls._instance._face_detector_unavailable = False
                     cls._instance._spacy_nlp = None
                     cls._instance._sentence_transformer = None
                     cls._instance._efficientnet_detector = None
@@ -50,6 +54,27 @@ class ModelLoader:
             self._image_model = model
             logger.info("Image model loaded")
         return self._image_model, self._image_processor
+
+    # ---------- General AI image detector (no-face scenes / objects / art) ----------
+    def load_general_image_model(self) -> Optional[Tuple[object, object]]:
+        if self._general_image_unavailable:
+            return None
+        if self._general_image_model is None:
+            try:
+                logger.info(f"Loading general AI image model: {settings.GENERAL_IMAGE_MODEL_ID}")
+                from transformers import AutoImageProcessor, AutoModelForImageClassification
+
+                self._general_image_processor = AutoImageProcessor.from_pretrained(settings.GENERAL_IMAGE_MODEL_ID)
+                model = AutoModelForImageClassification.from_pretrained(settings.GENERAL_IMAGE_MODEL_ID)
+                model.to(settings.DEVICE)
+                model.eval()
+                self._general_image_model = model
+                logger.info("General AI image model loaded")
+            except Exception as e:  # noqa: BLE001
+                self._general_image_unavailable = True
+                logger.warning(f"General AI image model load failed: {e}")
+                return None
+        return self._general_image_model, self._general_image_processor
 
     # ---------- Text (BERT fake-news classifier — English) ----------
     def load_text_model(self):
@@ -138,15 +163,25 @@ class ModelLoader:
 
     # ---------- Face detector (MediaPipe) ----------
     def load_face_detector(self):
+        if self._face_detector_unavailable:
+            return None
         if self._face_detector is None:
             logger.info("Loading MediaPipe FaceMesh")
-            import mediapipe as mp  # type: ignore
+            try:
+                import mediapipe as mp  # type: ignore
 
-            self._face_detector = mp.solutions.face_mesh.FaceMesh(
-                static_image_mode=True,
-                max_num_faces=5,
-                min_detection_confidence=0.5,
-            )
+                if not hasattr(mp, "solutions"):
+                    raise ImportError("installed mediapipe package has no solutions API")
+
+                self._face_detector = mp.solutions.face_mesh.FaceMesh(
+                    static_image_mode=True,
+                    max_num_faces=5,
+                    min_detection_confidence=0.5,
+                )
+            except Exception as exc:  # noqa: BLE001
+                self._face_detector_unavailable = True
+                logger.warning(f"MediaPipe FaceMesh unavailable: {exc}")
+                return None
             logger.info("MediaPipe FaceMesh loaded")
         return self._face_detector
 
@@ -183,14 +218,18 @@ class ModelLoader:
         if self._ffpp_model is not None:
             return self._ffpp_model, self._ffpp_processor
 
-        ckpt_path = Path(settings.FFPP_MODEL_PATH)
-        if not ckpt_path.is_absolute():
-            # Resolve relative to the repo root (backend's parent).
-            repo_root = Path(__file__).resolve().parent.parent.parent
-            ckpt_path = (repo_root / settings.FFPP_MODEL_PATH).resolve()
+        configured_path = Path(settings.FFPP_MODEL_PATH)
+        repo_root = Path(__file__).resolve().parent.parent.parent
+        candidates = [configured_path] if configured_path.is_absolute() else [
+            (repo_root / configured_path).resolve(),
+            (Path.cwd() / configured_path).resolve(),
+            (repo_root / "trained_models").resolve(),
+        ]
+        ckpt_path = next((p for p in candidates if (p / "config.json").exists()), candidates[0])
 
         if not (ckpt_path / "config.json").exists():
-            logger.warning(f"FFPP ViT checkpoint not found at {ckpt_path} — skipping")
+            tried = ", ".join(str(p) for p in candidates)
+            logger.warning(f"FFPP ViT checkpoint not found. Tried: {tried} — skipping")
             return None
 
         try:

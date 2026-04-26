@@ -6,7 +6,7 @@ export const api = axios.create({
 });
 
 api.interceptors.request.use((config) => {
-  const token = localStorage.getItem('deepshield.token');
+  const token = sessionStorage.getItem('deepshield.token');
   if (token) {
     config.headers = config.headers || {};
     config.headers.Authorization = `Bearer ${token}`;
@@ -17,6 +17,12 @@ api.interceptors.request.use((config) => {
 api.interceptors.response.use(
   (r) => r,
   (err) => {
+    if (err?.response?.status === 401) {
+      sessionStorage.removeItem('deepshield.token');
+      sessionStorage.removeItem('deepshield.user');
+      localStorage.removeItem('deepshield.token');
+      localStorage.removeItem('deepshield.user');
+    }
     const detail = err?.response?.data?.detail || err.message || 'Request failed';
     err.userMessage = typeof detail === 'string' ? detail : JSON.stringify(detail);
     return Promise.reject(err);

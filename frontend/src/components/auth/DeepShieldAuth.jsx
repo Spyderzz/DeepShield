@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useLocation } from 'react-router-dom';
 import { SharedNav, SharedFooter } from '../layout/SharedNav.jsx';
 import useDottedSurface from '../../hooks/useDottedSurface.js';
 import { useAuth } from '../../contexts/AuthContext.jsx';
@@ -17,11 +17,13 @@ export default function DeepShieldAuth({ mode: initial = 'login' }) {
   const [error, setError] = useState(null);
   const { login, register, isAuthed } = useAuth();
   const navigate = useNavigate();
+  const location = useLocation();
+  const from = location.state?.from || '/analyze';
 
   // Redirect already-authenticated users away from the login/register page
   useEffect(() => {
-    if (isAuthed) navigate('/history', { replace: true });
-  }, [isAuthed, navigate]);
+    if (isAuthed) navigate(from, { replace: true });
+  }, [isAuthed, navigate, from]);
 
   const isLogin = mode === 'login';
 
@@ -32,7 +34,7 @@ export default function DeepShieldAuth({ mode: initial = 'login' }) {
     try {
       if (isLogin) await login(email, pw);
       else await register(email, pw, name);
-      navigate('/history');
+      navigate(from, { replace: true });
     } catch (err) {
       setError(err?.response?.data?.detail || err?.message || 'Authentication failed');
     } finally {

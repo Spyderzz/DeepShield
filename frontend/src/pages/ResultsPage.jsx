@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { useLocation, useNavigate, useParams } from 'react-router-dom';
-import { generateReport, reportDownloadUrl } from '../services/reportApi.js';
+import { downloadReportBlob, generateReport, saveReportBlob } from '../services/reportApi.js';
 import { SharedNav, SharedFooter } from '../components/layout/SharedNav.jsx';
 import useDottedSurface from '../hooks/useDottedSurface.js';
 import { getHistoryDetail } from '../services/historyApi.js';
@@ -9,6 +9,7 @@ import './deepshield-pages.css';
 
 function resolveMediaUrl(url) {
   if (!url) return null;
+  url = String(url).replaceAll('\\', '/');
   if (url.startsWith('http://') || url.startsWith('https://') || url.startsWith('data:')) return url;
   // Vite dev-server proxies /media/* → backend; ensure leading slash
   return url.startsWith('/') ? url : `/${url}`;
@@ -89,7 +90,8 @@ function ResultsView({ result, id }) {
     setPdfLoading(true);
     try {
       await generateReport(id);
-      window.open(reportDownloadUrl(id), '_blank');
+      const blob = await downloadReportBlob(id);
+      saveReportBlob(blob, id);
     } catch (e) {
       alert(e?.userMessage || 'PDF generation failed. Try again.');
     } finally {
@@ -113,10 +115,14 @@ function ResultsView({ result, id }) {
   const artifacts = expl.artifact_indicators || [];
   const sources = result.trusted_sources || [];
   const mediaType = result.media_type || 'image';
+  const calibrationApplied = result.processing_summary?.calibrator_applied ?? false;
 
-  const heatmapData = expl.heatmap_base64 ? `data:image/png;base64,${expl.heatmap_base64}` : null;
-  const elaData = expl.ela_base64 ? `data:image/png;base64,${expl.ela_base64}` : null;
-  const boxesData = expl.boxes_base64 ? `data:image/png;base64,${expl.boxes_base64}` : null;
+  // Prefer persistent file URL; fall back to base64 from fresh analysis response.
+  // The backend returns full data URLs (already prefixed), so use them as-is.
+  const _b64src = (b64) => !b64 ? null : b64.startsWith('data:') ? b64 : `data:image/png;base64,${b64}`;
+  const heatmapData = resolveMediaUrl(expl.heatmap_url) || _b64src(expl.heatmap_base64);
+  const elaData     = resolveMediaUrl(expl.ela_url)     || _b64src(expl.ela_base64);
+  const boxesData   = resolveMediaUrl(expl.boxes_url)   || _b64src(expl.boxes_base64);
   const baseImg = resolveMediaUrl(result.media_path) || resolveMediaUrl(result.thumbnail_url) || resolveMediaUrl(result.media_url) || heatmapData;
 
   const totalMs = result.processing_summary?.total_ms ?? 0;
@@ -174,7 +180,7 @@ function ResultsView({ result, id }) {
         </div>
 
         <div className="results-grid">
-          <VerdictCard verdict={verdictLabel} displayScore={displayScore} color={c} llm={llm} />
+          <VerdictCard verdict={verdictLabel} displayScore={displayScore} color={c} llm={llm} calibrationApplied={calibrationApplied} />
 
           <div className="result-grid">
             <HeatmapCard
@@ -210,7 +216,7 @@ function ResultsView({ result, id }) {
 }
 
 /* ==== verdict + ring ==== */
-function VerdictCard({ verdict, displayScore, color, llm }) {
+function VerdictCard({ verdict, displayScore, color, llm, calibrationApplied }) {
   return (
     <div className={`verdict-card verdict-${color}`}>
       <div className="verdict-left">
@@ -221,7 +227,7 @@ function VerdictCard({ verdict, displayScore, color, llm }) {
           <div className="verdict-meta mono">
             <span>score · {displayScore}/100</span>
             <span>·</span>
-            <span>confidence · calibrated (isotonic)</span>
+            <span>confidence · {calibrationApplied ? 'calibrated (isotonic)' : 'uncalibrated ensemble'}</span>
           </div>
         </div>
       </div>
@@ -229,7 +235,7 @@ function VerdictCard({ verdict, displayScore, color, llm }) {
         <span className="eyebrow">Plain-English summary{llm?.model_used ? ` · ${llm.model_used}` : ' · Gemini 1.5'}</span>
         <p>
           {llm?.paragraph ||
-            'Model confidence is calibrated from the ensemble forward pass. Review the heatmap, EXIF, and detailed breakdown below for the evidence behind this verdict.'}
+            'Model confidence comes from the ensemble forward pass. Review the heatmap, EXIF, and detailed breakdown below for the evidence behind this verdict.'}
         </p>
         {Array.isArray(llm?.bullets) && llm.bullets.length > 0 && (
           <div className="verdict-bullets">
@@ -262,38 +268,68 @@ function ScoreRing({ value, size = 120, color = 'safe' }) {
 }
 
 /* ==== heatmap ==== */
+/* Overlay mode descriptions shown in the footer */
+const OVERLAY_DESC = {
+  heatmap: 'Grad-CAM++ averaged across last 3 ViT layers — brighter = stronger model activation',
+  ela:     'Error Level Analysis — re-saved at JPEG quality 90 and diffed; bright regions may indicate editing',
+  boxes:   'Top suspicious regions from Grad-CAM++ activation — red ≥70%, orange ≥50%, yellow lower',
+  off:     'Original image — no overlay',
+};
+
 function HeatmapCard({ src, heatmapData, elaData, boxesData, heatmapMode, setHeatmapMode, alpha, setAlpha, status }) {
-  const overlayImg = (data, label) => data
-    ? <img src={data} alt="" style={{ opacity: alpha, position: 'absolute', inset: 0, width: '100%', height: '100%', objectFit: 'cover', mixBlendMode: 'screen' }} />
-    : <div className="overlay-unavailable">{label} · not available for cached results</div>;
+  // The backend composites overlays onto the original image already.
+  // We swap the visible image based on mode, and use alpha to blend with the original.
+  const overlayMap = { heatmap: heatmapData, ela: elaData, boxes: boxesData, off: null };
+  const activeOverlay = overlayMap[heatmapMode] ?? null;
+  const unavailable = heatmapMode !== 'off' && !activeOverlay;
+
   return (
     <div className="card heatmap-card">
       <div className="card-head">
         <span className="eyebrow">Visual evidence</span>
         <div className="seg-control">
-          {['heatmap','ela','boxes','off'].map(m => (
-            <button key={m} className={heatmapMode === m ? 'active' : ''} onClick={() => setHeatmapMode(m)}>{m}</button>
+          {['heatmap', 'ela', 'boxes', 'off'].map(m => (
+            <button key={m} className={heatmapMode === m ? 'active' : ''} onClick={() => setHeatmapMode(m)}>{m.toUpperCase()}</button>
           ))}
         </div>
       </div>
       <div className="heatmap-stage">
-        {src ? <img src={src} alt="" className="heatmap-base"/> : <div className="heatmap-base" style={{ background: '#0A0D18' }}/>}
-        {heatmapMode === 'heatmap' && overlayImg(heatmapData, 'Grad-CAM++')}
-        {heatmapMode === 'ela' && overlayImg(elaData, 'ELA')}
-        {heatmapMode === 'boxes' && (boxesData
-          ? <img src={boxesData} alt="" style={{ opacity: alpha, position: 'absolute', inset: 0, width: '100%', height: '100%', objectFit: 'cover' }} />
-          : (
-            <svg className="heatmap-boxes" viewBox="0 0 100 100" preserveAspectRatio="none">
-              <rect x="34" y="20" width="30" height="38" fill="none" stroke="var(--ds-warn)" strokeWidth="0.3" strokeDasharray="1.2"/>
-              <rect x="40" y="46" width="18" height="12" fill="none" stroke="var(--ds-danger)" strokeWidth="0.3"/>
-            </svg>
-          ))}
+        {/* Base original — always shown */}
+        {src
+          ? <img src={src} alt="" className="heatmap-base" />
+          : <div className="heatmap-base" style={{ background: '#0A0D18' }} />}
+        {/* Overlay: the backend already blends these with the original, so we just
+            fade them in over the base image. alpha=1 → full overlay, alpha=0 → original. */}
+        {activeOverlay && (
+          <img
+            src={activeOverlay}
+            className="heatmap-layer"
+            alt=""
+            style={{
+              opacity: alpha,
+            }}
+          />
+        )}
+        {unavailable && (
+          <div className="overlay-unavailable">
+            {heatmapMode.toUpperCase()} · run a fresh analysis to view
+          </div>
+        )}
       </div>
       <div className="heatmap-foot">
-        <span className="mono">α {alpha.toFixed(2)}</span>
-        <input type="range" min="0" max="1" step="0.01" value={alpha} onChange={e => setAlpha(+e.target.value)} />
-        <span className="mono status-chip">heatmap · {status}</span>
+        {heatmapMode !== 'off' && (
+          <>
+            <span className="mono">α {alpha.toFixed(2)}</span>
+            <input type="range" min="0" max="1" step="0.01" value={alpha} onChange={e => setAlpha(+e.target.value)} />
+          </>
+        )}
+        <span className="mono status-chip" style={{ marginLeft: 'auto' }}>heatmap · {status}</span>
       </div>
+      {heatmapMode !== 'off' && (
+        <p style={{ fontFamily: 'var(--ff-mono)', fontSize: 10, color: 'var(--ds-muted)', margin: '10px 0 0', lineHeight: 1.5 }}>
+          {OVERLAY_DESC[heatmapMode]}
+        </p>
+      )}
     </div>
   );
 }
@@ -304,14 +340,14 @@ function EXIFCard({ exif }) {
   const rows = [
     ['Make', exif.make],
     ['Model', exif.model],
-    ['DateTimeOriginal', exif.date_time_original || exif.datetime],
+    ['DateTimeOriginal', exif.datetime_original || exif.date_time_original || exif.datetime],
     ['GPSInfo', exif.gps || exif.gps_info],
     ['Software', exif.software],
     ['LensModel', exif.lens_model || exif.lens],
     ['ColorSpace', exif.color_space || exif.colorspace],
     ['ExposureTime', exif.exposure_time || exif.exposure],
   ];
-  const trustDelta = exif.trust_delta;
+  const trustDelta = exif.trust_adjustment ?? exif.trust_delta;
   const presentCount = rows.filter(([, v]) => v).length;
   return (
     <div className="card exif-card">

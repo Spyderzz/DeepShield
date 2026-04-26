@@ -6,11 +6,11 @@ from typing import List, Optional
 
 from loguru import logger
 
+from config import settings
 from models.model_loader import get_model_loader
 
 FAKE_TOKENS = ("fake", "false", "unreliable", "misinformation")
 
-# --- Sensationalism patterns ---
 CLICKBAIT_PATTERNS = [
     (r"\byou won'?t believe\b", "clickbait"),
     (r"\bbreaking\s*:", "clickbait"),
@@ -22,20 +22,20 @@ CLICKBAIT_PATTERNS = [
     (r"\bthis\s+will\s+change\b", "clickbait"),
     (r"\b(?:everyone|nobody)\s+(?:is|was)\s+talking\b", "clickbait"),
 ]
+
 EMOTIONAL_WORDS = {
     "outrage", "shocking", "horrifying", "disgusting", "amazing", "incredible",
     "unbelievable", "devastating", "terrifying", "explosive", "bombshell",
     "jaw-dropping", "heartbreaking", "furious", "scandal", "crisis",
     "chaos", "destroyed", "slammed", "blasted", "exposed", "revealed",
 }
+
 SUPERLATIVES = {
     "best", "worst", "greatest", "biggest", "most", "least",
     "fastest", "deadliest", "largest", "smallest", "ultimate",
 }
 
-# --- Manipulation indicator patterns ---
 MANIPULATION_PATTERNS = [
-    # Unverified claims
     (r"\bsources?\s+(?:say|said|claim|report)\b", "unverified_claim", "medium",
      "Unverified source attribution without specific citation"),
     (r"\ballegedly\b", "unverified_claim", "low",
@@ -46,7 +46,6 @@ MANIPULATION_PATTERNS = [
      "Non-specific source attribution"),
     (r"\brunconfirmed\b", "unverified_claim", "medium",
      "Explicitly unconfirmed information"),
-    # Emotional manipulation
     (r"\boutrage\b", "emotional_manipulation", "medium",
      "Emotional trigger word designed to provoke reaction"),
     (r"\bshocking\s+truth\b", "emotional_manipulation", "high",
@@ -57,7 +56,6 @@ MANIPULATION_PATTERNS = [
      "Conspiracy framing language"),
     (r"\bopen\s+your\s+eyes\b", "emotional_manipulation", "medium",
      "Implies audience ignorance"),
-    # False authority
     (r"\bexperts?\s+(?:confirm|say|agree|warn)\b", "false_authority", "medium",
      "Unnamed expert citation without specific attribution"),
     (r"\bscientists?\s+(?:confirm|prove|say)\b", "false_authority", "medium",
@@ -70,7 +68,6 @@ MANIPULATION_PATTERNS = [
      "Assertion of fact without evidence"),
 ]
 
-# NER entity labels to prefer for keyword extraction
 _NER_PREFERRED = {"PERSON", "ORG", "GPE", "EVENT", "PRODUCT", "NORP"}
 
 
@@ -84,8 +81,8 @@ class TextClassification:
 
 @dataclass
 class SensationalismResult:
-    score: int  # 0-100
-    level: str  # Low / Medium / High
+    score: int
+    level: str
     exclamation_count: int
     caps_word_count: int
     clickbait_matches: int
@@ -95,18 +92,15 @@ class SensationalismResult:
 
 @dataclass
 class ManipulationIndicator:
-    pattern_type: str       # unverified_claim / emotional_manipulation / false_authority
+    pattern_type: str
     matched_text: str
     start_pos: int
     end_pos: int
-    severity: str           # low / medium / high
+    severity: str
     description: str
 
 
 def detect_language(text: str) -> str:
-    """Detect the primary language of text using langdetect.
-    Returns ISO 639-1 code (e.g. 'en', 'hi'). Falls back to 'en' on failure.
-    """
     if not text or len(text.strip()) < 10:
         return "en"
     try:
@@ -115,68 +109,70 @@ def detect_language(text: str) -> str:
         logger.info(f"Language detected: {lang}")
         return lang
     except ImportError:
-        logger.debug("langdetect not installed — defaulting to 'en'")
+        logger.debug("langdetect not installed - defaulting to 'en'")
         return "en"
     except Exception as e:
-        logger.debug(f"Language detection failed: {e} — defaulting to 'en'")
+        logger.debug(f"Language detection failed: {e} - defaulting to 'en'")
         return "en"
 
 
-def _scores_to_classification(items) -> TextClassification:
-    """Convert pipeline output to TextClassification."""
+def _scores_to_classification(items, *, allow_label0_fallback: bool = True) -> TextClassification:
+    """Convert pipeline output to TextClassification.
+
+    Prefer semantic fake labels. The bundled jy46604790 model uses
+    LABEL_0=fake/LABEL_1=real, but arbitrary replacement models may not.
+    """
     scores = {i["label"]: float(i["score"]) for i in items}
     top_label, top_conf = max(scores.items(), key=lambda kv: kv[1])
-    # Extract fake probability
-    fake_prob = 0.0
-    if "LABEL_0" in scores:
-        fake_prob = scores["LABEL_0"]
-    else:
-        fake_prob = max(
-            (p for lbl, p in scores.items() if any(t in lbl.lower() for t in FAKE_TOKENS)),
-            default=0.0,
-        )
+
+    fake_prob = max(
+        (p for lbl, p in scores.items() if any(t in lbl.lower() for t in FAKE_TOKENS)),
+        default=None,
+    )
+    if fake_prob is None:
+        if allow_label0_fallback and "LABEL_0" in scores and "LABEL_1" in scores:
+            fake_prob = scores["LABEL_0"]
+        else:
+            logger.warning(f"Could not infer fake label from text model labels: {list(scores)}")
+            top_label = "uncertain_label_mapping"
+            top_conf = 0.0
+            fake_prob = 0.5
+
     return TextClassification(top_label, top_conf, fake_prob, scores)
 
 
 def classify_text(text: str, language: Optional[str] = None) -> TextClassification:
-    """Classify text as fake/real.
-    Routes to multilingual model when language is non-English and the model is configured.
-    """
     text = (text or "").strip()
     if not text:
         return TextClassification("unknown", 0.0, 0.0, {})
 
     loader = get_model_loader()
+    is_non_english = bool(language and language != "en")
+    if is_non_english and not settings.TEXT_MULTILANG_MODEL_ID:
+        logger.warning(f"No multilingual text model configured for language={language}; returning uncertain score")
+        return TextClassification("unsupported_language", 0.0, 0.5, {})
 
-    if language and language != "en":
-        pipe = loader.load_multilang_text_model()
-    else:
-        pipe = loader.load_text_model()
+    pipe = loader.load_multilang_text_model() if is_non_english else loader.load_text_model()
 
     out = pipe(text[:2000], truncation=True, top_k=None)
     items = out[0] if isinstance(out[0], list) else out
-    clf = _scores_to_classification(items)
+    clf = _scores_to_classification(items, allow_label0_fallback=not is_non_english)
     logger.info(
-        f"Text classify [{language or 'en'}] → {clf.label} @ {clf.confidence:.3f} "
+        f"Text classify [{language or 'en'}] -> {clf.label} @ {clf.confidence:.3f} "
         f"fake_p={clf.fake_prob:.3f}"
     )
     return clf
 
 
 def score_sensationalism(text: str) -> SensationalismResult:
-    """Compute a 0-100 sensationalism score from structural/linguistic signals."""
     if not text:
         return SensationalismResult(0, "Low", 0, 0, 0, 0, 0)
 
     words = text.split()
     total_words = max(len(words), 1)
-
     excl = text.count("!")
     caps = sum(1 for w in words if w.isupper() and len(w) > 2)
-    clickbait = sum(
-        1 for pat, _ in CLICKBAIT_PATTERNS
-        if re.search(pat, text, re.IGNORECASE)
-    )
+    clickbait = sum(1 for pat, _ in CLICKBAIT_PATTERNS if re.search(pat, text, re.IGNORECASE))
     emotional = sum(1 for w in words if w.lower().strip(".,!?;:") in EMOTIONAL_WORDS)
     superlative = sum(1 for w in words if w.lower().strip(".,!?;:") in SUPERLATIVES)
 
@@ -190,12 +186,11 @@ def score_sensationalism(text: str) -> SensationalismResult:
     score = int(min(100, max(0, raw)))
     level = "Low" if score < 30 else ("Medium" if score < 60 else "High")
 
-    logger.info(f"Sensationalism → {score} ({level}) excl={excl} caps={caps} cb={clickbait} emo={emotional}")
+    logger.info(f"Sensationalism -> {score} ({level}) excl={excl} caps={caps} cb={clickbait} emo={emotional}")
     return SensationalismResult(score, level, excl, caps, clickbait, emotional, superlative)
 
 
 def detect_manipulation_indicators(text: str) -> List[ManipulationIndicator]:
-    """Scan text for manipulation linguistic patterns with positions."""
     if not text:
         return []
     indicators: List[ManipulationIndicator] = []
@@ -210,28 +205,20 @@ def detect_manipulation_indicators(text: str) -> List[ManipulationIndicator]:
                 description=description,
             ))
     indicators.sort(key=lambda i: i.start_pos)
-    logger.info(f"Manipulation indicators → {len(indicators)} found")
+    logger.info(f"Manipulation indicators -> {len(indicators)} found")
     return indicators
 
 
 def extract_entities(text: str, max_k: int = 6) -> List[str]:
-    """Extract keywords via spaCy NER (PERSON, ORG, GPE, EVENT preferred).
-    Falls back to frequency-based extraction when spaCy is unavailable or text is too short.
-    """
     if not text or len(text.strip()) < 20:
         return _extract_keywords_freq(text, max_k)
 
-    loader = get_model_loader()
-    nlp = loader.load_spacy_nlp()
-
+    nlp = get_model_loader().load_spacy_nlp()
     if nlp is None:
-        # spaCy not available — use frequency fallback
         return _extract_keywords_freq(text, max_k)
 
     try:
-        doc = nlp(text[:5000])  # cap for performance
-
-        # Collect named entities, preferring high-value types
+        doc = nlp(text[:5000])
         preferred: List[str] = []
         other: List[str] = []
         seen: set[str] = set()
@@ -248,28 +235,24 @@ def extract_entities(text: str, max_k: int = 6) -> List[str]:
                 other.append(norm)
 
         entities = preferred + other
-
         if len(entities) >= 2:
             logger.info(f"NER extracted {len(entities)} entities: {entities[:max_k]}")
             return entities[:max_k]
 
-        # Not enough entities — supplement with frequency keywords
         freq_kws = _extract_keywords_freq(text, max_k)
         combined = entities + [k for k in freq_kws if k.lower() not in seen]
         return combined[:max_k]
-
     except Exception as e:
-        logger.warning(f"spaCy NER failed: {e} — falling back to frequency extraction")
+        logger.warning(f"spaCy NER failed: {e} - falling back to frequency extraction")
         return _extract_keywords_freq(text, max_k)
 
 
 def _extract_keywords_freq(text: str, max_k: int = 6) -> List[str]:
-    """Frequency-based keyword extraction (original implementation, kept as fallback)."""
     stop = {
-        "the","a","an","is","are","was","were","be","been","being","to","of","and","or","but",
-        "in","on","at","for","with","by","from","as","that","this","it","its","has","have","had",
-        "will","would","can","could","should","may","might","do","does","did","not","no","so",
-        "than","then","there","their","they","them","we","our","you","your","he","she","his","her",
+        "the", "a", "an", "is", "are", "was", "were", "be", "been", "being", "to", "of", "and", "or", "but",
+        "in", "on", "at", "for", "with", "by", "from", "as", "that", "this", "it", "its", "has", "have", "had",
+        "will", "would", "can", "could", "should", "may", "might", "do", "does", "did", "not", "no", "so",
+        "than", "then", "there", "their", "they", "them", "we", "our", "you", "your", "he", "she", "his", "her",
     }
     words = re.findall(r"[A-Za-z][A-Za-z\-']{2,}", text or "")
     freq: dict[str, int] = {}
@@ -281,5 +264,4 @@ def _extract_keywords_freq(text: str, max_k: int = 6) -> List[str]:
     return [w for w, _ in sorted(freq.items(), key=lambda kv: (-kv[1], kv[0]))[:max_k]]
 
 
-# Back-compat alias: routes that still call extract_keywords get NER-first behaviour
 extract_keywords = extract_entities

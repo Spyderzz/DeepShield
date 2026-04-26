@@ -2,25 +2,34 @@ import { api } from './api.js';
 
 const TOKEN_KEY = 'deepshield.token';
 const USER_KEY = 'deepshield.user';
+const LEGACY_STORAGE = window.localStorage;
+const STORAGE = window.sessionStorage;
+
+export function clearLegacyAuth() {
+  LEGACY_STORAGE.removeItem(TOKEN_KEY);
+  LEGACY_STORAGE.removeItem(USER_KEY);
+}
 
 export function getStoredToken() {
-  return localStorage.getItem(TOKEN_KEY) || null;
+  return STORAGE.getItem(TOKEN_KEY) || null;
 }
 
 export function getStoredUser() {
-  const raw = localStorage.getItem(USER_KEY);
+  const raw = STORAGE.getItem(USER_KEY);
   if (!raw) return null;
   try { return JSON.parse(raw); } catch { return null; }
 }
 
 export function setAuth(token, user) {
-  localStorage.setItem(TOKEN_KEY, token);
-  localStorage.setItem(USER_KEY, JSON.stringify(user));
+  clearLegacyAuth();
+  STORAGE.setItem(TOKEN_KEY, token);
+  STORAGE.setItem(USER_KEY, JSON.stringify(user));
 }
 
 export function clearAuth() {
-  localStorage.removeItem(TOKEN_KEY);
-  localStorage.removeItem(USER_KEY);
+  STORAGE.removeItem(TOKEN_KEY);
+  STORAGE.removeItem(USER_KEY);
+  clearLegacyAuth();
 }
 
 export async function register(email, password, name) {

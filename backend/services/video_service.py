@@ -39,6 +39,7 @@ class VideoAggregation:
     frames: List[FrameAnalysis] = field(default_factory=list)
     models_used: List[str] = field(default_factory=list)
     face_detector_used: str = "mediapipe"
+    calibrator_applied: bool = False
     # Phase 17.1 — temporal consistency
     temporal: Optional[TemporalAnalysis] = None
 
@@ -89,25 +90,38 @@ MIN_FACE_FRAMES = 3
 
 def _has_face_mediapipe(pil: Image.Image) -> bool:
     detector = get_model_loader().load_face_detector()
+    if detector is None:
+        return False
     arr = np.array(pil)
     res = detector.process(arr)
     return bool(getattr(res, "multi_face_landmarks", None))
 
 
+def _score_efficientnet_face(eff, face) -> float:
+    face_t = eff._face_tensor(face)
+    import torch
+    with torch.inference_mode():
+        logit = eff.net(face_t.unsqueeze(0).to(eff.device))
+        from scipy.special import expit
+        raw_prob = float(expit(logit.cpu().numpy().item()))
+    return float(eff._calibrate(raw_prob))
+
+
 def _analyze_with_efficientnet(
     frames: List[Tuple[int, float, np.ndarray, Image.Image]],
-) -> Tuple[List[FrameAnalysis], str, List[str]]:
+) -> Tuple[List[FrameAnalysis], str, List[str], bool]:
     """Primary path: use EfficientNet + BlazeFace per-frame. Returns (frame_results, detector_used, models_used)."""
     loader = get_model_loader()
     eff = loader.load_efficientnet()
 
     if eff is None:
         logger.warning("EfficientNet unavailable — falling back to ViT video pipeline")
-        return _analyze_with_vit(frames), "mediapipe", [settings.IMAGE_MODEL_ID]
+        return _analyze_with_vit(frames), "mediapipe", [settings.IMAGE_MODEL_ID], False
 
     results: List[FrameAnalysis] = []
     face_detector_used = "blazeface"
     models_used = [f"{settings.EFFICIENTNET_MODEL}_{settings.EFFICIENTNET_TRAIN_DB}"]
+    calibrator_applied = bool(getattr(eff, "calibrator_applied", False))
 
     for idx, ts, frame_bgr, pil in frames:
         # Pass RGB to EfficientNet (process_image expects RGB array).
@@ -117,21 +131,17 @@ def _analyze_with_efficientnet(
         has_face = bool(faces)
 
         if not has_face:
-            # Fallback: check MediaPipe so we don't silently miss faces.
-            has_face = _has_face_mediapipe(pil)
-            if has_face:
-                face_detector_used = "blazeface+mediapipe_fallback"
+            fallback_crop = eff._fallback_face_crop(frame_rgb)
+            if fallback_crop is not None:
+                faces = [fallback_crop]
+                has_face = True
+                face_detector_used = "blazeface+crop_fallback"
 
         fake_prob = 0.0
         label = "unknown"
         if has_face and faces:
-            # Run EfficientNet on the best face from BlazeFace.
-            face_t = eff._face_tensor(faces[0])
-            import torch
-            with torch.inference_mode():
-                logit = eff.net(face_t.unsqueeze(0).to(eff.device))
-                from scipy.special import expit
-                fake_prob = float(expit(logit.cpu().numpy().item()))
+            # Run EfficientNet on the best face/crop and apply the same calibration as image inference.
+            fake_prob = _score_efficientnet_face(eff, faces[0])
             label = "Fake" if fake_prob > 0.5 else "Real"
         elif not has_face:
             label = "no_face"
@@ -145,11 +155,11 @@ def _analyze_with_efficientnet(
                 suspicious_prob=fake_prob,
                 is_suspicious=(fake_prob >= 0.5) and has_face,
                 has_face=has_face,
-                scored=has_face,
+                scored=has_face and faces,
             )
         )
 
-    return results, face_detector_used, models_used
+    return results, face_detector_used, models_used, calibrator_applied
 
 
 def _analyze_with_vit(
@@ -179,6 +189,7 @@ def aggregate(
     frame_results: List[FrameAnalysis],
     models_used: Optional[List[str]] = None,
     face_detector_used: str = "mediapipe",
+    calibrator_applied: bool = False,
 ) -> VideoAggregation:
     if not frame_results:
         return VideoAggregation(0, 0, 0, 0.0, 0.0, 0.0, True)
@@ -209,6 +220,7 @@ def aggregate(
         frames=frame_results,
         models_used=models_used or [settings.IMAGE_MODEL_ID],
         face_detector_used=face_detector_used,
+        calibrator_applied=calibrator_applied,
     )
 
 
@@ -216,13 +228,19 @@ def analyze_video(video_path: str, num_frames: int = 16) -> VideoAggregation:
     frames = extract_frames(video_path, num_frames=num_frames)
 
     if settings.ENSEMBLE_MODE:
-        frame_results, face_detector_used, models_used = _analyze_with_efficientnet(frames)
+        frame_results, face_detector_used, models_used, calibrator_applied = _analyze_with_efficientnet(frames)
     else:
         frame_results = _analyze_with_vit(frames)
         face_detector_used = "mediapipe"
         models_used = [settings.IMAGE_MODEL_ID]
+        calibrator_applied = False
 
-    agg = aggregate(frame_results, models_used=models_used, face_detector_used=face_detector_used)
+    agg = aggregate(
+        frame_results,
+        models_used=models_used,
+        face_detector_used=face_detector_used,
+        calibrator_applied=calibrator_applied,
+    )
 
     # Phase 17.1 — temporal consistency on BGR frames
     try:

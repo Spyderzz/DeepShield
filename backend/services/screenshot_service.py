@@ -49,8 +49,10 @@ def run_ocr(pil_img: Image.Image) -> List[OCRBox]:
     return out
 
 
-def extract_full_text(boxes: List[OCRBox]) -> str:
-    return " ".join(b.text for b in boxes if b.text.strip())
+def extract_full_text(boxes: List[OCRBox], min_confidence: float = 0.30) -> str:
+    filtered = [b for b in boxes if b.text.strip() and b.confidence >= min_confidence]
+    filtered.sort(key=lambda b: (min(p[1] for p in b.bbox), min(p[0] for p in b.bbox)))
+    return " ".join(b.text for b in filtered)
 
 
 def map_phrases_to_boxes(boxes: List[OCRBox], manipulation_indicators) -> List[SuspiciousPhrase]:

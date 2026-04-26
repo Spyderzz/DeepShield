@@ -9,6 +9,7 @@ Local-disk implementation only; an S3 adapter can slot in at the same API.
 
 from __future__ import annotations
 
+import base64
 import hashlib
 import os
 from pathlib import Path
@@ -58,7 +59,8 @@ def save_bytes(data: bytes, sha: str, ext: str) -> str:
     dest.parent.mkdir(parents=True, exist_ok=True)
     if not dest.exists():
         dest.write_bytes(data)
-    return str(dest.relative_to(MEDIA_ROOT.parent)) if MEDIA_ROOT.parent in dest.parents else str(dest)
+    path = dest.relative_to(MEDIA_ROOT.parent) if MEDIA_ROOT.parent in dest.parents else dest
+    return path.as_posix()
 
 
 def save_file(src_path: str, sha: str, ext: str) -> str:
@@ -73,7 +75,7 @@ def save_file(src_path: str, sha: str, ext: str) -> str:
                 if not chunk:
                     break
                 dst.write(chunk)
-    return str(dest)
+    return dest.as_posix()
 
 
 def make_image_thumbnail(pil: Image.Image, sha: str) -> str | None:
@@ -120,4 +122,26 @@ def make_video_thumbnail(video_path: str, sha: str) -> str | None:
         return f"/media/thumbs/{sha}_400.jpg"
     except Exception as e:  # noqa: BLE001
         logger.warning(f"video thumbnail failed for {sha}: {e}")
+        return None
+
+
+def save_overlay(data_url: str, sha: str, suffix: str) -> str | None:
+    """Persist a base64 data-URL image as a PNG file for later retrieval.
+
+    Returns a URL-style path like /media/overlays/{sha}_{suffix}.png, or None on failure.
+    The suffix distinguishes overlay types: 'heatmap', 'ela', 'boxes'.
+    """
+    try:
+        _ensure_dirs()
+        overlay_dir = MEDIA_ROOT / "overlays"
+        overlay_dir.mkdir(parents=True, exist_ok=True)
+        dest = overlay_dir / f"{sha}_{suffix}.png"
+        if dest.exists():
+            return f"/media/overlays/{sha}_{suffix}.png"
+        # Strip the data URL prefix (e.g. "data:image/png;base64,")
+        raw_b64 = data_url.split(",", 1)[1] if "," in data_url else data_url
+        dest.write_bytes(base64.b64decode(raw_b64))
+        return f"/media/overlays/{sha}_{suffix}.png"
+    except Exception as e:  # noqa: BLE001
+        logger.warning(f"save_overlay failed for {sha}_{suffix}: {e}")
         return None

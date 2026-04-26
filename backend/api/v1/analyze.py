@@ -38,7 +38,7 @@ from services.screenshot_service import (
 )
 from services.ela_service import generate_ela_base64
 from services.exif_service import extract_exif
-from services.image_service import load_image_from_bytes, preprocess_and_classify
+from services.image_service import classify_image, load_image_from_bytes
 from services.llm_explainer import generate_llm_summary
 from schemas.common import ProcessingSummary, Verdict
 from services.artifact_detector import scan_artifacts
@@ -61,12 +61,13 @@ from services.storage import (
     make_video_thumbnail,
     save_bytes,
     save_file,
+    save_overlay,
     sha256_bytes,
     sha256_file,
 )
 from services.job_queue import registry as job_registry, run_job
 from utils.file_handler import read_upload_bytes, save_upload_to_tempfile
-from utils.scoring import compute_authenticity_score, get_verdict_label
+from utils.scoring import compute_authenticity_score, compute_video_authenticity_score, get_verdict_label
 
 router = APIRouter(prefix="/analyze", tags=["analyze"])
 
@@ -114,8 +115,7 @@ async def analyze_image(
             logger.info(f"cache hit image sha={media_hash[:12]} record={cached.id}")
             return ImageAnalysisResponse.model_validate(payload)
 
-    pil, clf = preprocess_and_classify(raw)
-    stages.append("classification")
+    pil = load_image_from_bytes(raw)
 
     indicators = scan_artifacts(pil, raw)
     stages.append("artifact_scanning")
@@ -157,16 +157,35 @@ async def analyze_image(
     except Exception as e:  # noqa: BLE001
         logger.warning(f"EXIF extraction failed, continuing: {e}")
 
+    clf = classify_image(pil, artifact_indicators=indicators, exif=exif_summary)
+    stages.append("classification")
+
+    analysis_id = str(uuid.uuid4())
+    vlm_bd = None
+    if user is not None and clf.no_face_analysis is not None:
+        try:
+            vlm_bd = generate_vlm_breakdown(pil, record_id=analysis_id)
+            if vlm_bd:
+                clf = classify_image(
+                    pil,
+                    artifact_indicators=indicators,
+                    exif=exif_summary,
+                    vlm_breakdown=vlm_bd,
+                )
+                stages.append("vlm_no_face_fusion")
+        except Exception as e:  # noqa: BLE001
+            logger.warning(f"VLM no-face fusion failed, continuing: {e}")
+
     score = compute_authenticity_score(clf.confidence, clf.label)
 
-    # Apply EXIF trust adjustment to the score
-    if exif_summary and exif_summary.trust_adjustment != 0:
-        score = int(round(max(0, min(100, score + exif_summary.trust_adjustment))))
+    # Apply EXIF trust adjustment.
+    # trust_adjustment convention: negative = more real → subtract to RAISE authenticity score.
+    # positive = more fake → subtract to LOWER authenticity score.
+    if clf.no_face_analysis is None and exif_summary and exif_summary.trust_adjustment != 0:
+        score = int(round(max(0, min(100, score - exif_summary.trust_adjustment))))
 
     label, severity = get_verdict_label(score)
     duration_ms = int((time.perf_counter() - start) * 1000)
-
-    analysis_id = str(uuid.uuid4())
 
     resp = ImageAnalysisResponse(
         analysis_id=analysis_id,
@@ -186,6 +205,8 @@ async def analyze_image(
             heatmap_status=heatmap_status,
             artifact_indicators=indicators,
             exif=exif_summary,
+            no_face_analysis=clf.no_face_analysis,
+            vlm_breakdown=vlm_bd,
         ),
         trusted_sources=[],
         contradicting_evidence=[],
@@ -194,6 +215,7 @@ async def analyze_image(
             total_duration_ms=duration_ms,
             model_used=settings.IMAGE_MODEL_ID,
             models_used=clf.models_used,
+            calibrator_applied=clf.calibrator_applied,
         ),
     )
 
@@ -208,6 +230,20 @@ async def analyze_image(
     resp.thumbnail_url = thumbnail_url
     if media_path:
         resp.media_path = media_path
+
+    # Persist overlay images so they survive page reloads (base64 excluded from DB)
+    if heatmap:
+        url = save_overlay(heatmap, media_hash, "heatmap")
+        if url:
+            resp.explainability.heatmap_url = url
+    if ela_b64:
+        url = save_overlay(ela_b64, media_hash, "ela")
+        if url:
+            resp.explainability.ela_url = url
+    if boxes_b64:
+        url = save_overlay(boxes_b64, media_hash, "boxes")
+        if url:
+            resp.explainability.boxes_url = url
 
     record = AnalysisRecord(
         user_id=user.id if user else None,
@@ -233,7 +269,7 @@ async def analyze_image(
         resp.explainability.llm_summary = llm_summary
         stages.append("llm_explanation")
 
-    if user is not None:
+    if user is not None and vlm_bd is None:
         try:
             vlm_bd = generate_vlm_breakdown(pil, record_id=str(record.id))
             if vlm_bd:
@@ -301,19 +337,13 @@ async def analyze_video_endpoint(
         logger.warning(f"Audio analysis failed, continuing: {_ae}")
 
     # Phase 17.3 — combined verdict formula
-    if agg.insufficient_faces:
-        score = 50
-        label = "Insufficient face content"
-        severity = "warning"
-    else:
-        visual_score = (1.0 - agg.mean_suspicious_prob) * 100.0
-        temporal_sc = agg.temporal.temporal_score if agg.temporal else visual_score
-        if audio_result and audio_result.has_audio:
-            combined = 0.50 * visual_score + 0.30 * temporal_sc + 0.20 * audio_result.audio_authenticity_score
-        else:
-            combined = 0.70 * visual_score + 0.30 * temporal_sc
-        score = int(round(max(0.0, min(100.0, combined))))
-        label, severity = get_verdict_label(score)
+    score, label, severity = compute_video_authenticity_score(
+        mean_suspicious_prob=agg.mean_suspicious_prob,
+        insufficient_faces=agg.insufficient_faces,
+        temporal_score=agg.temporal.temporal_score if agg.temporal else None,
+        audio_authenticity_score=audio_result.audio_authenticity_score if audio_result else None,
+        has_audio=bool(audio_result and audio_result.has_audio),
+    )
 
     duration_ms = int((time.perf_counter() - start) * 1000)
 
@@ -374,6 +404,7 @@ async def analyze_video_endpoint(
             total_duration_ms=duration_ms,
             model_used=settings.IMAGE_MODEL_ID,
             models_used=agg.models_used,
+            calibrator_applied=agg.calibrator_applied,
         ),
     )
 
@@ -478,10 +509,12 @@ async def analyze_text_endpoint(
         effective_fake_prob = news.truth_override.fake_prob_after
         stages.append("truth_override_applied")
 
-    # Weighted score: 70% classifier + 20% inverse sensationalism + 10% manipulation penalty
+    # Weighted score: keep classifier authoritative. Linguistic heuristics can
+    # lower confidence, but should not give a high floor when classifier is very fake.
     manip_penalty = min(len(manip) * 5, 30)
     raw_score = (1.0 - effective_fake_prob) * 100.0
-    weighted = raw_score * 0.70 + max(0, 100 - sens.score) * 0.20 + max(0, 100 - manip_penalty) * 0.10
+    heuristic_score = max(0, 100 - sens.score) * 0.60 + max(0, 100 - manip_penalty) * 0.40
+    weighted = raw_score * 0.90 + heuristic_score * 0.10
     score = int(round(max(0.0, min(100.0, weighted))))
     label, severity = get_verdict_label(score)
     duration_ms = int((time.perf_counter() - start) * 1000)
@@ -536,6 +569,7 @@ async def analyze_text_endpoint(
             stages_completed=stages,
             total_duration_ms=duration_ms,
             model_used=model_used,
+            calibrator_applied=False,
         ),
     )
 
@@ -636,12 +670,12 @@ async def analyze_screenshot_endpoint(
     manip_penalty = min(len(manip) * 5, 30)
     layout_penalty = min(len(layout) * 5, 15)
     raw_score = (1.0 - effective_fake_prob) * 100.0
-    weighted = (
-        raw_score * 0.65
-        + max(0, 100 - sens.score) * 0.20
-        + max(0, 100 - manip_penalty) * 0.10
-        + max(0, 100 - layout_penalty) * 0.05
+    heuristic_score = (
+        max(0, 100 - sens.score) * 0.45
+        + max(0, 100 - manip_penalty) * 0.35
+        + max(0, 100 - layout_penalty) * 0.20
     )
+    weighted = raw_score * 0.90 + heuristic_score * 0.10
     if not full_text.strip():
         weighted = 50
     score = int(round(max(0.0, min(100.0, weighted))))
@@ -697,6 +731,7 @@ async def analyze_screenshot_endpoint(
             stages_completed=stages,
             total_duration_ms=duration_ms,
             model_used=model_used_str,
+            calibrator_applied=False,
         ),
     )
 
@@ -789,17 +824,13 @@ async def analyze_video_async(
                 logger.warning(f"Audio analysis failed, continuing: {_ae}")
             progress("audio_analysis", 75)
 
-            if agg.insufficient_faces:
-                score_val, label_val, sev = 50, "Insufficient face content", "warning"
-            else:
-                visual_score = (1.0 - agg.mean_suspicious_prob) * 100.0
-                temporal_sc = agg.temporal.temporal_score if agg.temporal else visual_score
-                if audio_result and audio_result.has_audio:
-                    combined = 0.50 * visual_score + 0.30 * temporal_sc + 0.20 * audio_result.audio_authenticity_score
-                else:
-                    combined = 0.70 * visual_score + 0.30 * temporal_sc
-                score_val = int(round(max(0.0, min(100.0, combined))))
-                label_val, sev = get_verdict_label(score_val)
+            score_val, label_val, sev = compute_video_authenticity_score(
+                mean_suspicious_prob=agg.mean_suspicious_prob,
+                insufficient_faces=agg.insufficient_faces,
+                temporal_score=agg.temporal.temporal_score if agg.temporal else None,
+                audio_authenticity_score=audio_result.audio_authenticity_score if audio_result else None,
+                has_audio=bool(audio_result and audio_result.has_audio),
+            )
 
             from schemas.analyze import AudioExplainability
             audio_ex = None
@@ -852,6 +883,7 @@ async def analyze_video_async(
                     total_duration_ms=0,
                     model_used=settings.IMAGE_MODEL_ID,
                     models_used=agg.models_used,
+                    calibrator_applied=agg.calibrator_applied,
                 ),
             )
 

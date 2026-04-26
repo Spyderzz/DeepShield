@@ -121,8 +121,13 @@ class ImageExplainability(BaseModel):
     ela_base64: str = ""
     boxes_base64: str = ""
     heatmap_status: str = "success"  # success | failed | degraded
+    # Persistent file URLs — available on reload (not excluded from DB storage)
+    heatmap_url: str | None = None
+    ela_url: str | None = None
+    boxes_url: str | None = None
     artifact_indicators: List[ArtifactIndicator] = []
     exif: ExifSummary | None = None
+    no_face_analysis: dict | None = None
     llm_summary: LLMExplainabilitySummary | None = None
     vlm_breakdown: VLMBreakdown | None = None
 

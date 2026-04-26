@@ -4,6 +4,8 @@ from typing import List, Optional
 
 from pydantic import BaseModel, ConfigDict, Field
 
+ANALYSIS_CACHE_VERSION = "2026-04-26-accuracy-v3"
+
 
 class Verdict(BaseModel):
     model_config = ConfigDict(protected_namespaces=())
@@ -26,6 +28,7 @@ class TrustedSource(BaseModel):
     source_name: str
     title: str
     url: str
+    description: Optional[str] = None
     published_at: Optional[str] = None
     relevance_score: float = Field(ge=0.0, le=1.0)
 
@@ -87,3 +90,5 @@ class ProcessingSummary(BaseModel):
     total_duration_ms: int
     model_used: str
     models_used: List[str] = []  # all models that contributed (ensemble)
+    analysis_version: str = ANALYSIS_CACHE_VERSION
+    calibrator_applied: bool = False

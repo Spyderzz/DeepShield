@@ -109,6 +109,80 @@ def html_to_pdf(html: str, out_path: Path) -> None:
         logger.warning(f"xhtml2pdf encountered {result.err} warnings/errors during rendering (likely unsupported CSS properties).")
 
 
+def _fallback_pdf(record: AnalysisRecord, analysis_json: dict, out_path: Path) -> None:
+    """Generate a minimal report with ReportLab when xhtml2pdf cannot render."""
+    from reportlab.lib import colors
+    from reportlab.lib.pagesizes import A4
+    from reportlab.lib.styles import getSampleStyleSheet
+    from reportlab.lib.units import mm
+    from reportlab.platypus import Paragraph, SimpleDocTemplate, Spacer, Table, TableStyle
+
+    styles = getSampleStyleSheet()
+    doc = SimpleDocTemplate(
+        str(out_path),
+        pagesize=A4,
+        rightMargin=18 * mm,
+        leftMargin=18 * mm,
+        topMargin=16 * mm,
+        bottomMargin=16 * mm,
+    )
+    verdict = analysis_json.get("verdict", {})
+    expl = analysis_json.get("explainability") or {}
+    summary = analysis_json.get("processing_summary") or {}
+
+    story = [
+        Paragraph("DeepShield Analysis Report", styles["Title"]),
+        Paragraph(f"Record #{record.id} · {analysis_json.get('media_type', record.media_type)}", styles["Normal"]),
+        Spacer(1, 8),
+        Paragraph("Verdict", styles["Heading2"]),
+        Table(
+            [
+                ["Label", verdict.get("label", record.verdict)],
+                ["Authenticity score", f"{verdict.get('authenticity_score', record.authenticity_score)}/100"],
+                ["Model label", verdict.get("model_label", "")],
+                ["Model confidence", f"{float(verdict.get('model_confidence', 0.0)):.3f}"],
+            ],
+            colWidths=[45 * mm, 115 * mm],
+        ),
+        Spacer(1, 8),
+    ]
+
+    exif = expl.get("exif") or {}
+    if exif:
+        story.extend([
+            Paragraph("EXIF Metadata", styles["Heading2"]),
+            Table(
+                [[k, str(v)] for k, v in exif.items() if v not in (None, "")],
+                colWidths=[45 * mm, 115 * mm],
+            ),
+            Spacer(1, 8),
+        ])
+
+    artifacts = expl.get("artifact_indicators") or []
+    if artifacts:
+        rows = [["Type", "Severity", "Confidence"]]
+        rows.extend([
+            [a.get("type", ""), a.get("severity", ""), f"{float(a.get('confidence', 0.0)):.2f}"]
+            for a in artifacts[:8]
+        ])
+        table = Table(rows, colWidths=[70 * mm, 45 * mm, 45 * mm])
+        table.setStyle(TableStyle([
+            ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#EEF2FF")),
+            ("GRID", (0, 0), (-1, -1), 0.25, colors.HexColor("#E5E7EB")),
+            ("FONTNAME", (0, 0), (-1, 0), "Helvetica-Bold"),
+        ]))
+        story.extend([Paragraph("Artifact Indicators", styles["Heading2"]), table, Spacer(1, 8)])
+
+    story.extend([
+        Paragraph("Processing Summary", styles["Heading2"]),
+        Paragraph(f"Model: {summary.get('model_used', '')}", styles["Normal"]),
+        Paragraph(f"Stages: {', '.join(summary.get('stages_completed') or [])}", styles["Normal"]),
+        Spacer(1, 10),
+        Paragraph(analysis_json.get("responsible_ai_notice", "AI-based analysis may not be 100% accurate."), styles["Italic"]),
+    ])
+    doc.build(story)
+
+
 def generate_report(record: AnalysisRecord) -> Path:
     out_dir = _ensure_dir()
     filename = f"deepshield_{record.id}_{uuid.uuid4().hex[:8]}.pdf"
@@ -116,7 +190,11 @@ def generate_report(record: AnalysisRecord) -> Path:
 
     data = json.loads(record.result_json)
     html = render_html(data)
-    html_to_pdf(html, out_path)
+    try:
+        html_to_pdf(html, out_path)
+    except Exception as exc:  # noqa: BLE001
+        logger.warning(f"xhtml2pdf failed for report {record.id}, using fallback renderer: {exc}")
+        _fallback_pdf(record, data, out_path)
     logger.info(f"Report generated id={record.id} path={out_path} size={out_path.stat().st_size}B")
     return out_path
 

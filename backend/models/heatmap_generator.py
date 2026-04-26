@@ -107,14 +107,29 @@ def _compute_gradcam_pp(
     return grayscale_cam, rgb_float
 
 
+def _face_bbox_from_detections(frame_data: dict, orig_h: int, orig_w: int) -> Optional[tuple[int,int,int,int]]:
+    """Extract (ymin, xmin, ymax, xmax) in pixel coords from BlazeFace frame_data."""
+    detections = frame_data.get("detections", [])
+    if len(detections) == 0:
+        return None
+    d = detections[0]  # first (highest-confidence) face
+    ymin = int(max(0, d[0]))
+    xmin = int(max(0, d[1]))
+    ymax = int(min(orig_h, d[2]))
+    xmax = int(min(orig_w, d[3]))
+    if ymax <= ymin or xmax <= xmin:
+        return None
+    return ymin, xmin, ymax, xmax
+
+
 def _compute_gradcam_pp_efficientnet(
     pil_img: Image.Image,
-) -> tuple[np.ndarray, np.ndarray, Literal["attention", "gradcam++"]]:
+) -> tuple[np.ndarray, Optional[tuple[int,int,int,int]], Literal["attention", "gradcam++"]]:
     """Grad-CAM++ for EfficientNetAutoAttB4.
 
-    Returns (grayscale_cam, rgb_float, heatmap_source).
-    Prefers the model's built-in attention map; falls back to Grad-CAM++ on the
-    last MBConv block if attention extraction fails.
+    Returns (grayscale_cam_224, face_bbox_pixels_or_None, heatmap_source).
+    grayscale_cam_224 is in the 224x224 coordinate space of the face crop.
+    face_bbox_pixels is (ymin, xmin, ymax, xmax) in original image pixels.
     """
     loader = get_model_loader()
     eff = loader.load_efficientnet()
@@ -124,39 +139,58 @@ def _compute_gradcam_pp_efficientnet(
     if pil_img.mode != "RGB":
         pil_img = pil_img.convert("RGB")
     img_np = np.array(pil_img)
+    orig_h, orig_w = img_np.shape[:2]
 
-    # Prepare face crop (same path as detect_image).
     frame_data = eff.face_extractor.process_image(img=img_np)
     faces: list = frame_data.get("faces", [])
     if not faces:
         raise ValueError("no_face")
 
+    face_bbox = _face_bbox_from_detections(frame_data, orig_h, orig_w)
+
     face_t = eff._face_tensor(faces[0]).unsqueeze(0).to(eff.device)
 
-    # Resize the face crop to float [0,1] for overlay.
-    face_np = faces[0]
-    h, w = face_np.shape[:2]
-    rgb_float = face_np.astype(np.float32) / 255.0
-    if rgb_float.shape[:2] != (224, 224):
-        rgb_float = cv2.resize(rgb_float, (224, 224)).astype(np.float32)
-
-    # Try Grad-CAM++ on last MBConv block (_blocks[-1]).
     try:
         net = eff.net
         target_layers = [net.efficientnet._blocks[-1]]
-
         face_t.requires_grad_(True)
         for p in net.parameters():
             p.requires_grad_(True)
-
         with GradCAMPlusPlus(model=net, target_layers=target_layers) as cam:
             grayscale_cam = cam(input_tensor=face_t, targets=None)[0]
-
-        return grayscale_cam, rgb_float, "gradcam++"
+        return grayscale_cam, face_bbox, "gradcam++"
     except Exception as e:
         logger.warning(f"EfficientNet Grad-CAM++ failed ({e}), using uniform fallback")
         grayscale_cam = np.ones((224, 224), dtype=np.float32) * 0.5
-        return grayscale_cam, rgb_float, "gradcam++"
+        return grayscale_cam, face_bbox, "gradcam++"
+
+
+def _cam_to_full_image(
+    grayscale_cam: np.ndarray,
+    pil_img: Image.Image,
+    face_bbox: Optional[tuple[int,int,int,int]] = None,
+) -> tuple[np.ndarray, np.ndarray]:
+    """Resize grayscale_cam to the original image dimensions.
+
+    For EfficientNet (face-crop cam + known bbox): places the cam activation
+    at the face location; background activation is 0.
+    For ViT (full-image cam): bilinear resize to original dims.
+
+    Returns (cam_full [H,W] float32), orig_np [H,W,3] float32 in [0,1]).
+    """
+    orig_w, orig_h = pil_img.size
+    orig_np = np.array(pil_img.convert("RGB")).astype(np.float32) / 255.0
+
+    if face_bbox is not None:
+        ymin, xmin, ymax, xmax = face_bbox
+        face_h, face_w = ymax - ymin, xmax - xmin
+        cam_full = np.zeros((orig_h, orig_w), dtype=np.float32)
+        cam_resized = cv2.resize(grayscale_cam, (face_w, face_h), interpolation=cv2.INTER_LINEAR)
+        cam_full[ymin:ymax, xmin:xmax] = cam_resized
+    else:
+        cam_full = cv2.resize(grayscale_cam, (orig_w, orig_h), interpolation=cv2.INTER_LINEAR)
+
+    return cam_full, orig_np
 
 
 def generate_heatmap_base64(
@@ -164,26 +198,34 @@ def generate_heatmap_base64(
     target_class_idx: Optional[int] = None,
     model_family: Literal["vit", "efficientnet"] = "vit",
 ) -> tuple[str, str]:
-    """Produce a base64 data-URL PNG of the Grad-CAM++ overlay.
+    """Produce a base64 data-URL PNG of the Grad-CAM++ overlay at original image resolution.
 
-    Returns (base64_png, heatmap_source) where heatmap_source is one of
-    "gradcam++", "attention", "fallback", "none".
+    Returns (base64_png, heatmap_source).
     """
     if model_family == "efficientnet":
         try:
-            grayscale_cam, rgb_float, source = _compute_gradcam_pp_efficientnet(pil_img)
+            grayscale_cam, face_bbox, source = _compute_gradcam_pp_efficientnet(pil_img)
+            cam_full, orig_np = _cam_to_full_image(grayscale_cam, pil_img, face_bbox)
         except ValueError:
-            logger.info("EfficientNet heatmap skipped — no face detected")
-            return "", "none"
+            # BlazeFace found no face — fall back to ViT Grad-CAM on the full image.
+            logger.info("EfficientNet heatmap: no face detected — falling back to ViT Grad-CAM++")
+            try:
+                grayscale_cam, _ = _compute_gradcam_pp(pil_img, target_class_idx)
+                cam_full, orig_np = _cam_to_full_image(grayscale_cam, pil_img, None)
+                source = "vit_fallback"
+            except Exception as fe:
+                logger.warning(f"ViT fallback heatmap also failed: {fe}")
+                return "", "none"
         except Exception as e:
             logger.warning(f"EfficientNet heatmap failed: {e}")
             return "", "fallback"
     else:
-        grayscale_cam, rgb_float = _compute_gradcam_pp(pil_img, target_class_idx)
+        grayscale_cam, _ = _compute_gradcam_pp(pil_img, target_class_idx)
         source = "gradcam++"
+        cam_full, orig_np = _cam_to_full_image(grayscale_cam, pil_img, None)
 
-    overlay = show_cam_on_image(rgb_float, grayscale_cam, use_rgb=True)
-    logger.info(f"Heatmap generated ({overlay.shape[0]}x{overlay.shape[1]}) source={source}")
+    overlay = show_cam_on_image(orig_np, cam_full, use_rgb=True)
+    logger.info(f"Heatmap generated ({overlay.shape[1]}x{overlay.shape[0]}) source={source}")
     return _encode_overlay_to_base64(overlay), source
 
 
@@ -193,41 +235,46 @@ def generate_boxes_base64(
     top_k: int = 5,
     threshold: float = 0.4,
 ) -> str:
-    """Produce bounding boxes around top-K connected components from Grad-CAM++ activation.
-    Renders colored boxes (red/yellow/orange by intensity) on the original image.
+    """Draw Grad-CAM++ activation bounding boxes on the full original image.
+
+    Uses the ViT cam (full-image coverage), resizes it to original dimensions,
+    finds contours, and draws boxes at the correct pixel locations.
     """
-    grayscale_cam, rgb_float = _compute_gradcam_pp(pil_img, target_class_idx)
+    grayscale_cam, _ = _compute_gradcam_pp(pil_img, target_class_idx)
 
-    h, w = rgb_float.shape[:2]
-    base_img = (rgb_float * 255).astype(np.uint8).copy()
+    # Use original image as the canvas — resize cam to match
+    orig_w, orig_h = pil_img.size
+    base_img = np.array(pil_img.convert("RGB")).copy()
+    cam_full = cv2.resize(grayscale_cam, (orig_w, orig_h), interpolation=cv2.INTER_LINEAR)
 
-    # Threshold the heatmap to find activated regions
-    binary = (grayscale_cam >= threshold).astype(np.uint8) * 255
+    binary = (cam_full >= threshold).astype(np.uint8) * 255
     contours, _ = cv2.findContours(binary, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
 
     if not contours:
         logger.info("No significant activation regions found for bounding boxes")
         return _encode_overlay_to_base64(base_img)
 
-    # Sort by area descending, take top_k
     contours = sorted(contours, key=cv2.contourArea, reverse=True)[:top_k]
 
-    # Color by mean activation intensity within each box
+    # Scale line width to image size
+    line_w = max(2, orig_w // 300)
+    font_scale = max(0.5, orig_w / 1200)
+
     for cnt in contours:
         x, y, bw, bh = cv2.boundingRect(cnt)
-        region_activation = grayscale_cam[y:y + bh, x:x + bw].mean()
+        region_activation = cam_full[y:y + bh, x:x + bw].mean()
 
         if region_activation >= 0.7:
-            color = (220, 40, 40)    # red — high suspicion
+            color = (220, 40, 40)
         elif region_activation >= 0.5:
-            color = (240, 140, 20)   # orange — medium
+            color = (240, 140, 20)
         else:
-            color = (230, 200, 40)   # yellow — lower
+            color = (230, 200, 40)
 
-        cv2.rectangle(base_img, (x, y), (x + bw, y + bh), color, 2)
+        cv2.rectangle(base_img, (x, y), (x + bw, y + bh), color, line_w)
         label = f"{region_activation * 100:.0f}%"
-        cv2.putText(base_img, label, (x, max(y - 6, 12)),
-                     cv2.FONT_HERSHEY_SIMPLEX, 0.4, color, 1, cv2.LINE_AA)
+        cv2.putText(base_img, label, (x, max(y - 6, 14)),
+                    cv2.FONT_HERSHEY_SIMPLEX, font_scale, color, line_w, cv2.LINE_AA)
 
-    logger.info(f"Bounding boxes generated: {len(contours)} regions")
+    logger.info(f"Bounding boxes generated: {len(contours)} regions on {orig_w}x{orig_h} image")
     return _encode_overlay_to_base64(base_img)

@@ -44,18 +44,20 @@ def detect_gan_hf_artifact(pil_img: Image.Image) -> ArtifactIndicator | None:
 
         total = float(mag.sum() + 1e-9)
         hf = float(mag[hf_mask].sum())
-        ratio = hf / total  # typically 0.05–0.20 for natural photos
+        ratio = hf / total
 
-        # normalize to [0,1] suspiciousness
-        score = max(0.0, min(1.0, (ratio - 0.10) / 0.20))
+        # Passport/ID portraits often have strong fine detail from hair, fabric,
+        # sharpening, and JPEG ringing. Treat this as a weak forensic signal
+        # unless it is extreme; the classifier ensemble remains authoritative.
+        score = max(0.0, min(1.0, (ratio - 0.24) / 0.28))
         sev = _severity_from_score(score)
         return ArtifactIndicator(
             type="gan_artifact",
             severity=sev,
             description=(
                 f"High-frequency energy ratio {ratio:.3f} — "
-                + ("elevated HF energy consistent with GAN/diffusion outputs" if score > 0.4
-                   else "natural frequency falloff")
+                + ("elevated fine-detail/compression energy; review with model score" if score > 0.4
+                   else "within expected range for a natural photo")
             ),
             confidence=float(score),
         )
@@ -141,6 +143,8 @@ def detect_face_based_artifacts(pil_img: Image.Image) -> List[ArtifactIndicator]
         from models.model_loader import get_model_loader
 
         detector = get_model_loader().load_face_detector()
+        if detector is None:
+            return results
         rgb = np.asarray(pil_img.convert("RGB"))
         h, w = rgb.shape[:2]
         mp_result = detector.process(rgb)
