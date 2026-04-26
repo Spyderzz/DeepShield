@@ -1,3 +1,6 @@
+import json
+from typing import Any
+from pydantic import field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -7,6 +10,16 @@ class Settings(BaseSettings):
     APP_PORT: int = 8000
     DEBUG: bool = False
     CORS_ORIGINS: list[str] = ["http://localhost:5173"]
+
+    @field_validator("CORS_ORIGINS", mode="before")
+    @classmethod
+    def assemble_cors_origins(cls, v: Any) -> list[str]:
+        """Parse CORS_ORIGINS from string (JSON or comma-separated) into a list."""
+        if isinstance(v, str) and not v.startswith("["):
+            return [i.strip() for i in v.split(",")]
+        elif isinstance(v, str) and v.startswith("["):
+            return json.loads(v)
+        return v
 
     # Database
     DATABASE_URL: str = "sqlite:///./deepshield.db"
