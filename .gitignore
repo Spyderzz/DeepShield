@@ -14,6 +14,7 @@ env/
 # Uploads / generated
 backend/temp_uploads/
 backend/reports/
+backend/temp_reports/
 backend/deepshield.db
 
 # Node
@@ -38,7 +39,9 @@ backend/training/datasets/
 backend/training/weights/
 
 # Logs & Tool Outputs
+logs/
 graphify-out/
+.hf-space-sync/
 
 # ICPR2020 DFDC model repo (large, reference-only — clone separately)
 backend/models/icpr2020dfdc/
