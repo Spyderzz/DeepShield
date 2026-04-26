@@ -7,7 +7,6 @@ ENV PYTHONDONTWRITEBYTECODE=1
 
 # Tell HuggingFace where to cache downloaded models (ViT, BERT)
 ENV HF_HOME=/app/.cache/huggingface
-ENV TRANSFORMERS_CACHE=/app/.cache/huggingface
 
 # Set working directory
 WORKDIR /app

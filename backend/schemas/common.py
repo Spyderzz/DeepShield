@@ -61,6 +61,8 @@ class ExifSummary(BaseModel):
 
 
 class LLMExplainabilitySummary(BaseModel):
+    model_config = ConfigDict(protected_namespaces=())
+
     paragraph: str = ""
     bullets: List[str] = []
     model_used: str = ""
@@ -73,6 +75,8 @@ class VLMComponentScore(BaseModel):
 
 
 class VLMBreakdown(BaseModel):
+    model_config = ConfigDict(protected_namespaces=())
+
     facial_symmetry: VLMComponentScore = VLMComponentScore()
     skin_texture: VLMComponentScore = VLMComponentScore()
     lighting_consistency: VLMComponentScore = VLMComponentScore()

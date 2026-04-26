@@ -22,10 +22,8 @@ if str(_ICPR_ROOT) not in sys.path:
 if _NOTEBOOK_DIR not in sys.path:
     sys.path.insert(0, _NOTEBOOK_DIR)
 
-# These imports are valid only after the sys.path patch above.
-from blazeface import BlazeFace, FaceExtractor  # noqa: E402
-from architectures import fornet, weights  # noqa: E402
-from isplutils import utils as ispl_utils  # noqa: E402
+# These imports must be handled carefully as they rely on the sys.path patch above.
+# We move them inside the class or use dynamic imports to ensure stability on HF.
 
 # Default calibrator path — populated by scripts/fit_calibrator.py.
 _CALIBRATOR_PATH = Path(__file__).resolve().parent.parent / "models" / "efficientnet_calibrator.pkl"
@@ -61,6 +59,11 @@ class EfficientNetDetector:
         device: str = "cpu",
         calibrator_path: Optional[Path] = None,
     ) -> None:
+        # Dynamic imports to ensure sys.path patching is active
+        from blazeface import BlazeFace, FaceExtractor
+        from architectures import fornet, weights
+        from isplutils import utils as ispl_utils
+
         self.device = torch.device(device)
         self.model_name = model_name
         self.train_db = train_db

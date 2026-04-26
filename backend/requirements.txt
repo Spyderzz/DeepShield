@@ -31,7 +31,7 @@ mediapipe==0.10.14
 
 # === Phase 12: Explainability v2 ===
 exifread==3.0.0
-google-generativeai>=0.3.0    # Gemini provider for LLM explainability
+google-genai>=0.1.0    # New Gemini SDK (replaces google-generativeai)
 openai>=1.0.0                 # OpenAI provider (alternative to Gemini)
 
 # === Phase 14: PDF v2 donut chart ===
@@ -55,6 +55,8 @@ xhtml2pdf==0.2.16
 
 # === Phase 8: Auth ===
 email-validator==2.2.0
+reportlab==4.2.5        # Fallback PDF generation
+scikit-learn>=1.5.0     # Required for Isotonic Calibrator in EfficientNet
 
 # === Phase 15: Security Hardening ===
 slowapi==0.1.9

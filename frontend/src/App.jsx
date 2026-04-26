@@ -11,6 +11,7 @@ import ContactPage from './pages/ContactPage.jsx';
 import ModelsPage from './pages/ModelsPage.jsx';
 import NotFoundPage from './pages/NotFoundPage.jsx';
 import { useAuth } from './contexts/AuthContext.jsx';
+import { warmupBackend } from './services/api.js';
 
 function ScrollToTop() {
   const { pathname } = useLocation();
@@ -32,6 +33,11 @@ function ProtectedRoute({ children }) {
 
 export default function App() {
   const { authReady } = useAuth();
+
+  useEffect(() => {
+    // Fire-and-forget warm-up to reduce first-request latency after HF sleep.
+    void warmupBackend();
+  }, []);
 
   if (!authReady) {
     return (

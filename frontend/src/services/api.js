@@ -5,6 +5,44 @@ export const api = axios.create({
   timeout: 120000,
 });
 
+let warmupPromise = null;
+
+/**
+ * Wake sleeping backends (HF cold starts) by probing health endpoints with backoff.
+ * This is intentionally non-throwing for callers so UI can continue rendering.
+ */
+export async function warmupBackend({ attempts = 6, initialDelayMs = 1200 } = {}) {
+  if (warmupPromise) return warmupPromise;
+
+  warmupPromise = (async () => {
+    let delay = initialDelayMs;
+
+    for (let i = 0; i < attempts; i += 1) {
+      try {
+        const health = await api.get('/health', {
+          timeout: 8000,
+          validateStatus: () => true,
+        });
+
+        if (health.status === 200) {
+          // Optional deeper check; keep best-effort and non-blocking.
+          await api.get('/health/ready', { timeout: 10000, validateStatus: () => true });
+          return true;
+        }
+      } catch (_e) {
+        // Backend may still be waking up.
+      }
+
+      await new Promise((resolve) => setTimeout(resolve, delay));
+      delay = Math.min(delay * 2, 10000);
+    }
+
+    return false;
+  })();
+
+  return warmupPromise;
+}
+
 api.interceptors.request.use((config) => {
   const token = sessionStorage.getItem('deepshield.token');
   if (token) {
