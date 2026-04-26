@@ -1,7 +1,7 @@
 import json
-from typing import Any
+from typing import Annotated, Any
 from pydantic import field_validator
-from pydantic_settings import BaseSettings, SettingsConfigDict
+from pydantic_settings import BaseSettings, NoDecode, SettingsConfigDict
 
 
 class Settings(BaseSettings):
@@ -9,16 +9,33 @@ class Settings(BaseSettings):
     APP_HOST: str = "0.0.0.0"
     APP_PORT: int = 8000
     DEBUG: bool = False
-    CORS_ORIGINS: list[str] = ["http://localhost:5173"]
+    # NoDecode prevents pydantic-settings from forcing JSON parsing first.
+    # This lets us accept JSON arrays, CSV strings, single origins, and empty values.
+    CORS_ORIGINS: Annotated[list[str], NoDecode] = ["http://localhost:5173"]
 
     @field_validator("CORS_ORIGINS", mode="before")
     @classmethod
     def assemble_cors_origins(cls, v: Any) -> list[str]:
         """Parse CORS_ORIGINS from string (JSON or comma-separated) into a list."""
-        if isinstance(v, str) and not v.startswith("["):
-            return [i.strip() for i in v.split(",")]
-        elif isinstance(v, str) and v.startswith("["):
-            return json.loads(v)
+        if v is None:
+            return ["http://localhost:5173"]
+
+        if isinstance(v, str):
+            raw = v.strip()
+            if not raw:
+                return ["http://localhost:5173"]
+
+            if raw.startswith("["):
+                parsed = json.loads(raw)
+                if isinstance(parsed, list):
+                    return [str(i).strip() for i in parsed if str(i).strip()]
+
+            # Supports single origin and comma-separated origins.
+            return [i.strip() for i in raw.split(",") if i.strip()]
+
+        if isinstance(v, list):
+            return [str(i).strip() for i in v if str(i).strip()]
+
         return v
 
     # Database
