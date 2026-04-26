@@ -11,8 +11,12 @@ function resolveMediaUrl(url) {
   if (!url) return null;
   url = String(url).replaceAll('\\', '/');
   if (url.startsWith('http://') || url.startsWith('https://') || url.startsWith('data:')) return url;
-  // Vite dev-server proxies /media/* → backend; ensure leading slash
-  return url.startsWith('/') ? url : `/${url}`;
+  const path = url.startsWith('/') ? url : `/${url}`;
+  const apiBase = import.meta.env.VITE_API_BASE_URL || '/api/v1';
+  if (apiBase.startsWith('http') && path.startsWith('/media/')) {
+    return `${apiBase.replace(/\/api\/v1\/?$/, '')}${path}`;
+  }
+  return path;
 }
 
 export default function ResultsPage() {

@@ -6,8 +6,8 @@ export async function generateReport(recordId) {
 }
 
 export function reportDownloadUrl(recordId) {
-  // axios baseURL is /api/v1; return absolute path for <a download>
-  return `/api/v1/report/${recordId}/download`;
+  const base = (import.meta.env.VITE_API_BASE_URL || '/api/v1').replace(/\/$/, '');
+  return `${base}/report/${recordId}/download`;
 }
 
 export async function downloadReportBlob(recordId) {

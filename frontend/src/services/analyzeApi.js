@@ -1,45 +1,60 @@
 import { api } from './api.js';
 
-export async function analyzeImage(file) {
+function cleanOptions(options = {}) {
+  return {
+    cache: options.cache !== false,
+    language_hint: options.languageHint || 'auto',
+  };
+}
+
+export async function analyzeImage(file, options) {
   const fd = new FormData();
   fd.append('file', file);
   const { data } = await api.post('/analyze/image', fd, {
     headers: { 'Content-Type': 'multipart/form-data' },
+    params: cleanOptions(options),
   });
   return data;
 }
 
-export async function analyzeVideo(file) {
+export async function analyzeVideo(file, options) {
   const fd = new FormData();
   fd.append('file', file);
   const { data } = await api.post('/analyze/video', fd, {
     headers: { 'Content-Type': 'multipart/form-data' },
+    params: cleanOptions(options),
     timeout: 300000,
   });
   return data;
 }
 
-export async function analyzeText(text) {
-  const { data } = await api.post('/analyze/text', { text });
+export async function analyzeText(text, options) {
+  const { data } = await api.post('/analyze/text', {
+    text,
+    cache: options?.cache !== false,
+    language_hint: options?.languageHint || 'auto',
+  });
   return data;
 }
 
-export async function analyzeScreenshot(file) {
+export async function analyzeScreenshot(file, options) {
   const fd = new FormData();
   fd.append('file', file);
   const { data } = await api.post('/analyze/screenshot', fd, {
     headers: { 'Content-Type': 'multipart/form-data' },
+    params: cleanOptions(options),
     timeout: 180000,
   });
   return data;
 }
 
 // Phase 19.3 — async video with job polling
-export async function submitVideoJob(file) {
+export async function submitVideoJob(file, options) {
   const fd = new FormData();
   fd.append('file', file);
   const { data } = await api.post('/analyze/video/async', fd, {
     headers: { 'Content-Type': 'multipart/form-data' },
+    params: cleanOptions(options),
     timeout: 120000,
   });
   return data; // { job_id, status, cached }

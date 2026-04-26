@@ -5,7 +5,7 @@ import LayerStack from '../components/layout/LayerStack.jsx';
 import useDottedSurface from '../hooks/useDottedSurface.js';
 import { listHistory } from '../services/historyApi.js';
 import {
-  analyzeImage, analyzeVideo, analyzeText, analyzeScreenshot,
+  analyzeImage, analyzeText, analyzeScreenshot, submitVideoJob, pollVideoJob,
 } from '../services/analyzeApi.js';
 import './deepshield-landing.css';
 import './deepshield-pages.css';
@@ -22,6 +22,16 @@ const MODE_STAGES = {
   video:      ['Upload', 'Extract frames', 'Per-frame classify', 'Temporal consistency', 'Audio lip-sync', 'LLM summary'],
   text:       ['Paste', 'Tokenize (XLM-R)', 'Sensationalism', 'NER + source lookup', 'Truth-override', 'LLM summary'],
   screenshot: ['Upload', 'EasyOCR', 'Layout anomaly', 'Claim credibility', 'Phrase map', 'LLM summary'],
+};
+
+const VIDEO_STAGE_PROGRESS = {
+  queued: 5,
+  frame_extraction: 20,
+  aggregation: 60,
+  audio_analysis: 75,
+  storage: 86,
+  persist: 95,
+  done: 100,
 };
 
 const SAMPLE_SRC = 'https://images.unsplash.com/photo-1531123897727-8f129e1688ce?w=640&q=80&auto=format&fit=crop';
@@ -96,11 +106,30 @@ export default function AnalyzePage() {
     setActiveStage(0);
     setStage('processing');
     try {
+      const options = { cache, languageHint: lang };
       let data;
-      if (mode === 'image')           data = await analyzeImage(payload);
-      else if (mode === 'video')      data = await analyzeVideo(payload);
-      else if (mode === 'text')       data = await analyzeText(payload);
-      else if (mode === 'screenshot') data = await analyzeScreenshot(payload);
+      if (mode === 'image') {
+        data = await analyzeImage(payload, options);
+      } else if (mode === 'video') {
+        const job = await submitVideoJob(payload, options);
+        jobId.current = job.job_id || jobId.current;
+        data = await pollVideoJob(job.job_id, {
+          onProgress: (j) => {
+            const nextProgress = typeof j.progress === 'number'
+              ? j.progress
+              : VIDEO_STAGE_PROGRESS[j.stage] || 0;
+            setProgress(Math.max(0, Math.min(99, nextProgress)));
+            setActiveStage(Math.min(
+              MODE_STAGES.video.length - 1,
+              Math.floor(nextProgress / (100 / MODE_STAGES.video.length)),
+            ));
+          },
+        });
+      } else if (mode === 'text') {
+        data = await analyzeText(payload, options);
+      } else if (mode === 'screenshot') {
+        data = await analyzeScreenshot(payload, options);
+      }
       setProgress(100);
       setActiveStage(MODE_STAGES[mode].length - 1);
       const id = data?.record_id || data?.analysis_id;

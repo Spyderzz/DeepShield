@@ -4,7 +4,7 @@ import time
 import uuid
 from datetime import datetime, timezone
 
-from fastapi import APIRouter, BackgroundTasks, Body, Depends, File, HTTPException, Request, Response, UploadFile, status
+from fastapi import APIRouter, BackgroundTasks, Body, Depends, File, HTTPException, Query, Request, Response, UploadFile, status
 from pydantic import BaseModel
 from loguru import logger
 from sqlalchemy.orm import Session
@@ -78,6 +78,13 @@ VIDEO_NUM_FRAMES = 16
 _IMAGE_EXCLUDE = {"explainability": {"heatmap_base64", "ela_base64", "boxes_base64"}}
 
 
+def _resolve_language_hint(text: str, language_hint: str | None) -> str:
+    hint = (language_hint or "auto").strip().lower()
+    if hint and hint != "auto":
+        return hint
+    return detect_language(text)
+
+
 def _compute_llm_summary(resp, *, record_id: int, user, media_kind: str, exclude: dict | None = None):
     """Generate the LLM summary for `resp`. Swallows provider errors gracefully."""
     try:
@@ -94,6 +101,8 @@ def _compute_llm_summary(resp, *, record_id: int, user, media_kind: str, exclude
 async def analyze_image(
     request: Request,
     response: Response,
+    cache: bool = Query(default=True),
+    language_hint: str = Query(default="auto"),
     file: UploadFile = File(...),
     db: Session = Depends(get_db),
     user: User | None = Depends(optional_current_user),
@@ -108,7 +117,7 @@ async def analyze_image(
 
     # Phase 19.1 — SHA-256 dedup cache
     media_hash = sha256_bytes(raw)
-    cached = lookup_cached(db, media_hash=media_hash, media_type="image", user_id=user.id if user else None)
+    cached = lookup_cached(db, media_hash=media_hash, media_type="image", user_id=user.id if user else None) if cache else None
     if cached is not None:
         payload = cached_payload(cached)
         if payload is not None:
@@ -287,6 +296,8 @@ async def analyze_image(
 async def analyze_video_endpoint(
     request: Request,
     response: Response,
+    cache: bool = Query(default=True),
+    language_hint: str = Query(default="auto"),
     file: UploadFile = File(...),
     db: Session = Depends(get_db),
     user: User | None = Depends(optional_current_user),
@@ -302,7 +313,7 @@ async def analyze_video_endpoint(
 
     # Phase 19.1 — dedup cache (hash temp file before running pipeline)
     media_hash = sha256_file(path)
-    cached = lookup_cached(db, media_hash=media_hash, media_type="video", user_id=user.id if user else None)
+    cached = lookup_cached(db, media_hash=media_hash, media_type="video", user_id=user.id if user else None) if cache else None
     if cached is not None:
         payload = cached_payload(cached)
         if payload is not None:
@@ -463,6 +474,8 @@ async def analyze_video_endpoint(
 
 class TextAnalyzeBody(BaseModel):
     text: str
+    cache: bool = True
+    language_hint: str = "auto"
 
 
 @router.post("/text", response_model=TextAnalysisResponse)
@@ -479,7 +492,7 @@ async def analyze_text_endpoint(
     stages: list[str] = []
 
     # Phase 13: language detection — routes to multilang model when non-English
-    lang = detect_language(body.text)
+    lang = _resolve_language_hint(body.text, body.language_hint)
     stages.append("language_detection")
 
     clf = classify_text(body.text, language=lang)
@@ -600,6 +613,8 @@ async def analyze_text_endpoint(
 async def analyze_screenshot_endpoint(
     request: Request,
     response: Response,
+    cache: bool = Query(default=True),
+    language_hint: str = Query(default="auto"),
     file: UploadFile = File(...),
     db: Session = Depends(get_db),
     user: User | None = Depends(optional_current_user),
@@ -614,7 +629,7 @@ async def analyze_screenshot_endpoint(
 
     # Phase 19.1 — dedup cache
     media_hash = sha256_bytes(raw)
-    cached = lookup_cached(db, media_hash=media_hash, media_type="screenshot", user_id=user.id if user else None)
+    cached = lookup_cached(db, media_hash=media_hash, media_type="screenshot", user_id=user.id if user else None) if cache else None
     if cached is not None:
         payload = cached_payload(cached)
         if payload is not None:
@@ -628,7 +643,7 @@ async def analyze_screenshot_endpoint(
     full_text = extract_full_text(ocr_boxes)
 
     # Phase 13: language detection on extracted OCR text
-    lang = detect_language(full_text) if full_text else "en"
+    lang = _resolve_language_hint(full_text, language_hint) if full_text else "en"
     stages.append("language_detection")
 
     clf = classify_text(full_text, language=lang) if full_text else None
@@ -778,6 +793,8 @@ async def analyze_video_async(
     request: Request,
     response: Response,
     background: BackgroundTasks,
+    cache: bool = Query(default=True),
+    language_hint: str = Query(default="auto"),
     file: UploadFile = File(...),
     db: Session = Depends(get_db),
     user: User | None = Depends(optional_current_user),
@@ -794,7 +811,7 @@ async def analyze_video_async(
 
     # Quick cache probe so callers don't wait for queue dispatch on repeats.
     media_hash = sha256_file(path)
-    cached = lookup_cached(db, media_hash=media_hash, media_type="video", user_id=user.id if user else None)
+    cached = lookup_cached(db, media_hash=media_hash, media_type="video", user_id=user.id if user else None) if cache else None
     if cached is not None:
         payload = cached_payload(cached)
         try:
