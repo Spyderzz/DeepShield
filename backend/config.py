@@ -1,7 +1,45 @@
 import json
-from typing import Annotated, Any
-from pydantic import field_validator
-from pydantic_settings import BaseSettings, NoDecode, SettingsConfigDict
+from typing import Any
+from pydantic import field_validator, model_validator
+from pydantic_settings import BaseSettings, SettingsConfigDict
+
+
+def _parse_list_env(value: Any, default: list[str]) -> list[str]:
+    """Accept list env values as JSON, CSV, single-value string, or native list."""
+    if value is None:
+        return default
+
+    if isinstance(value, str):
+        raw = value.strip()
+        if not raw:
+            return default
+
+        if raw.startswith("["):
+            try:
+                parsed = json.loads(raw)
+                if isinstance(parsed, list):
+                    cleaned = [str(i).strip() for i in parsed if str(i).strip()]
+                    return cleaned or default
+            except json.JSONDecodeError:
+                # Fall back to CSV parsing if JSON is malformed.
+                pass
+
+        cleaned = [i.strip() for i in raw.split(",") if i.strip()]
+        return cleaned or default
+
+    if isinstance(value, list):
+        cleaned = [str(i).strip() for i in value if str(i).strip()]
+        return cleaned or default
+
+    return default
+
+
+def _normalize_origin(origin: str) -> str:
+    """Normalize CORS origin values to avoid strict mismatch (e.g. trailing slash)."""
+    cleaned = origin.strip()
+    if cleaned.startswith(("http://", "https://")):
+        cleaned = cleaned.rstrip("/")
+    return cleaned
 
 
 class Settings(BaseSettings):
@@ -9,37 +47,45 @@ class Settings(BaseSettings):
     APP_HOST: str = "0.0.0.0"
     APP_PORT: int = 8000
     DEBUG: bool = False
-    # NoDecode prevents pydantic-settings from forcing JSON parsing first.
-    # This lets us accept JSON arrays, CSV strings, single origins, and empty values.
-    CORS_ORIGINS: Annotated[list[str], NoDecode] = ["http://localhost:5173"]
+    CORS_ORIGINS: Any = ["http://localhost:5173"]
+
+    @model_validator(mode="before")
+    @classmethod
+    def drop_blank_values(cls, data: Any) -> Any:
+        """Treat blank env vars as unset so defaults apply instead of parse errors."""
+        if isinstance(data, dict):
+            return {
+                k: v
+                for k, v in data.items()
+                if not (isinstance(v, str) and not v.strip())
+            }
+        return data
 
     @field_validator("CORS_ORIGINS", mode="before")
     @classmethod
     def assemble_cors_origins(cls, v: Any) -> list[str]:
         """Parse CORS_ORIGINS from string (JSON or comma-separated) into a list."""
-        if v is None:
-            return ["http://localhost:5173"]
-
-        if isinstance(v, str):
-            raw = v.strip()
-            if not raw:
-                return ["http://localhost:5173"]
-
-            if raw.startswith("["):
-                parsed = json.loads(raw)
-                if isinstance(parsed, list):
-                    return [str(i).strip() for i in parsed if str(i).strip()]
-
-            # Supports single origin and comma-separated origins.
-            return [i.strip() for i in raw.split(",") if i.strip()]
-
-        if isinstance(v, list):
-            return [str(i).strip() for i in v if str(i).strip()]
-
-        return v
+        origins = _parse_list_env(v, default=["http://localhost:5173"])
+        normalized = [_normalize_origin(i) for i in origins if _normalize_origin(i)]
+        return normalized or ["http://localhost:5173"]
 
     # Database
     DATABASE_URL: str = "sqlite:///./deepshield.db"
+
+    @field_validator("DATABASE_URL", mode="before")
+    @classmethod
+    def normalize_database_url(cls, v: Any) -> str:
+        """Support common HF-style postgres URL aliases and blank values."""
+        if v is None:
+            return "sqlite:///./deepshield.db"
+        if isinstance(v, str):
+            raw = v.strip()
+            if not raw:
+                return "sqlite:///./deepshield.db"
+            if raw.startswith("postgres://"):
+                return "postgresql://" + raw[len("postgres://") :]
+            return raw
+        return str(v)
 
     # File Upload
     MAX_UPLOAD_SIZE_MB: int = 100
@@ -116,6 +162,16 @@ class Settings(BaseSettings):
     JWT_SECRET_KEY: str = "change-me-in-production"
     JWT_ALGORITHM: str = "HS256"
     JWT_EXPIRATION_MINUTES: int = 1440
+
+    @field_validator("ALLOWED_IMAGE_TYPES", mode="before")
+    @classmethod
+    def assemble_allowed_image_types(cls, v: Any) -> list[str]:
+        return _parse_list_env(v, default=["image/jpeg", "image/png", "image/webp"])
+
+    @field_validator("ALLOWED_VIDEO_TYPES", mode="before")
+    @classmethod
+    def assemble_allowed_video_types(cls, v: Any) -> list[str]:
+        return _parse_list_env(v, default=["video/mp4", "video/avi", "video/mov", "video/webm"])
 
     model_config = SettingsConfigDict(env_file=".env", extra="ignore")
 
