@@ -1,12 +1,11 @@
-# Base image with Python 3.10
-FROM python:3.10-slim
+# Base image with Python 3.10 (Explicitly using Bookworm to avoid unstable Trixie repos)
+FROM python:3.10-slim-bookworm
 
 # Keeps Python from buffering stdout/stderr (important for HF Spaces logs)
 ENV PYTHONUNBUFFERED=1
 ENV PYTHONDONTWRITEBYTECODE=1
 
 # Tell HuggingFace where to cache downloaded models (ViT, BERT)
-# /app/.cache persists better than the default home dir on HF Spaces
 ENV HF_HOME=/app/.cache/huggingface
 ENV TRANSFORMERS_CACHE=/app/.cache/huggingface
 
@@ -14,15 +13,8 @@ ENV TRANSFORMERS_CACHE=/app/.cache/huggingface
 WORKDIR /app
 
 # ── System dependencies ───────────────────────────────────────────────────────
-# libgl1 + libglib2.0-0  → OpenCV
-# libcairo2-dev          → WeasyPrint (cairo backend)
-# libpango-1.0-0 + pango-related → WeasyPrint text rendering (YOU WERE MISSING THESE)
-# libgdk-pixbuf2.0-0     → WeasyPrint image support (YOU WERE MISSING THIS)
-# libffi-dev             → cffi (WeasyPrint dep)
-# fonts-liberation       → Fallback fonts so WeasyPrint PDFs don't break
-# libgomp1               → Required by PyTorch CPU ops (YOU WERE MISSING THIS)
-# ffmpeg                 → Video keyframe extraction (needed for your video pipeline)
-RUN apt-get update && apt-get install -y --no-install-recommends \
+# Pinning to stable repos and adding --fix-missing for robustness
+RUN apt-get update && apt-get install -y --no-install-recommends --fix-missing \
     libgl1 \
     libglib2.0-0 \
     libgomp1 \
@@ -43,7 +35,6 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 COPY requirements.txt .
 
 # Install PyTorch CPU-only FIRST (avoids pulling the massive CUDA build)
-# CPU-only torch is ~250MB vs ~2.5GB for the default — critical for HF free tier
 RUN pip install --no-cache-dir \
     torch==2.4.1 \
     torchvision==0.19.1 \
@@ -59,9 +50,14 @@ COPY . .
 RUN mkdir -p /app/temp_uploads /app/.cache/huggingface
 
 # ── Security: run as non-root (HF Spaces best practice) ──────────────────────
-RUN useradd -m -u 1000 appuser && \
-    chown -R appuser:appuser /app
-USER appuser
+# Handle case where UID 1000 already exists (common in some base images)
+RUN if ! id -u 1000 >/dev/null 2>&1; then \
+        useradd -m -u 1000 appuser; \
+    else \
+        useradd -m appuser || true; \
+    fi && \
+    chown -R 1000:1000 /app
+USER 1000
 
 # HF Spaces requires port 7860
 EXPOSE 7860
