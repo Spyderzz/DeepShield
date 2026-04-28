@@ -80,6 +80,8 @@ ANON_ANALYZE = "5/hour"
 AUTH_ANALYZE = "50/hour"
 ANON_REPORT = "2/hour"
 AUTH_REPORT = "20/hour"
+ANON_AUTH_REGISTER = "5/hour"
+ANON_AUTH_LOGIN = "10/minute"
 
 limiter = Limiter(
     key_func=request_key,

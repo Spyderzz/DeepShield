@@ -11,7 +11,7 @@ from slowapi import _rate_limit_exceeded_handler
 from slowapi.errors import RateLimitExceeded
 
 from starlette.middleware.base import BaseHTTPMiddleware
-from starlette.responses import JSONResponse
+from starlette.responses import JSONResponse, RedirectResponse
 
 from api.router import api_router
 from config import settings
@@ -39,6 +39,21 @@ class ContentLengthLimitMiddleware(BaseHTTPMiddleware):
         return await call_next(request)
 
 
+class HTTPSRedirectAndHSTSMiddleware(BaseHTTPMiddleware):
+    async def dispatch(self, request, call_next):
+        if not settings.DEBUG:
+            forwarded_proto = request.headers.get("x-forwarded-proto", "").lower()
+            host = request.headers.get("host", "").split(":", 1)[0].lower()
+            if forwarded_proto != "https" and request.url.scheme != "https" and host not in {"127.0.0.1", "localhost", ""}:
+                https_url = request.url.replace(scheme="https")
+                return RedirectResponse(str(https_url), status_code=308)
+
+        response = await call_next(request)
+        if not settings.DEBUG:
+            response.headers.setdefault("Strict-Transport-Security", "max-age=31536000; includeSubDomains")
+        return response
+
+
 # === Phase 15.3 — JWT / CORS / logging hardening ===
 
 _DEFAULT_JWT_SECRET = "change-me-in-production"
@@ -46,7 +61,7 @@ _DEFAULT_JWT_SECRET = "change-me-in-production"
 
 def _enforce_production_hardening() -> None:
     """Refuse to start in production with unsafe defaults (Phase 15.3)."""
-    if settings.JWT_SECRET_KEY == _DEFAULT_JWT_SECRET or not settings.JWT_SECRET_KEY:
+    if settings.JWT_SECRET_KEY == _DEFAULT_JWT_SECRET or not settings.JWT_SECRET_KEY or settings.JWT_SECRET_KEY_GENERATED:
         example = secrets.token_urlsafe(48)
         if settings.DEBUG:
             logger.warning(
@@ -131,6 +146,8 @@ app.state.limiter = limiter
 
 app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
 app.add_middleware(RateLimitContextMiddleware)
+# Phase 15.3 — enforce HTTPS in production and add HSTS
+app.add_middleware(HTTPSRedirectAndHSTSMiddleware)
 # Phase 15.3 — reject oversized uploads before reading body
 app.add_middleware(ContentLengthLimitMiddleware, max_bytes=settings.MAX_UPLOAD_SIZE_MB * 1024 * 1024)
 

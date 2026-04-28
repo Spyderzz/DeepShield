@@ -11,6 +11,12 @@ TRUST_SCALE = [
 ]
 
 
+def _validate_weight_total(weights: list[float], context: str) -> None:
+    total = sum(weights)
+    if total > 1.000001:
+        raise ValueError(f"{context} weights must not sum above 1.0 (got {total:.3f})")
+
+
 def compute_authenticity_score(fake_probability: float, label: str = "") -> int:
     """Map a fake probability [0.0, 1.0] to a 0-100 authenticity score.
 
@@ -62,8 +68,10 @@ def compute_video_authenticity_score(
     visual_score = (1.0 - float(mean_suspicious_prob)) * 100.0
     temporal_sc = float(temporal_score) if temporal_score is not None else visual_score
     if has_audio and audio_authenticity_score is not None:
+        _validate_weight_total([0.50, 0.30, 0.20], "video audio+temporal fusion")
         combined = 0.50 * visual_score + 0.30 * temporal_sc + 0.20 * float(audio_authenticity_score)
     else:
+        _validate_weight_total([0.70, 0.30], "video visual+temporal fusion")
         combined = 0.70 * visual_score + 0.30 * temporal_sc
     score = int(round(max(0.0, min(100.0, combined))))
     label, severity = get_verdict_label(score)

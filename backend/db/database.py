@@ -47,15 +47,13 @@ def init_db():
     insp = inspect(engine)
     if "analyses" in insp.get_table_names():
         existing = {c["name"] for c in insp.get_columns("analyses")}
-        additions = {
-            "media_hash": "VARCHAR(64)",
-            "media_path": "VARCHAR(512)",
-            "thumbnail_url": "VARCHAR(512)",
-        }
         with engine.begin() as conn:
-            for col, ddl in additions.items():
-                if col not in existing:
-                    conn.execute(text(f"ALTER TABLE analyses ADD COLUMN {col} {ddl}"))
+            if "media_hash" not in existing:
+                conn.execute(text("ALTER TABLE analyses ADD COLUMN media_hash VARCHAR(64)"))
+            if "media_path" not in existing:
+                conn.execute(text("ALTER TABLE analyses ADD COLUMN media_path VARCHAR(512)"))
+            if "thumbnail_url" not in existing:
+                conn.execute(text("ALTER TABLE analyses ADD COLUMN thumbnail_url VARCHAR(512)"))
             # Indices (CREATE INDEX IF NOT EXISTS is SQLite+Postgres safe)
             for ddl in (
                 "CREATE INDEX IF NOT EXISTS ix_analyses_media_hash ON analyses (media_hash)",

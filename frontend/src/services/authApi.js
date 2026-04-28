@@ -2,8 +2,20 @@ import { api } from './api.js';
 
 const TOKEN_KEY = 'deepshield.token';
 const USER_KEY = 'deepshield.user';
-const LEGACY_STORAGE = window.localStorage;
-const STORAGE = window.sessionStorage;
+const PRIMARY_STORAGE = window.localStorage;
+const LEGACY_STORAGE = window.sessionStorage;
+
+function migrateLegacyValue(key) {
+  const current = PRIMARY_STORAGE.getItem(key);
+  if (current) return current;
+  const legacy = LEGACY_STORAGE.getItem(key);
+  if (legacy) {
+    PRIMARY_STORAGE.setItem(key, legacy);
+    LEGACY_STORAGE.removeItem(key);
+    return legacy;
+  }
+  return null;
+}
 
 export function clearLegacyAuth() {
   LEGACY_STORAGE.removeItem(TOKEN_KEY);
@@ -11,24 +23,24 @@ export function clearLegacyAuth() {
 }
 
 export function getStoredToken() {
-  return STORAGE.getItem(TOKEN_KEY) || null;
+  return migrateLegacyValue(TOKEN_KEY);
 }
 
 export function getStoredUser() {
-  const raw = STORAGE.getItem(USER_KEY);
+  const raw = migrateLegacyValue(USER_KEY);
   if (!raw) return null;
   try { return JSON.parse(raw); } catch { return null; }
 }
 
 export function setAuth(token, user) {
   clearLegacyAuth();
-  STORAGE.setItem(TOKEN_KEY, token);
-  STORAGE.setItem(USER_KEY, JSON.stringify(user));
+  PRIMARY_STORAGE.setItem(TOKEN_KEY, token);
+  PRIMARY_STORAGE.setItem(USER_KEY, JSON.stringify(user));
 }
 
 export function clearAuth() {
-  STORAGE.removeItem(TOKEN_KEY);
-  STORAGE.removeItem(USER_KEY);
+  PRIMARY_STORAGE.removeItem(TOKEN_KEY);
+  PRIMARY_STORAGE.removeItem(USER_KEY);
   clearLegacyAuth();
 }
 

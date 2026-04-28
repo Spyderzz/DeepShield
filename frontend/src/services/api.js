@@ -5,6 +5,51 @@ export const api = axios.create({
   timeout: 120000,
 });
 
+const TOKEN_KEY = 'deepshield.token';
+const USER_KEY = 'deepshield.user';
+
+function readStoredToken() {
+  const token = window.localStorage.getItem(TOKEN_KEY);
+  if (token) return token;
+  const legacyToken = window.sessionStorage.getItem(TOKEN_KEY);
+  if (legacyToken) {
+    const legacyUser = window.sessionStorage.getItem(USER_KEY);
+    window.localStorage.setItem(TOKEN_KEY, legacyToken);
+    if (legacyUser) {
+      window.localStorage.setItem(USER_KEY, legacyUser);
+      window.sessionStorage.removeItem(USER_KEY);
+    }
+    window.sessionStorage.removeItem(TOKEN_KEY);
+    return legacyToken;
+  }
+  return null;
+}
+
+function clearStoredAuth() {
+  window.localStorage.removeItem(TOKEN_KEY);
+  window.localStorage.removeItem(USER_KEY);
+  window.sessionStorage.removeItem(TOKEN_KEY);
+  window.sessionStorage.removeItem(USER_KEY);
+}
+
+function decodeJwtPayload(token) {
+  try {
+    const payload = token.split('.')[1];
+    if (!payload) return null;
+    const normalized = payload.replace(/-/g, '+').replace(/_/g, '/');
+    const padded = normalized.padEnd(Math.ceil(normalized.length / 4) * 4, '=');
+    return JSON.parse(window.atob(padded));
+  } catch {
+    return null;
+  }
+}
+
+function isJwtExpired(token) {
+  const payload = decodeJwtPayload(token);
+  if (!payload || typeof payload.exp !== 'number') return false;
+  return payload.exp * 1000 <= Date.now();
+}
+
 let warmupPromise = null;
 
 /**
@@ -44,7 +89,11 @@ export async function warmupBackend({ attempts = 6, initialDelayMs = 1200 } = {}
 }
 
 api.interceptors.request.use((config) => {
-  const token = sessionStorage.getItem('deepshield.token');
+  const token = readStoredToken();
+  if (token && isJwtExpired(token)) {
+    clearStoredAuth();
+    return config;
+  }
   if (token) {
     config.headers = config.headers || {};
     config.headers.Authorization = `Bearer ${token}`;
@@ -56,10 +105,7 @@ api.interceptors.response.use(
   (r) => r,
   (err) => {
     if (err?.response?.status === 401) {
-      sessionStorage.removeItem('deepshield.token');
-      sessionStorage.removeItem('deepshield.user');
-      localStorage.removeItem('deepshield.token');
-      localStorage.removeItem('deepshield.user');
+      clearStoredAuth();
     }
     const detail = err?.response?.data?.detail || err.message || 'Request failed';
     err.userMessage = typeof detail === 'string' ? detail : JSON.stringify(detail);

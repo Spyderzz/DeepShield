@@ -1,4 +1,5 @@
 import json
+import secrets
 from urllib.parse import parse_qsl, urlencode
 from typing import Any
 from pydantic import field_validator, model_validator
@@ -193,9 +194,23 @@ class Settings(BaseSettings):
     EXIFTOOL_PATH: str = ""  # full path to ExifTool binary; empty = metadata write disabled
 
     # Auth
-    JWT_SECRET_KEY: str = "change-me-in-production"
+    JWT_SECRET_KEY: str = ""
+    JWT_SECRET_KEY_GENERATED: bool = False
     JWT_ALGORITHM: str = "HS256"
     JWT_EXPIRATION_MINUTES: int = 1440
+
+    @model_validator(mode="after")
+    def ensure_jwt_secret(self):
+        if not self.JWT_SECRET_KEY:
+            if self.DEBUG:
+                self.JWT_SECRET_KEY = secrets.token_urlsafe(48)
+                self.JWT_SECRET_KEY_GENERATED = True
+            else:
+                self.JWT_SECRET_KEY = secrets.token_urlsafe(48)
+                self.JWT_SECRET_KEY_GENERATED = True
+        else:
+            self.JWT_SECRET_KEY_GENERATED = False
+        return self
 
     @field_validator("ALLOWED_IMAGE_TYPES", mode="before")
     @classmethod

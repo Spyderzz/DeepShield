@@ -5,6 +5,7 @@ from typing import Any
 
 import bcrypt
 from jose import JWTError, jwt
+from loguru import logger
 from sqlalchemy.orm import Session
 
 from config import settings
@@ -24,7 +25,8 @@ def hash_password(plain: str) -> str:
 def verify_password(plain: str, hashed: str) -> bool:
     try:
         return bcrypt.checkpw(_encode_pw(plain), hashed.encode("utf-8"))
-    except Exception:
+    except Exception as exc:
+        logger.warning(f"Password verification failed due to malformed hash: {exc}")
         return False
 
 

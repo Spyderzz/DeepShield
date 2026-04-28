@@ -949,3 +949,12 @@ TypeError: int() argument must be a string, a bytes-like object or a real number
 2026-04-26 22:09:45.469 | INFO     | services.report_service:generate_report:120 - Report generated id=43 path=temp_reports\deepshield_43_262befa5.pdf size=15602B
 2026-04-26 23:15:58.262 | INFO     | services.report_service:cleanup_expired:149 - Cleaned up 2 expired reports
 2026-04-27 01:22:14.691 | INFO     | services.report_service:cleanup_expired:149 - Cleaned up 2 expired reports
+2026-04-28 21:11:45.835 | INFO     | main:lifespan:108 - Starting DeepShield backend
+2026-04-28 21:11:45.871 | INFO     | main:lifespan:110 - Database initialized
+2026-04-28 21:11:45.871 | INFO     | models.model_loader:load_image_model:48 - Loading image model: prithivMLmods/Deep-Fake-Detector-v2-Model
+2026-04-28 21:11:51.313 | INFO     | models.model_loader:load_image_model:56 - Image model loaded
+2026-04-28 21:34:27.293 | INFO     | main:lifespan:118 - Shutting down DeepShield backend
+2026-04-28 21:34:41.654 | INFO     | main:lifespan:108 - Starting DeepShield backend
+2026-04-28 21:34:41.668 | INFO     | main:lifespan:110 - Database initialized
+2026-04-28 21:34:41.668 | INFO     | models.model_loader:load_image_model:48 - Loading image model: prithivMLmods/Deep-Fake-Detector-v2-Model
+2026-04-28 21:34:44.266 | INFO     | models.model_loader:load_image_model:56 - Image model loaded
