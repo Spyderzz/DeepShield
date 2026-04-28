@@ -25,6 +25,13 @@ jobs:
 
           cp -R backend/. .hf-sync/
 
+          # Explicitly clone icpr2020dfdc because it is in .gitignore and missing from the GH runner
+          if [ ! -d .hf-sync/models/icpr2020dfdc ]; then
+            git clone https://github.com/polimi-ispl/icpr2020dfdc.git .hf-sync/models/icpr2020dfdc
+            # Remove its .git folder so HF doesn't treat it as a submodule
+            rm -rf .hf-sync/models/icpr2020dfdc/.git
+          fi
+
           git clone https://user:${HF_TOKEN}@huggingface.co/spaces/ar07xd/deepshield .hf-space-current
 
           if [ -d .hf-space-current/trained_models ]; then
