@@ -33,6 +33,7 @@ mediapipe==0.10.14
 exifread==3.0.0
 google-genai>=0.1.0    # New Gemini SDK (replaces google-generativeai)
 openai>=1.0.0                 # OpenAI provider (alternative to Gemini)
+groq>=0.4.0
 
 # === Phase 14: PDF v2 donut chart ===
 matplotlib>=3.9.0

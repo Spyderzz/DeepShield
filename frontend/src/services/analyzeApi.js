@@ -55,7 +55,7 @@ export async function submitVideoJob(file, options) {
   const { data } = await api.post('/analyze/video/async', fd, {
     headers: { 'Content-Type': 'multipart/form-data' },
     params: cleanOptions(options),
-    timeout: 120000,
+    timeout: 300000,
   });
   return data; // { job_id, status, cached }
 }
