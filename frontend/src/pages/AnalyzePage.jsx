@@ -5,7 +5,7 @@ import LayerStack from '../components/layout/LayerStack.jsx';
 import useDottedSurface from '../hooks/useDottedSurface.js';
 import { listHistory } from '../services/historyApi.js';
 import {
-  analyzeImage, analyzeText, analyzeScreenshot, submitVideoJob, pollVideoJob,
+  analyzeImage, analyzeText, analyzeScreenshot, analyzeAudio, submitVideoJob, pollVideoJob,
 } from '../services/analyzeApi.js';
 import './deepshield-landing.css';
 import './deepshield-pages.css';
@@ -15,6 +15,7 @@ const MODES = [
   { k: 'video',      label: 'Video',      icon: '▶',  accept: 'video/*' },
   { k: 'text',       label: 'Text',       icon: '¶',  accept: null },
   { k: 'screenshot', label: 'Screenshot', icon: '▭',  accept: 'image/*' },
+  { k: 'audio',      label: 'Audio',      icon: '🎙',  accept: 'audio/*' },
 ];
 
 const MODE_STAGES = {
@@ -22,6 +23,7 @@ const MODE_STAGES = {
   video:      ['Upload', 'Extract frames', 'Per-frame classify', 'Temporal consistency', 'Audio lip-sync', 'LLM summary'],
   text:       ['Paste', 'Tokenize (XLM-R)', 'Sensationalism', 'NER + source lookup', 'Truth-override', 'LLM summary'],
   screenshot: ['Upload', 'EasyOCR', 'Layout anomaly', 'Claim credibility', 'Phrase map', 'LLM summary'],
+  audio:      ['Upload', 'Preprocess audio', 'Acoustic feature extraction', 'Voice ML model (EN/HI)', 'Signal heuristics', 'LLM summary'],
 };
 
 const VIDEO_STAGE_PROGRESS = {
@@ -40,6 +42,17 @@ async function fetchSampleAsFile(url, filename = 'sample.jpg') {
   const r = await fetch(url);
   const b = await r.blob();
   return new File([b], filename, { type: b.type || 'image/jpeg' });
+}
+
+function resolveThumbUrl(url) {
+  if (!url) return null;
+  if (url.startsWith('http') || url.startsWith('data:')) return url;
+  const path = url.startsWith('/') ? url : `/${url}`;
+  const apiBase = import.meta.env.VITE_API_BASE_URL || '/api/v1';
+  if (apiBase.startsWith('http') && path.startsWith('/media/')) {
+    return `${apiBase.replace(/\/api\/v1\/?$/, '')}${path}`;
+  }
+  return path;
 }
 
 export default function AnalyzePage() {
@@ -129,6 +142,8 @@ export default function AnalyzePage() {
         data = await analyzeText(payload, options);
       } else if (mode === 'screenshot') {
         data = await analyzeScreenshot(payload, options);
+      } else if (mode === 'audio') {
+        data = await analyzeAudio(payload, options);
       }
       setProgress(100);
       setActiveStage(MODE_STAGES[mode].length - 1);
@@ -348,8 +363,8 @@ export default function AnalyzePage() {
                   style={{ cursor: r.id ? 'pointer' : 'default' }}
                 >
                   <div className="recent-thumb" style={{
-                    backgroundImage: r.src ? `url(${r.src})` : undefined,
-                    background: r.src ? undefined : 'linear-gradient(135deg, rgba(108,125,255,0.08), rgba(61,219,179,0.04))',
+                    backgroundImage: (r.src || r.thumbnail_url) ? `url(${r.src || resolveThumbUrl(r.thumbnail_url)})` : undefined,
+                    background: (r.src || r.thumbnail_url) ? undefined : 'linear-gradient(135deg, rgba(108,125,255,0.08), rgba(61,219,179,0.04))',
                   }}>
                     <span className={`verdict-dot h-verdict ${color}`} style={{ position: 'absolute', top: 8, right: 8, padding: '2px 7px', fontSize: 9 }}>{verdictLabel}</span>
                   </div>

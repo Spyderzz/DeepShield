@@ -151,6 +151,7 @@ class AudioExplainability(BaseModel):
     spectral_variance: float = 0.0
     rms_consistency: float = 0.0
     notes: str = ""
+    ml_analysis: AudioMLScore | None = None
 
 
 class VideoExplainability(BaseModel):
@@ -200,6 +201,39 @@ class ImageAnalysisResponse(BaseModel):
     timestamp: str
     verdict: Verdict
     explainability: ImageExplainability
+    trusted_sources: List[TrustedSource] = []
+    contradicting_evidence: List[ContradictingEvidence] = []
+    processing_summary: ProcessingSummary
+    responsible_ai_notice: str = (
+        "AI-based analysis may not be 100% accurate. Cross-check with trusted sources before sharing."
+    )
+
+class AudioMLScore(BaseModel):
+    fake_probability: float
+    label: str
+    model_used: str
+    error: bool = False
+
+class AudioStandaloneExplainability(BaseModel):
+    audio_authenticity_score: float = 100.0
+    has_audio: bool = False
+    duration_s: float = 0.0
+    silence_ratio: float = 0.0
+    spectral_variance: float = 0.0
+    rms_consistency: float = 0.0
+    notes: str = ""
+    ml_analysis: AudioMLScore | None = None
+
+class AudioAnalysisResponse(BaseModel):
+    analysis_id: str
+    record_id: int = 0
+    cached: bool = False
+    thumbnail_url: str | None = None
+    media_type: str = "audio"
+    timestamp: str
+    verdict: Verdict
+    explainability: AudioStandaloneExplainability
+    llm_summary: LLMExplainabilitySummary | None = None
     trusted_sources: List[TrustedSource] = []
     contradicting_evidence: List[ContradictingEvidence] = []
     processing_summary: ProcessingSummary

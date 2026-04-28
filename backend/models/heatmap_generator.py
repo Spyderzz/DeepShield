@@ -224,9 +224,15 @@ def generate_heatmap_base64(
         source = "gradcam++"
         cam_full, orig_np = _cam_to_full_image(grayscale_cam, pil_img, None)
 
-    overlay = show_cam_on_image(orig_np, cam_full, use_rgb=True)
-    logger.info(f"Heatmap generated ({overlay.shape[1]}x{overlay.shape[0]}) source={source}")
-    return _encode_overlay_to_base64(overlay), source
+    # Generate transparent RGBA overlay so CSS can blend it without darkening the base image
+    heatmap_colored = cv2.applyColorMap(np.uint8(255 * cam_full), cv2.COLORMAP_JET)
+    heatmap_colored = cv2.cvtColor(heatmap_colored, cv2.COLOR_BGR2RGB)
+    
+    alpha = np.clip(cam_full * 1.8 * 255, 0, 255).astype(np.uint8)
+    overlay_rgba = np.dstack((heatmap_colored, alpha))
+    
+    logger.info(f"Heatmap generated ({overlay_rgba.shape[1]}x{overlay_rgba.shape[0]}) source={source}")
+    return _encode_overlay_to_base64(overlay_rgba), source
 
 
 def generate_boxes_base64(

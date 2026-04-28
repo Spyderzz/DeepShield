@@ -30,6 +30,7 @@ class AudioAnalysis:
     spectral_variance: float         # normalised std of spectral centroid
     rms_consistency: float           # 1 – normalised std of voiced-frame RMS
     notes: str = ""
+    ml_analysis: dict | None = None
 
 
 # ---------------------------------------------------------------------------
@@ -188,7 +189,17 @@ def analyze_audio(video_path: str) -> Optional[AudioAnalysis]:
             logger.info("No audio track found or ffmpeg unavailable — skipping audio analysis")
             return None
 
-        return _analyse_wav(tmp_wav)
+        analysis = _analyse_wav(tmp_wav)
+        
+        from services.audio_ml_service import analyze_audio_ml
+        ml_score = analyze_audio_ml(tmp_wav)
+        analysis.ml_analysis = ml_score
+        
+        heuristics_prob = 1.0 - (analysis.audio_authenticity_score / 100.0)
+        final_prob = 0.5 * heuristics_prob + 0.5 * ml_score["fake_probability"]
+        analysis.audio_authenticity_score = round((1.0 - final_prob) * 100.0, 2)
+        
+        return analysis
 
     except Exception as exc:  # noqa: BLE001
         logger.warning(f"Audio analysis error: {exc}")

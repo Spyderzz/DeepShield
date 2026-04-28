@@ -215,10 +215,11 @@ function ResultsView({ result, id }) {
             {mediaType !== 'text' && <ArtifactsCard artifacts={artifacts} />}
           </div>
 
-          {mediaType !== 'text' && (
+          {(mediaType === 'video' || mediaType === 'audio') && (
             <div className="result-grid">
-              <AudioCard audio={expl.audio} mediaType={mediaType} />
-              <TemporalCard expl={expl} mediaType={mediaType} />
+              <AudioCard audio={mediaType === 'audio' ? expl : expl.audio} mediaType={mediaType} />
+              {mediaType === 'video' && <TemporalCard expl={expl} mediaType={mediaType} />}
+              <AudioMLCard ml={mediaType === 'audio' ? expl.ml_analysis : expl.audio?.ml_analysis} />
             </div>
           )}
 
@@ -595,6 +596,29 @@ function TemporalCard({ expl, mediaType }) {
         {active
           ? `optical_flow_var · ${(expl.optical_flow_variance ?? 0).toFixed(3)} · flicker · ${(expl.flicker_score ?? 0).toFixed(3)}`
           : 'per_frame_score · n/a · no frames to aggregate'}
+      </p>
+    </div>
+  );
+}
+
+function AudioMLCard({ ml }) {
+  if (!ml) return null;
+  const isFake = ml.label.toLowerCase().includes('fake') || ml.label.toLowerCase().includes('spoof');
+  const prob = ml.fake_probability;
+  
+  return (
+    <div className="card" style={{ minHeight: 200 }}>
+      <div className="card-head">
+        <span className="eyebrow">Voice ML Analysis (EN/HI) · {ml.model_used}</span>
+        <span className="mono small" style={{ color: 'var(--ds-muted)' }}>
+          p_fake · {prob.toFixed(2)}
+        </span>
+      </div>
+      <div style={{ padding: '20px 0', textAlign: 'center' }}>
+        <ScoreRing value={isFake ? 20 : 85} size={80} color={isFake ? 'danger' : 'safe'} />
+      </div>
+      <p style={{ marginTop: 14, fontSize: 12, color: 'var(--ds-muted)', fontFamily: 'var(--ff-mono)' }}>
+        prediction · {ml.label.toUpperCase()} · p_fake={prob.toFixed(3)}
       </p>
     </div>
   );

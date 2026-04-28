@@ -20,6 +20,7 @@ class HistoryItem(BaseModel):
     verdict: str
     authenticity_score: float
     created_at: datetime
+    thumbnail_url: str | None = None
 
 
 class HistoryListResponse(BaseModel):
@@ -44,6 +45,7 @@ def list_history(
             verdict=r.verdict,
             authenticity_score=r.authenticity_score,
             created_at=r.created_at,
+            thumbnail_url=r.thumbnail_url,
         )
         for r in rows
     ]

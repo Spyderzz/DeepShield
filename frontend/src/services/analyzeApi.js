@@ -37,15 +37,25 @@ export async function analyzeText(text, options) {
   return data;
 }
 
-export async function analyzeScreenshot(file, options) {
-  const fd = new FormData();
-  fd.append('file', file);
-  const { data } = await api.post('/analyze/screenshot', fd, {
+export async function analyzeScreenshot(file, options = {}) {
+  const { cache = true, languageHint = 'auto' } = options;
+  const formData = new FormData();
+  formData.append('file', file);
+  const res = await api.post(`/analyze/screenshot?cache=${cache}&language_hint=${languageHint}`, formData, {
     headers: { 'Content-Type': 'multipart/form-data' },
-    params: cleanOptions(options),
-    timeout: 180000,
   });
-  return data;
+  return res.data;
+}
+
+export async function analyzeAudio(file, options = {}) {
+  const { cache = true, languageHint = 'en' } = options;
+  const formData = new FormData();
+  formData.append('file', file);
+  const res = await api.post(`/analyze/audio?cache=${cache}&language_hint=${languageHint}`, formData, {
+    headers: { 'Content-Type': 'multipart/form-data' },
+    timeout: 300000,
+  });
+  return res.data;
 }
 
 // Phase 19.3 — async video with job polling

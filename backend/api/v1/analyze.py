@@ -29,6 +29,9 @@ from schemas.analyze import (
     TextExplainability,
     VideoAnalysisResponse,
     VideoExplainability,
+    AudioAnalysisResponse,
+    AudioStandaloneExplainability,
+    AudioMLScore,
 )
 from services.screenshot_service import (
     detect_layout_anomalies,
@@ -367,6 +370,12 @@ async def analyze_video_endpoint(
             spectral_variance=audio_result.spectral_variance,
             rms_consistency=audio_result.rms_consistency,
             notes=audio_result.notes,
+            ml_analysis=AudioMLScore(
+                fake_probability=audio_result.ml_analysis["fake_probability"],
+                label=audio_result.ml_analysis["label"],
+                model_used=audio_result.ml_analysis.get("model_used", "Unknown"),
+                error=audio_result.ml_analysis.get("error", False)
+            ) if audio_result.ml_analysis else None
         )
 
     resp = VideoAnalysisResponse(
@@ -869,6 +878,12 @@ async def analyze_video_async(
                     spectral_variance=audio_result.spectral_variance,
                     rms_consistency=audio_result.rms_consistency,
                     notes=audio_result.notes,
+                    ml_analysis=AudioMLScore(
+                        fake_probability=audio_result.ml_analysis["fake_probability"],
+                        label=audio_result.ml_analysis["label"],
+                        model_used=audio_result.ml_analysis.get("model_used", "Unknown"),
+                        error=audio_result.ml_analysis.get("error", False)
+                    ) if audio_result.ml_analysis else None
                 )
 
             resp = VideoAnalysisResponse(
@@ -949,6 +964,113 @@ async def analyze_video_async(
     stages = ["queued", "frame_extraction", "aggregation", "audio_analysis", "storage", "persist", "done"]
     background.add_task(run_job, job.id, stages, _work)
     return {"job_id": job.id, "status": "queued", "cached": False}
+
+
+@router.post("/audio", response_model=AudioAnalysisResponse)
+@limiter.limit(AUTH_ANALYZE, exempt_when=is_anon)
+async def analyze_audio_endpoint(
+    request: Request,
+    response: Response,
+    cache: bool = Query(default=True),
+    language_hint: str = Query(default="en"),
+    file: UploadFile = File(...),
+    db: Session = Depends(get_db),
+    user: User | None = Depends(optional_current_user),
+) -> AudioAnalysisResponse:
+    start = time.perf_counter()
+    stages: list[str] = []
+
+    raw, mime = await read_upload_bytes(
+        file, ["audio/mpeg", "audio/wav", "audio/x-wav", "audio/mp4", "audio/aac", "audio/ogg", "audio/webm", "video/webm", "video/mp4"], max_size_mb=25.0
+    )
+    stages.append("validation")
+
+    media_hash = sha256_bytes(raw)
+    cached = lookup_cached(db, media_hash=media_hash, media_type="audio", user_id=user.id if user else None) if cache else None
+    if cached is not None:
+        payload = cached_payload(cached)
+        if payload is not None:
+            return AudioAnalysisResponse.model_validate(payload)
+
+    stages.append("feature_extraction")
+    
+    import tempfile
+    from services.audio_service import _extract_audio_wav, _analyse_wav
+    from services.audio_ml_service import analyze_audio_ml
+    
+    tmp_path = None
+    tmp_wav = None
+    try:
+        with tempfile.NamedTemporaryFile(suffix=".wav" if "wav" in mime else ".mp3", delete=False) as fh:
+            fh.write(raw)
+            tmp_path = fh.name
+
+        with tempfile.NamedTemporaryFile(suffix=".wav", delete=False) as wfh:
+            tmp_wav = wfh.name
+            
+        _extract_audio_wav(tmp_path, tmp_wav)
+        
+        stages.append("voice_ml_model")
+        ml_score = analyze_audio_ml(tmp_wav)
+        
+        stages.append("signal_heuristics")
+        heuristics = _analyse_wav(tmp_wav)
+        
+    finally:
+        if tmp_path and os.path.exists(tmp_path):
+            os.remove(tmp_path)
+        if tmp_wav and os.path.exists(tmp_wav):
+            os.remove(tmp_wav)
+
+    audio_expl = AudioStandaloneExplainability(
+        audio_authenticity_score=heuristics.audio_authenticity_score,
+        has_audio=heuristics.has_audio,
+        duration_s=heuristics.duration_s,
+        silence_ratio=heuristics.silence_ratio,
+        spectral_variance=heuristics.spectral_variance,
+        rms_consistency=heuristics.rms_consistency,
+        notes=heuristics.notes,
+        ml_analysis=AudioMLScore(
+            fake_probability=ml_score["fake_probability"],
+            label=ml_score["label"],
+            model_used=ml_score.get("model_used", "Unknown"),
+            error=ml_score.get("error", False)
+        )
+    )
+
+    heuristics_prob = 1.0 - (heuristics.audio_authenticity_score / 100.0)
+    ml_prob = ml_score["fake_probability"]
+    final_prob = 0.5 * heuristics_prob + 0.5 * ml_prob
+
+    if final_prob > 0.65:
+        verdict = Verdict.VERY_LIKELY_FAKE
+    elif final_prob > 0.45:
+        verdict = Verdict.SUSPICIOUS
+    else:
+        verdict = Verdict.LIKELY_REAL
+
+    resp = AudioAnalysisResponse(
+        analysis_id=str(uuid.uuid4()),
+        timestamp=datetime.now(timezone.utc).isoformat(),
+        verdict=verdict,
+        explainability=audio_expl,
+        processing_summary=ProcessingSummary(
+            total_time_ms=int((time.perf_counter() - start) * 1000),
+            stages=stages,
+        )
+    )
+
+    stages.append("llm_summary")
+    resp = _compute_llm_summary(resp, record_id=0, user=user, media_kind="audio_deepfake_analysis")
+
+    rec_id, stored_url = store_and_save(
+        db, user, raw, media_hash, "audio", resp, file_ext="mp3"
+    )
+    resp.record_id = rec_id
+    if stored_url:
+        resp.thumbnail_url = stored_url
+
+    return resp
 
 
 jobs_router = APIRouter(prefix="/jobs", tags=["jobs"])
