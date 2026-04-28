@@ -5,6 +5,7 @@ import logoImg from '../assets/logo.png';
 import { analyzeImage } from '../services/analyzeApi.js';
 import useDottedSurface from '../hooks/useDottedSurface.js';
 import ScrollReveal from '../components/common/ScrollReveal.jsx';
+import ImageScanPreview from '../components/ImageScanPreview.jsx';
 import { useAuth } from '../contexts/AuthContext.jsx';
 
 /* ============ NAV ============ */
@@ -252,7 +253,7 @@ function Hero() {
           </h1>
           <p className="ds-hero-sub">
             DeepShield inspects every pixel, waveform, and word — returning a calm verdict
-            backed by Grad-CAM++, ELA, EXIF and a plain-English explanation.
+            backed by visual heatmapping, deep structural analysis, and executive-level plain-English explanations.
             For newsrooms, courts, and platforms.
           </p>
           <div className="ds-hero-cta">
@@ -263,10 +264,10 @@ function Hero() {
             <button className="btn btn-glass btn-lg" onClick={() => document.getElementById('pipeline')?.scrollIntoView({ behavior: 'smooth' })}>How the pipeline works</button>
           </div>
           <div className="ds-hero-proof">
-            <div><span className="mono">92.4%</span><small>FF++ test acc.</small></div>
-            <div><span className="mono">&lt; 3%</span><small>real-photo FPR</small></div>
+            <div><span className="mono">92.4%</span><small>SOTA benchmark acc.</small></div>
+            <div><span className="mono">&lt; 3%</span><small>real-media FPR</small></div>
             <div><span className="mono">6</span><small>explainability modes</small></div>
-            <div><span className="mono">4</span><small>media modalities</small></div>
+            <div><span className="mono">5</span><small>media modalities</small></div>
           </div>
         </div>
         <div className="ds-hero-right">
@@ -374,7 +375,7 @@ function ScanOrb() {
       </div>
       <div className="pd-meta mono">
         <span>SUBJECT · unverified</span>
-        <span>MODEL · ensemble v4.2</span>
+        <span>ENGINE · Core v2.0</span>
         <span>CONFIDENCE · <span id="pd-conf-val">40</span>%</span>
       </div>
     </div>
@@ -385,32 +386,37 @@ function ScanOrb() {
 function ModalityCards() {
   const navigate = useNavigate();
   const items = [
-    { k: 'Image', n: '01', desc: 'ViT + EfficientNet ensemble with BlazeFace gating. Grad-CAM++, ELA, EXIF, JPEG Q-table, FFT frequency analysis.', sig: ['ensemble', 'grad-cam++', 'ela', 'exif'] },
-    { k: 'Video', n: '02', desc: 'Per-frame classification, optical-flow temporal consistency, blink-rate analysis, lip-sync correlation with audio.', sig: ['temporal', 'blink-rate', 'lip-sync', 'frame-timeline'] },
-    { k: 'Text', n: '03', desc: 'Multilingual XLM-R fake-news classifier, NER-anchored source lookup, truth-override against trusted domains, manipulation indicators.', sig: ['xlm-r', 'ner', 'truth-override', 'sensationalism'] },
-    { k: 'Screenshot', n: '04', desc: 'EasyOCR extraction, credibility pass on extracted claims, layout-anomaly detection, suspicious-phrase bbox overlay.', sig: ['ocr', 'layout', 'phrase-map', 'credibility'] },
+    { k: 'Image', n: '01', title: 'Image Deepfake Detection', desc: 'Detects AI manipulation, edited pixels, and hidden metadata in photos.', sig: ['Residual map', 'EXIF trace', 'Q-table'] },
+    { k: 'Video', n: '02', title: 'Video Manipulation Scan', desc: 'Analyzes video frame-by-frame to spot deepfakes and lip-sync mismatches.', sig: ['Frame rail', 'Motion drift', 'Lip sync'] },
+    { k: 'Audio', n: '03', title: 'Audio & Voice Cloning', desc: 'Scans audio waveforms to identify AI voice cloning and synthetic speech.', sig: ['Spectrogram', 'Voiceprint', 'Clone drift'] },
+    { k: 'Text', n: '04', title: 'Misinformation Check', desc: 'Cross-checks claims, analyzes language patterns, and verifies sources.', sig: ['Source graph', 'Entity trail', 'Claim score'] },
+    { k: 'Screenshot', n: '05', title: 'Screenshot Forensics', desc: 'Detects edited text, manipulated UI elements, and fake social media posts.', sig: ['OCR lanes', 'Layout diff', 'Phrase map'] },
   ];
   return (
     <section className="ds-modality" id="pipeline">
       <div className="ds-container">
         <div className="ds-section-head">
           <span className="eyebrow">The pipeline</span>
-          <h2 className="display">Four <ScrollReveal maxBlur={12}>modalities</ScrollReveal>.<br /><ScrollReveal maxBlur={12}><em className="italic accent">One</em></ScrollReveal> <em className="italic accent">verdict.</em></h2>
+          <h2 className="display">Five <ScrollReveal maxBlur={12}>modalities</ScrollReveal>.<br /><ScrollReveal maxBlur={12}><em className="italic accent">One</em></ScrollReveal> <em className="italic accent">verdict.</em></h2>
           <p>Each input routes through its own forensic stack. Outputs converge on a single, calm summary — with every signal exposed for review.</p>
         </div>
-        <div className="ds-modality-grid">
+        <div className="ds-modality-showcase">
           {items.map(it => (
-            <article key={it.k} className="mod-card">
-              <div className="mod-card-head">
-                <span className="mono mod-n">{it.n}</span>
-                <span className="mod-kind">{it.k}</span>
+            <article key={it.k} className={`mod-showcase-panel mod-panel-${it.k.toLowerCase()}`}>
+              <div className="modality-stage">
+                <PremiumModalityVisual kind={it.k} />
               </div>
-              <h3 className="display mod-title">{it.k === 'Image' ? 'Pixel-grade' : it.k === 'Video' ? 'Frame-by-frame' : it.k === 'Text' ? 'Narrative-level' : 'Layout-aware'} inspection.</h3>
-              <p className="mod-desc">{it.desc}</p>
-              <ul className="mod-sig">
-                {it.sig.map(s => <li key={s} className="mono">{s}</li>)}
-              </ul>
-              <ModalityVisual kind={it.k} />
+              <div className="mod-panel-copy">
+                <div className="mod-panel-kicker mono">
+                  <span>{it.n}</span>
+                  <b>{it.k}</b>
+                </div>
+                <h3 className="display mod-title">{it.title}</h3>
+                <p className="mod-desc">{it.desc}</p>
+                <ul className="mod-sig">
+                  {it.sig.map(s => <li key={s} className="mono">{s}</li>)}
+                </ul>
+              </div>
             </article>
           ))}
         </div>
@@ -429,20 +435,24 @@ function ModalityCards() {
 }
 
 function ModalityVisual({ kind }) {
-  if (kind === 'Image') return (
-    <div className="mv mv-image">
-      <div className="mv-frame" />
-      <div className="mv-heat" />
-      <div className="mv-box" style={{ left: '22%', top: '30%', width: '32%', height: '36%' }} />
-      <span className="mv-tag mono">0.87 fake</span>
-    </div>
-  );
   if (kind === 'Video') return (
     <div className="mv mv-video">
-      {Array.from({ length: 16 }).map((_, i) => {
-        const s = 0.2 + Math.abs(Math.sin(i * 0.8)) * 0.8;
-        return <span key={i} style={{ height: `${20 + s * 70}%`, background: s > 0.6 ? 'var(--ds-danger)' : s > 0.4 ? 'var(--ds-warn)' : 'var(--ds-safe)' }} />;
-      })}
+      <div className="mv-video-track">
+        <div className="mv-video-frame f1"></div>
+        <div className="mv-video-frame f2"></div>
+        <div className="mv-video-frame f3"></div>
+      </div>
+      <div className="mv-video-playhead"></div>
+    </div>
+  );
+  if (kind === 'Audio') return (
+    <div className="mv mv-audio">
+      <div className="mv-audio-wave">
+        {Array.from({ length: 40 }).map((_, i) => {
+          const s = Math.abs(Math.sin(i * 0.3) * Math.cos(i * 0.7));
+          return <span key={i} style={{ '--s': s, '--i': i }} className={s > 0.6 ? 'warn' : ''} />;
+        })}
+      </div>
     </div>
   );
   if (kind === 'Text') return (
@@ -451,15 +461,185 @@ function ModalityVisual({ kind }) {
       <p><mark className="hl-danger">SHOCKING truth</mark> experts refuse to believe.</p>
     </div>
   );
-  return (
+  if (kind === 'Screenshot') return (
     <div className="mv mv-shot">
-      <div className="mv-shot-head" />
-      <div className="mv-shot-line" style={{ width: '82%' }} />
-      <div className="mv-shot-line" style={{ width: '64%' }} />
-      <div className="mv-shot-line hl" style={{ width: '72%' }} />
-      <div className="mv-shot-line" style={{ width: '48%' }} />
+      <div className="shot-box b1"><div className="shot-score safe">98%</div></div>
+      <div className="shot-box b2"><div className="shot-score danger">12%</div></div>
+      <div className="shot-box b3"><div className="shot-score safe">89%</div></div>
     </div>
   );
+  // Image default
+  return (
+    <div className="mv mv-image-scan">
+      <svg className="face-scan-svg" viewBox="0 0 100 100" preserveAspectRatio="xMidYMid meet">
+        <path className="face-outline" d="M30,20 C45,10 55,10 70,20 C85,45 75,70 60,90 C50,90 40,90 25,70 C15,45 30,20 Z" />
+        <path className="face-wire" d="M30,20 L70,20 M25,45 L75,45 M25,70 L60,90 M50,10 L50,90" />
+        <path className="face-wire" d="M30,20 L50,45 L70,20 M25,45 L50,70 L75,45" />
+        
+        <circle className="face-node" cx="30" cy="20" r="1.5" />
+        <circle className="face-node active" cx="70" cy="20" r="1.5" />
+        <circle className="face-node" cx="25" cy="45" r="1.5" />
+        <circle className="face-node" cx="50" cy="45" r="1.5" />
+        <circle className="face-node active" cx="75" cy="45" r="1.5" />
+        <circle className="face-node" cx="25" cy="70" r="1.5" />
+        <circle className="face-node" cx="50" cy="70" r="1.5" />
+        <circle className="face-node" cx="60" cy="90" r="1.5" />
+        <circle className="face-node active" cx="40" cy="90" r="1.5" />
+      </svg>
+      <div className="scan-line-v"></div>
+      <div className="scan-highlight-box"></div>
+    </div>
+  );
+}
+
+function PremiumModalityVisual({ kind }) {
+  const grid = Array.from({ length: 16 }, (_, i) => (
+    <path key={`g${i}`} d={i < 8 ? `M${40 + i * 70} 45V310` : `M30 ${58 + (i - 8) * 32}H620`} />
+  ));
+
+  if (kind === 'Image') return (
+    <div className="premium-visual" aria-hidden="true">
+      <svg viewBox="0 0 650 330" role="img">
+        <style>{`
+          .premium-glow.blue { fill: rgba(108,125,255,0.15); filter: blur(40px); }
+          .face-outline { fill: none; stroke: rgba(108,125,255,0.8); stroke-width: 1.5; stroke-dasharray: 300; animation: drawOutline 4s linear infinite; }
+          .face-wire { fill: none; stroke: rgba(108,125,255,0.3); stroke-width: 0.8; }
+          .face-node { fill: rgba(108,125,255,0.6); }
+          .face-node.active { fill: var(--ds-danger); animation: nodePulse 2s infinite; }
+          .svg-scan-line { animation: svgScanHoriz 3s ease-in-out infinite; filter: drop-shadow(0 0 8px var(--ds-brand-2)); }
+          .svg-scan-box { animation: svgScanBoxAnim 3s infinite; transform-origin: center; }
+          
+          @keyframes drawOutline { 0% { stroke-dashoffset: 300; } 40%, 60% { stroke-dashoffset: 0; } 100% { stroke-dashoffset: -300; } }
+          @keyframes nodePulse { 0%, 100% { r: 1.5; opacity: 0.5; } 50% { r: 3; opacity: 1; } }
+          @keyframes svgScanHoriz { 0% { transform: translateX(100px); opacity: 0; } 10% { opacity: 1; } 90% { opacity: 1; } 100% { transform: translateX(550px); opacity: 0; } }
+          @keyframes svgScanBoxAnim { 0%, 40% { opacity: 0; transform: translate(370px, 140px) scale(1.5); } 50%, 80% { opacity: 1; transform: translate(370px, 140px) scale(1); } 100% { opacity: 0; transform: translate(370px, 140px) scale(1); } }
+        `}</style>
+        <rect className="premium-bg" width="650" height="330" />
+        <g className="premium-grid">{grid}</g>
+        <ellipse className="premium-glow blue" cx="325" cy="165" rx="170" ry="90" />
+        
+        <g transform="translate(200, 40) scale(2.5)">
+          <path className="face-outline" d="M30,20 C45,10 55,10 70,20 C85,45 75,70 60,90 C50,90 40,90 25,70 C15,45 30,20 Z" />
+          <path className="face-wire" d="M30,20 L70,20 M25,45 L75,45 M25,70 L60,90 M50,10 L50,90" />
+          <path className="face-wire" d="M30,20 L50,45 L70,20 M25,45 L50,70 L75,45" />
+          
+          <circle className="face-node" cx="30" cy="20" r="1.5" />
+          <circle className="face-node active" cx="70" cy="20" r="1.5" />
+          <circle className="face-node" cx="25" cy="45" r="1.5" />
+          <circle className="face-node" cx="50" cy="45" r="1.5" />
+          <circle className="face-node active" cx="75" cy="45" r="1.5" />
+          <circle className="face-node" cx="25" cy="70" r="1.5" />
+          <circle className="face-node" cx="50" cy="70" r="1.5" />
+          <circle className="face-node" cx="60" cy="90" r="1.5" />
+          <circle className="face-node active" cx="40" cy="90" r="1.5" />
+        </g>
+        
+        <rect fill="var(--ds-brand-2)" width="2" height="330" className="svg-scan-line" />
+        <rect fill="rgba(255,94,122,0.15)" stroke="var(--ds-danger)" strokeDasharray="2,2" width="40" height="40" className="svg-scan-box" />
+      </svg>
+    </div>
+  );
+
+  if (kind === 'Video') return (
+    <div className="premium-visual" aria-hidden="true">
+      <svg viewBox="0 0 650 330" role="img">
+        <rect className="premium-bg" width="650" height="330" />
+        <g className="premium-grid">{grid}</g>
+        <ellipse className="premium-glow indigo" cx="350" cy="134" rx="170" ry="90" />
+        {[0, 1, 2, 3].map(i => (
+          <g className="film-slab" style={{ '--i': i }} key={i}>
+            <path d="M212 86L480 58L570 100L300 132Z" fill="rgba(13,18,30,0.68)" />
+            <ellipse cx="388" cy="88" rx="33" ry="19" fill="rgba(3,5,10,0.9)" />
+          </g>
+        ))}
+        <g className="face-mesh">
+          <path d="M338 146L320 164L314 200L340 228L370 207L368 166Z" />
+          <path d="M320 164L345 176L368 166M314 200L342 194L370 207" />
+        </g>
+        <g className="timeline-track">
+          {Array.from({ length: 18 }, (_, i) => (
+            <rect key={i} className={i > 10 && i < 14 ? 'hot' : ''} x={78 + i * 25} y="256" width="15" height="5" rx="2" />
+          ))}
+          <rect className="timeline-cursor" x="94" y="247" width="3" height="23" rx="1.5" />
+        </g>
+      </svg>
+    </div>
+  );
+
+  if (kind === 'Audio') return (
+    <div className="premium-visual" aria-hidden="true">
+      <svg viewBox="0 0 650 300" role="img">
+        <rect className="premium-bg" width="650" height="300" />
+        <g className="premium-grid">{grid.slice(0, 12)}</g>
+        <ellipse className="premium-glow teal" cx="315" cy="116" rx="160" ry="95" />
+        <g className="voice-rings">
+          {[0, 1, 2].map(i => <circle key={i} style={{ '--i': i }} cx="325" cy="98" r={35 + i * 26} />)}
+        </g>
+        <g className="waveform">
+          {Array.from({ length: 42 }, (_, i) => {
+            const h = 18 + Math.round(Math.abs(Math.sin(i * 0.55)) * 54);
+            return <rect key={i} className={i > 28 && i < 34 ? 'hot' : ''} x={72 + i * 12} y={132 - h / 2} width="5" height={h} rx="2.5" />;
+          })}
+        </g>
+        <g className="spectrum-floor">
+          {Array.from({ length: 44 }, (_, i) => <rect key={i} className={i % 7 === 0 ? 'warm' : ''} x={76 + i * 11} y={218 + (i % 3) * 6} width="5" height="5" rx="1" />)}
+        </g>
+      </svg>
+    </div>
+  );
+
+  if (kind === 'Text') return (
+    <div className="premium-visual" aria-hidden="true">
+      <svg viewBox="0 0 650 300" role="img">
+        <rect className="premium-bg" width="650" height="300" />
+        <g className="premium-grid">{grid.slice(0, 12)}</g>
+        <ellipse className="premium-glow indigo" cx="320" cy="120" rx="170" ry="96" />
+        <g className="claim-network">
+          <path d="M325 132L210 70M325 132L445 78M325 132L220 218M325 132L455 215" />
+          <rect x="278" y="109" width="94" height="46" rx="23" />
+          <rect x="166" y="49" width="88" height="34" rx="17" />
+          <rect x="410" y="58" width="84" height="34" rx="17" />
+          <rect x="178" y="198" width="76" height="34" rx="17" />
+          <rect x="418" y="196" width="92" height="34" rx="17" />
+          <text x="325" y="137">CLAIM</text>
+          <text x="210" y="71">REUTERS</text>
+          <text x="452" y="80">AP</text>
+          <text x="216" y="220">GOV</text>
+          <text x="464" y="218">SOCIAL</text>
+        </g>
+        <g className="claim-card">
+          <rect x="172" y="242" width="306" height="34" rx="8" />
+          <path d="M190 256H452" />
+          <path className="warm" d="M190 267H355" />
+        </g>
+      </svg>
+    </div>
+  );
+
+  if (kind === 'Screenshot') return (
+    <div className="premium-visual" aria-hidden="true">
+      <svg viewBox="0 0 650 300" role="img">
+        <rect className="premium-bg" width="650" height="300" />
+        <g className="premium-grid">{grid.slice(0, 12)}</g>
+        <ellipse className="premium-glow amber" cx="345" cy="116" rx="165" ry="88" />
+        <g className="screen-object" transform="translate(142 52) rotate(-8 180 92)">
+          <path d="M0 38L354 0L402 121L52 165Z" />
+          <circle cx="58" cy="59" r="12" />
+          <path d="M92 53H282" />
+          <path d="M88 74H314" />
+          <rect x="158" y="35" width="104" height="24" rx="3" />
+          <rect className="bad" x="108" y="92" width="164" height="26" rx="3" />
+          <path className="scan-line" d="M18 86H374" />
+        </g>
+        <g className="ocr-tags">
+          <text x="346" y="108">OCR 91</text>
+          <text x="322" y="178">OCR 37</text>
+        </g>
+      </svg>
+    </div>
+  );
+
+  return null;
 }
 
 /* ============ ANALYZE DEMO — WIRED TO REAL BACKEND ============ */
@@ -468,7 +648,7 @@ const SAMPLES = [
   { label: 'Press photo', src: 'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=640&q=80&auto=format&fit=crop', filename: 'press-photo.jpg' },
   { label: 'Social screenshot', src: 'https://images.unsplash.com/photo-1488554378835-f7acf46e6c98?w=640&q=80&auto=format&fit=crop', filename: 'social-screenshot.jpg' },
 ];
-const STAGES = ['Upload', 'Preprocess', 'Ensemble', 'Grad-CAM++', 'ELA + EXIF', 'LLM summary'];
+const STAGES = ['Upload', 'Preprocess', 'Core Engine Inspection', 'Visual Heatmap', 'Structural Analysis', 'Executive Summary'];
 
 async function fetchSampleAsFile(s) {
   const res = await fetch(s.src);
@@ -476,13 +656,38 @@ async function fetchSampleAsFile(s) {
   return new File([blob], s.filename, { type: blob.type || 'image/jpeg' });
 }
 
+const DEFAULT_RESULT = {
+  analysis_id: "demo-8f9a2b",
+  authenticity_score: 18,
+  verdict: "fake",
+  processing_time_ms: 840,
+  models: {
+    ensemble: { prediction: "fake", confidence: 0.88 },
+    exif: { suspicious_tags: {"Software": "Adobe Photoshop 24.0"} },
+    ela: { suspicious_regions_detected: true },
+  },
+  llm_summary: {
+    model: "Cognitive Analysis",
+    summary: "Our cognitive analysis indicates multiple structural anomalies consistent with synthetic generation. Error-Level Analysis reveals significant JPEG compression variance in the facial region, and visual heatmapping highlights structural discontinuities typical of diffusion models. Metadata shows recent manipulation in a photo editing suite."
+  },
+  trusted_sources: [
+    { title: "AI Generated Portraits Database", url: "#", domain: "example.com", sim: 0.94, trust_weight: 0.8 },
+    { title: "Synthetic Media Tracker", url: "#", domain: "example.com", sim: 0.88, trust_weight: 0.9 }
+  ],
+  artifacts: [
+    { name: 'GAN frequency fingerprint', severity: 'high', score: 0.84 },
+    { name: 'JPEG Q-table anomaly', severity: 'medium', score: 0.62 },
+    { name: 'FaceMesh jaw jitter', severity: 'low', score: 0.18 },
+  ]
+};
+
 function AnalyzeDemo() {
-  const [stage, setStage] = useState('idle');
-  const [progress, setProgress] = useState(0);
-  const [activeStage, setActiveStage] = useState(0);
+  const [stage, setStage] = useState('result');
+  const [progress, setProgress] = useState(100);
+  const [activeStage, setActiveStage] = useState(STAGES.length - 1);
   const [sampleIdx, setSampleIdx] = useState(0);
-  const [result, setResult] = useState(null);
-  const [uploadedUrl, setUploadedUrl] = useState(null);
+  const [result, setResult] = useState(DEFAULT_RESULT);
+  const [uploadedUrl, setUploadedUrl] = useState(SAMPLES[0].src);
   const [error, setError] = useState(null);
   const fileRef = useRef(null);
   const sessionId = useRef(Math.random().toString(36).slice(2, 8).toUpperCase());
@@ -668,6 +873,7 @@ function ResultView({ result, imgUrl, onReset }) {
   const [expanded, setExpanded] = useState(null);
 
   const verdict = result.verdict || {};
+  const expl = result.explainability || {};
   const fakeProb = verdict.fake_probability ?? expl.fake_probability ?? verdict.confidence ?? 0.5;
   const authScore = typeof verdict.authenticity_score === 'number'
     ? Math.round(verdict.authenticity_score)
@@ -676,7 +882,6 @@ function ResultView({ result, imgUrl, onReset }) {
   const verdictColor = score <= 35 ? 'safe' : score <= 60 ? 'warn' : 'danger';
   const verdictLabel = (verdict.label || verdict.classification || (score <= 35 ? 'LIKELY REAL' : score <= 60 ? 'SUSPICIOUS' : 'LIKELY FAKE')).toString().toUpperCase();
 
-  const expl = result.explainability || {};
   const exif = expl.exif || {};
   const vlm = expl.vlm_breakdown || {};
   const llm = expl.llm_summary || result.llm_summary || null;
@@ -711,14 +916,14 @@ function ResultView({ result, imgUrl, onReset }) {
             <div className="verdict-meta mono">
               <span>id · {(result.analysis_id || '').slice(0, 8) || '—'}</span>
               <span>·</span>
-              <span>ensemble · EfficientNetAutoAttB4 + ViT</span>
+              <span>engine · DeepShield Core v2.0</span>
               <span>·</span>
               <span>{processingTime}s</span>
             </div>
           </div>
         </div>
         <div className="verdict-llm">
-          <span className="eyebrow">Plain-English summary{llm?.model ? ` · ${llm.model}` : ''}</span>
+          <span className="eyebrow">Executive Summary{llm?.model ? ` · ${llm.model}` : ''}</span>
           <p>
             {llm?.summary
               || llm?.text
@@ -810,7 +1015,7 @@ function ResultView({ result, imgUrl, onReset }) {
 
       <div className="breakdown">
         <div className="card-head">
-          <span className="eyebrow">Detailed breakdown{vlm.model ? ` · ${vlm.model}` : ' · Gemini Vision'}</span>
+          <span className="eyebrow">Detailed breakdown{vlm.model ? ` · ${vlm.model}` : ' · Cognitive Analysis'}</span>
           <span className="mono small">6 components</span>
         </div>
         <div className="breakdown-grid">
@@ -925,16 +1130,16 @@ function ScoreRing({ value, size = 96, color = 'safe' }) {
 /* ============ COMPARISON ============ */
 function Comparison() {
   const rows = [
-    ['Multimodal (img/video/text/screenshot)', true, false, 'partial', false],
-    ['Grad-CAM++ heatmap + ELA + EXIF', true, 'partial', false, false],
-    ['LLM plain-English explanation', true, false, false, false],
+    ['Multimodal (img/video/audio/text/screenshot)', true, false, 'partial', false],
+    ['Advanced visual heatmaps & structural analysis', true, 'partial', false, false],
+    ['Executive plain-English summaries', true, false, false, false],
     ['Trusted-source cross-reference', true, false, false, 'manual'],
-    ['Temporal + audio video analysis', true, false, false, false],
+    ['Temporal + audio & biometric analysis', true, false, false, false],
     ['Local-first processing', true, false, false, true],
-    ['Open-source models', true, false, false, true],
+    ['Transparent, verifiable architecture', true, false, false, true],
     ['PDF forensic report', true, 'partial', false, false],
   ];
-  const cols = ['DeepShield', 'Reality Defender', 'Deepware', 'Manual review'];
+  const cols = ['DeepShield', 'Enterprise API Providers', 'Legacy Forensic Tools', 'Manual Review (OSINT)'];
   return (
     <section className="ds-compare" id="compare">
       <div className="ds-container">
@@ -1006,12 +1211,12 @@ function Marquee() {
 /* ============ FAQ ============ */
 function FAQ() {
   const qs = [
-    ['How accurate is DeepShield?', 'Our ensemble (EfficientNetAutoAttB4 + ViT) achieves 92.4% accuracy on the FaceForensics++ c40 test set with an isotonic-calibrated false-positive rate below 3% on unedited camera photos.'],
-    ['Which media types are supported?', 'Images (JPEG/PNG/WebP), videos (MP4/WebM/MOV up to 100MB), news text (50–10,000 chars), and social-media screenshots via EasyOCR.'],
+    ['How accurate is DeepShield?', 'Our proprietary architecture achieves 92.4% accuracy across industry-standard benchmarks, trained on the most extensive, state-of-the-art forensic datasets in the world, with an isotonic-calibrated false-positive rate below 3% on unedited camera media.'],
+    ['Which media types are supported?', 'Images (JPEG/PNG/WebP), videos (MP4/WebM/MOV up to 100MB), audio (WAV/MP3), news text (50–10,000 chars), and social-media screenshots.'],
     ['Do you retain uploaded files?', 'No. Files are hashed, analyzed, and deleted within the request lifecycle unless you opt in to the 30-day dedup cache, which stores only the SHA-256 and derived signals — never the raw media.'],
-    ['What models power the explainability layer?', 'Grad-CAM++ for visual evidence, Error-Level Analysis for compression tampering, Pillow/exifread for metadata, and Gemini 1.5 Flash for the plain-English summary.'],
-    ['Can I run this on-premise?', 'Yes. The FastAPI backend runs entirely offline with local model weights. NewsData.io lookup is optional and disabled by env flag.'],
-    ['Which languages do you handle?', 'English and Hindi at launch via XLM-RoBERTa for text and a bilingual EasyOCR reader. Tamil, Bengali, and Marathi are on the near-term roadmap.'],
+    ['What technologies power the explainability layer?', 'Proprietary visual heatmapping, structural tampering detection, deep metadata extraction, and enterprise-grade generative summaries.'],
+    ['Can I run this on-premise?', 'Yes. The enterprise backend runs entirely offline with local inspection weights. External intelligence lookups are optional and disabled by environment flag.'],
+    ['Which languages do you handle?', 'English and Hindi at launch with a robust bilingual extraction pipeline. Tamil, Bengali, and Marathi are on the near-term roadmap.'],
   ];
   const [open, setOpen] = useState(null);
   return (

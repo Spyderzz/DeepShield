@@ -5,24 +5,24 @@ export const api = axios.create({
   timeout: 300000,
 });
 
+export function resolveMediaUrl(url) {
+  if (!url) return null;
+  if (url.startsWith('http') || url.startsWith('data:')) return url;
+  const path = url.startsWith('/') ? url : `/${url}`;
+  const apiBase = import.meta.env.VITE_API_BASE_URL || '/api/v1';
+  if (apiBase.startsWith('http') && path.startsWith('/media/')) {
+    return `${apiBase.replace(/\/api\/v1\/?$/, '')}${path}`;
+  }
+  return path;
+}
+
 const TOKEN_KEY = 'deepshield.token';
 const USER_KEY = 'deepshield.user';
 
 function readStoredToken() {
   const token = window.localStorage.getItem(TOKEN_KEY);
   if (token) return token;
-  const legacyToken = window.sessionStorage.getItem(TOKEN_KEY);
-  if (legacyToken) {
-    const legacyUser = window.sessionStorage.getItem(USER_KEY);
-    window.localStorage.setItem(TOKEN_KEY, legacyToken);
-    if (legacyUser) {
-      window.localStorage.setItem(USER_KEY, legacyUser);
-      window.sessionStorage.removeItem(USER_KEY);
-    }
-    window.sessionStorage.removeItem(TOKEN_KEY);
-    return legacyToken;
-  }
-  return null;
+  return window.sessionStorage.getItem(TOKEN_KEY);
 }
 
 function clearStoredAuth() {

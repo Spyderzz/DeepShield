@@ -7,6 +7,8 @@ import { listHistory } from '../services/historyApi.js';
 import {
   analyzeImage, analyzeText, analyzeScreenshot, analyzeAudio, submitVideoJob, pollVideoJob,
 } from '../services/analyzeApi.js';
+import { resolveMediaUrl } from '../services/api.js';
+import { useAuth } from '../contexts/AuthContext.jsx';
 import './deepshield-landing.css';
 import './deepshield-pages.css';
 
@@ -44,20 +46,12 @@ async function fetchSampleAsFile(url, filename = 'sample.jpg') {
   return new File([b], filename, { type: b.type || 'image/jpeg' });
 }
 
-function resolveThumbUrl(url) {
-  if (!url) return null;
-  if (url.startsWith('http') || url.startsWith('data:')) return url;
-  const path = url.startsWith('/') ? url : `/${url}`;
-  const apiBase = import.meta.env.VITE_API_BASE_URL || '/api/v1';
-  if (apiBase.startsWith('http') && path.startsWith('/media/')) {
-    return `${apiBase.replace(/\/api\/v1\/?$/, '')}${path}`;
-  }
-  return path;
-}
+
 
 export default function AnalyzePage() {
   useDottedSurface();
   const navigate = useNavigate();
+  const { isAuthed } = useAuth();
 
   const [mode, setMode] = useState('image');
   const [stage, setStage] = useState('idle');
@@ -148,8 +142,11 @@ export default function AnalyzePage() {
       setProgress(100);
       setActiveStage(MODE_STAGES[mode].length - 1);
       const id = data?.record_id || data?.analysis_id;
+      const tokenParam = !isAuthed && data?.record_id && data?.analysis_id
+        ? `?token=${encodeURIComponent(data.analysis_id)}`
+        : '';
       setTimeout(() => {
-        if (id) navigate(`/results/${id}`, { state: { result: data } });
+        if (id) navigate(`/results/${id}${tokenParam}`, { state: { result: data } });
         else setStage('idle');
       }, 400);
     } catch (e) {
@@ -312,12 +309,14 @@ export default function AnalyzePage() {
             {stage === 'processing' && (
               <div className="processing-wrap">
                 <div>
-                  {mode !== 'text' ? (
+                  {mode === 'text' ? (
+                    <TextProcessingViz />
+                  ) : mode === 'audio' ? (
+                    <AudioProcessingViz />
+                  ) : (
                     <div className="stack-scene mini" style={{ height: 380 }}>
                       <LayerStack src={previewUrl || SAMPLE_SRC} density={6} />
                     </div>
-                  ) : (
-                    <TextProcessingViz />
                   )}
                 </div>
                 <div>
@@ -363,7 +362,7 @@ export default function AnalyzePage() {
                   style={{ cursor: r.id ? 'pointer' : 'default' }}
                 >
                   <div className="recent-thumb" style={{
-                    backgroundImage: (r.src || r.thumbnail_url) ? `url(${r.src || resolveThumbUrl(r.thumbnail_url)})` : undefined,
+                    backgroundImage: (r.src || r.thumbnail_url) ? `url(${r.src || resolveMediaUrl(r.thumbnail_url)})` : undefined,
                     background: (r.src || r.thumbnail_url) ? undefined : 'linear-gradient(135deg, rgba(108,125,255,0.08), rgba(61,219,179,0.04))',
                   }}>
                     <span className={`verdict-dot h-verdict ${color}`} style={{ position: 'absolute', top: 8, right: 8, padding: '2px 7px', fontSize: 9 }}>{verdictLabel}</span>
@@ -417,6 +416,65 @@ function TextProcessingViz() {
           </div>
         );
       })}
+    </div>
+  );
+}
+
+function AudioProcessingViz() {
+  const [bars, setBars] = useState(Array(32).fill(20));
+  const [stats, setStats] = useState({ freq: 120.0, amp: 0.4 });
+
+  useEffect(() => {
+    const id = setInterval(() => {
+      setBars(prev => prev.map(() => 5 + Math.random() * 95));
+      setStats({
+        freq: 120 + Math.random() * 80,
+        amp: 0.4 + Math.random() * 0.4
+      });
+    }, 120);
+    return () => clearInterval(id);
+  }, []);
+
+  return (
+    <div style={{
+      padding: 24, background: 'rgba(0,0,0,0.4)', border: '1px solid var(--ds-border)',
+      borderRadius: 14, minHeight: 380, display: 'flex', flexDirection: 'column',
+      justifyContent: 'center', alignItems: 'center', gap: 40, overflow: 'hidden', position: 'relative'
+    }}>
+      <div style={{
+        position: 'absolute', width: '250px', height: '250px',
+        background: 'var(--ds-brand-1)', filter: 'blur(120px)', opacity: 0.15, borderRadius: '50%'
+      }}/>
+      
+      <div style={{ display: 'flex', alignItems: 'center', gap: 4, zIndex: 1, height: 100 }}>
+        {bars.map((h, i) => {
+          const isBrand1 = i % 2 === 0;
+          return (
+            <div key={i} style={{
+              width: 6, height: `${h}%`, 
+              backgroundColor: isBrand1 ? 'var(--ds-brand-1)' : 'var(--ds-brand-2)',
+              borderRadius: 3, transition: 'height 120ms ease-out',
+              boxShadow: `0 0 10px ${isBrand1 ? 'rgba(127,143,255,0.4)' : 'rgba(61,219,179,0.4)'}`,
+              opacity: 0.6 + (h/250)
+            }}/>
+          );
+        })}
+      </div>
+      
+      <div style={{ zIndex: 1, fontFamily: 'var(--ff-mono)', fontSize: 12, display: 'flex', gap: 32, color: 'var(--ds-muted)' }}>
+        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 4 }}>
+          <span>SPECTRUM</span>
+          <span style={{ color: 'var(--ds-ink)' }}>{stats.freq.toFixed(1)} Hz</span>
+        </div>
+        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 4 }}>
+          <span>AMPLITUDE</span>
+          <span style={{ color: 'var(--ds-ink)' }}>{stats.amp.toFixed(2)}</span>
+        </div>
+        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 4 }}>
+          <span>NOISE FLOOR</span>
+          <span style={{ color: 'var(--ds-ink)' }}>-84 dB</span>
+        </div>
+      </div>
     </div>
   );
 }

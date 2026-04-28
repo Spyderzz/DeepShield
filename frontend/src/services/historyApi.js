@@ -5,8 +5,10 @@ export async function listHistory(limit = 50, offset = 0) {
   return data;
 }
 
-export async function getHistoryDetail(id) {
-  const { data } = await api.get(`/history/${id}`);
+export async function getHistoryDetail(id, token = null) {
+  const { data } = await api.get(`/history/${id}`, {
+    params: token ? { token } : undefined,
+  });
   return data;
 }
 

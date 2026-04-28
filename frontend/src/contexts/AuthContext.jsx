@@ -1,6 +1,6 @@
 import { createContext, useContext, useEffect, useState } from 'react';
 import {
-  clearAuth, clearLegacyAuth, getStoredToken, getStoredUser, setAuth,
+  clearAuth, getStoredToken, getStoredUser, setAuth,
   login as apiLogin, register as apiRegister, fetchMe,
 } from '../services/authApi.js';
 
@@ -18,7 +18,6 @@ export function AuthProvider({ children }) {
   });
 
   useEffect(() => {
-    clearLegacyAuth();
     if (token) {
       fetchMe()
         .then(setUser)
@@ -29,11 +28,11 @@ export function AuthProvider({ children }) {
     }
   }, [token]);
 
-  const login = async (email, password) => {
+  const login = async (email, password, remember = true) => {
     setLoading(true);
     try {
       const data = await apiLogin(email, password);
-      setAuth(data.access_token, data.user);
+      setAuth(data.access_token, data.user, remember);
       setToken(data.access_token);
       setUser(data.user);
       setAuthReady(true);

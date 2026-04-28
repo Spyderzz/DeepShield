@@ -44,7 +44,9 @@ The platform features a **premium glassmorphism UI** with Apple-style 3D process
 
 🔍 **Image Deepfake Detection** — Fine-tuned Vision Transformer (ViT) trained on FaceForensics++ combined with Grad-CAM++ heatmap explainability and Error Level Analysis (ELA).
 
-🎬 **Video Deepfake Detection** — Keyframe extraction, per-frame ViT analysis, optical flow temporal consistency tracking, and **audio deepfake detection** (WavLM/wav2vec2).
+🎬 **Video Deepfake Detection** — Keyframe extraction, per-frame ViT analysis, optical flow temporal consistency tracking, and **audio deepfake detection** (WavLM/wav2vec2) with async job processing.
+
+🎙️ **Standalone Audio Deepfake Detection** — Acoustic feature extraction, WavLM/wav2vec2 voice ML models, and signal heuristics (spectral variance, RMS consistency) for independent audio analysis.
 
 📰 **Fake News Text Detection** — Multilingual BERT classifier (English & Hindi) with sensationalism scoring, NER-based keyword extraction, and truth-override via cosine similarity.
 
@@ -83,7 +85,7 @@ The platform features a **premium glassmorphism UI** with Apple-style 3D process
 │                 BACKEND (FastAPI Server)                     │
 │  ┌─────────────────────┼─────────────────────────────────┐   │
 │  │              API Gateway Layer                        │   │
-│  │  /upload   /analyze   /report   /auth   /history      │   │
+│  │  /upload   /analyze   /report   /auth   /history   /stats/recent │   │
 │  ├───────────────────────────────────────────────────────┤   │
 │  │              Service Layer                            │   │
 │  │  ImageSvc VideoSvc TextSvc AudioSvc LLMSvc ReportSvc  │   │
@@ -155,6 +157,11 @@ Paste Article → NER Keyword Extraction → BERT Classification → Truth-Overr
 **Screenshot Pipeline:**
 ```
 Upload → EasyOCR Extraction → BERT Credibility Scan → Layout Anomaly Detection → Source Cross-Reference → Verdict
+```
+
+**Audio Pipeline:**
+```
+Upload → Preprocess Audio → Acoustic Feature Extraction → Voice ML Classification → Signal Heuristics → Gemini Summary → Verdict
 ```
 
 ---
@@ -230,9 +237,9 @@ npm run dev
 
 ---
 
-## 📈 Authenticity Score & VLM Breakdown
+## 📈 Deepfake Probability & VLM Breakdown
 
-DeepShield uses a **0–100 confidence scale** reinforced by a Gemini VLM component breakdown.
+DeepShield uses a standardized **Deepfake Probability score** (computed as `100 - Authenticity Score`) alongside a **0–100 confidence scale**, reinforced by a Gemini VLM component breakdown.
 
 | Score Range | Verdict | Color | Meaning |
 |:------------|:--------|:------|:--------|
@@ -248,8 +255,8 @@ The **Detailed Breakdown Card** evaluates sub-components (Facial Symmetry, Light
 
 ## 🛡️ Security Features
 - **Stateless Analysis:** Uploaded files cached via SHA-256 for fast retrieval but safely stored without permanent coupling unless explicitly saved to history.
-- **Rate Limiting:** IP and User-ID based slowapi limiters to prevent API abuse.
-- **Route Guards:** Authenticated `/report` and `/history` endpoints.
+- **Rate Limiting:** IP and User-ID based `slowapi` limiters across endpoints to protect system resources and prevent API abuse.
+- **Route Guards & Report Security:** Authenticated `/history` and `/stats/recent` endpoints, with mandatory UUID token validation on `/report` access to prevent unauthorized record enumeration.
 - **Neon Cloud DB:** Production-ready PostgreSQL persistence.
 
 ---

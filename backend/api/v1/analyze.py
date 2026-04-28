@@ -98,6 +98,13 @@ def _compute_llm_summary(resp, *, record_id: int, user, media_kind: str, exclude
         return None
 
 
+def _persist_response_payload(db: Session, record: AnalysisRecord, resp) -> None:
+    """Keep reloaded/history responses aligned with the fresh API response."""
+    record.result_json = json.dumps(resp.model_dump())
+    db.add(record)
+    db.commit()
+
+
 @router.post("/image", response_model=ImageAnalysisResponse)
 @limiter.limit(ANON_ANALYZE, exempt_when=is_authed)
 @limiter.limit(AUTH_ANALYZE, exempt_when=is_anon)
@@ -288,6 +295,8 @@ async def analyze_image(
         except Exception as e:  # noqa: BLE001
             logger.warning(f"VLM breakdown failed, continuing: {e}")
 
+    resp.processing_summary.stages_completed = stages
+    _persist_response_payload(db, record, resp)
     return resp
 
 
@@ -476,6 +485,8 @@ async def analyze_video_endpoint(
     if llm:
         resp.llm_summary = llm
 
+    resp.processing_summary.stages_completed = stages
+    _persist_response_payload(db, record, resp)
     return resp
 
 
@@ -616,6 +627,8 @@ async def analyze_text_endpoint(
     if llm:
         resp.llm_summary = llm
 
+    resp.processing_summary.stages_completed = stages
+    _persist_response_payload(db, record, resp)
     return resp
 
 
@@ -799,6 +812,8 @@ async def analyze_screenshot_endpoint(
     if llm:
         resp.llm_summary = llm
 
+    resp.processing_summary.stages_completed = stages
+    _persist_response_payload(db, record, resp)
     return resp
 
 
@@ -967,6 +982,7 @@ async def analyze_video_async(
 
 
 @router.post("/audio", response_model=AudioAnalysisResponse)
+@limiter.limit(ANON_ANALYZE, exempt_when=is_authed)
 @limiter.limit(AUTH_ANALYZE, exempt_when=is_anon)
 async def analyze_audio_endpoint(
     request: Request,
@@ -1042,34 +1058,57 @@ async def analyze_audio_endpoint(
     ml_prob = ml_score["fake_probability"]
     final_prob = 0.5 * heuristics_prob + 0.5 * ml_prob
 
-    if final_prob > 0.65:
-        verdict = Verdict.VERY_LIKELY_FAKE
-    elif final_prob > 0.45:
-        verdict = Verdict.SUSPICIOUS
-    else:
-        verdict = Verdict.LIKELY_REAL
+    score = int(round(max(0.0, min(100.0, (1.0 - final_prob) * 100.0))))
+    label, severity = get_verdict_label(score)
 
     resp = AudioAnalysisResponse(
         analysis_id=str(uuid.uuid4()),
         timestamp=datetime.now(timezone.utc).isoformat(),
-        verdict=verdict,
+        verdict=Verdict(
+            label=label,
+            severity=severity,
+            authenticity_score=score,
+            model_confidence=final_prob,
+            model_label="Deepfake-audio-detection-V2"
+        ),
         explainability=audio_expl,
         processing_summary=ProcessingSummary(
-            total_time_ms=int((time.perf_counter() - start) * 1000),
-            stages=stages,
+            stages_completed=stages,
+            total_duration_ms=int((time.perf_counter() - start) * 1000),
+            model_used="MelodyMachine/Deepfake-audio-detection-V2",
+            models_used=["MelodyMachine/Deepfake-audio-detection-V2", "audio-signal-heuristics"],
+            calibrator_applied=False,
         )
     )
 
-    stages.append("llm_summary")
-    resp = _compute_llm_summary(resp, record_id=0, user=user, media_kind="audio_deepfake_analysis")
+    ext = (mime.split("/")[-1] if mime else "mp3").replace("mpeg", "mp3").replace("x-wav", "wav")
+    try:
+        media_path = save_bytes(raw, media_hash, ext)
+    except Exception as e:  # noqa: BLE001
+        logger.warning(f"audio media save failed: {e}")
+        media_path = None
 
-    rec_id, stored_url = store_and_save(
-        db, user, raw, media_hash, "audio", resp, file_ext="mp3"
+    record = AnalysisRecord(
+        user_id=user.id if user else None,
+        media_type="audio",
+        verdict=label,
+        authenticity_score=float(score),
+        result_json=json.dumps(resp.model_dump()),
+        media_hash=media_hash,
+        media_path=media_path,
     )
-    resp.record_id = rec_id
-    if stored_url:
-        resp.thumbnail_url = stored_url
+    db.add(record)
+    db.commit()
+    db.refresh(record)
+    resp.record_id = record.id
 
+    llm = _compute_llm_summary(resp, record_id=record.id, user=user, media_kind="audio_deepfake_analysis")
+    if llm:
+        resp.llm_summary = llm
+        stages.append("llm_summary")
+
+    resp.processing_summary.stages_completed = stages
+    _persist_response_payload(db, record, resp)
     return resp
 
 

@@ -53,7 +53,7 @@ export default function App() {
       <Routes>
         <Route path="/" element={<HomePage />} />
         <Route path="/analyze"     element={<ProtectedRoute><AnalyzePage /></ProtectedRoute>} />
-        <Route path="/results/:id" element={<ProtectedRoute><ResultsPage /></ProtectedRoute>} />
+        <Route path="/results/:id" element={<ResultsPage />} />
         <Route path="/history"     element={<ProtectedRoute><HistoryPage /></ProtectedRoute>} />
         <Route path="/login"    element={<LoginPage />} />
         <Route path="/register" element={<RegisterPage />} />

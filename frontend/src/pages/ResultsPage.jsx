@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { useLocation, useNavigate, useParams } from 'react-router-dom';
+import { useLocation, useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import { downloadReportBlob, generateReport, saveReportBlob } from '../services/reportApi.js';
 import { SharedNav, SharedFooter } from '../components/layout/SharedNav.jsx';
 import useDottedSurface from '../hooks/useDottedSurface.js';
@@ -24,6 +24,8 @@ export default function ResultsPage() {
   const { id } = useParams();
   const navigate = useNavigate();
   const location = useLocation();
+  const [searchParams] = useSearchParams();
+  const accessToken = searchParams.get('token');
 
   const preloaded = location.state?.result;
   const [result, setResult] = useState(preloaded || null);
@@ -34,7 +36,7 @@ export default function ResultsPage() {
     if (preloaded) return;
     (async () => {
       try {
-        const data = await getHistoryDetail(id);
+        const data = await getHistoryDetail(id, accessToken);
         setResult(data);
       } catch (e) {
         setError(e?.response?.data?.detail || e?.message || 'Could not load result');
@@ -78,10 +80,10 @@ export default function ResultsPage() {
     );
   }
 
-  return <ResultsView result={result} id={id} />;
+  return <ResultsView result={result} id={id} accessToken={accessToken} />;
 }
 
-function ResultsView({ result, id }) {
+function ResultsView({ result, id, accessToken }) {
   const navigate = useNavigate();
   const [heatmapMode, setHeatmapMode] = useState('heatmap');
   const [alpha, setAlpha] = useState(0.65);
@@ -93,7 +95,7 @@ function ResultsView({ result, id }) {
     if (pdfLoading) return;
     setPdfLoading(true);
     try {
-      const token = result.analysis_id || id;
+      const token = accessToken || result.analysis_id || id;
       await generateReport(id, token);
       const blob = await downloadReportBlob(id, token);
       saveReportBlob(blob, id);

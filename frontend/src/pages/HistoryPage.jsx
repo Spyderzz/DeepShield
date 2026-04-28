@@ -4,6 +4,7 @@ import { SharedNav, SharedFooter } from '../components/layout/SharedNav.jsx';
 import useDottedSurface from '../hooks/useDottedSurface.js';
 import { useAuth } from '../contexts/AuthContext.jsx';
 import { listHistory, deleteHistory } from '../services/historyApi.js';
+import { resolveMediaUrl } from '../services/api.js';
 import './deepshield-landing.css';
 import './deepshield-pages.css';
 
@@ -21,7 +22,7 @@ function toDisplayItem(r) {
     title: r.title || `${r.media_type || 'analysis'} · #${idStr}`,
     sub: r.verdict ? `verdict · ${r.verdict}` : '',
     when: r.created_at ? new Date(r.created_at).toLocaleString() : '',
-    src: r.thumbnail_url || null,
+    src: resolveMediaUrl(r.thumbnail_url) || null,
     hash: idStr.padStart(8, '0'),
   };
 }

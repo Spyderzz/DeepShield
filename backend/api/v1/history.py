@@ -7,7 +7,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query, status
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
-from api.deps import get_current_user
+from api.deps import get_current_user, optional_current_user
 from db.database import get_db
 from db.models import AnalysisRecord, User
 
@@ -55,12 +55,22 @@ def list_history(
 @router.get("/{record_id}")
 def get_history_detail(
     record_id: int,
-    user: User = Depends(get_current_user),
+    token: str | None = Query(None),
+    user: User | None = Depends(optional_current_user),
     db: Session = Depends(get_db),
 ):
     r = db.query(AnalysisRecord).filter(AnalysisRecord.id == record_id).first()
-    if not r or r.user_id != user.id:
+    if not r:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Analysis not found")
+    if user is None or r.user_id != user.id:
+        if r.user_id is not None or not token:
+            raise HTTPException(status.HTTP_404_NOT_FOUND, "Analysis not found")
+        try:
+            token_payload = json.loads(r.result_json)
+        except Exception:
+            raise HTTPException(status.HTTP_500_INTERNAL_SERVER_ERROR, "Corrupt result payload")
+        if token_payload.get("analysis_id") != token:
+            raise HTTPException(status.HTTP_404_NOT_FOUND, "Analysis not found")
     try:
         payload = json.loads(r.result_json)
         # Inject storage fields from DB columns so the frontend can display full-size media
