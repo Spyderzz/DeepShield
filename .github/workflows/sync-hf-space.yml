@@ -13,6 +13,8 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6
+        with:
+          submodules: recursive
       - name: Build sync payload (preserve trained_models)
         env:
           HF_TOKEN: ${{ secrets.HF_TOKEN }}
