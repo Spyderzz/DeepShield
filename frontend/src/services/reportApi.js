@@ -1,7 +1,8 @@
 import { api } from './api.js';
 
-export async function generateReport(recordId) {
-  const { data } = await api.post(`/report/${recordId}`, null, { timeout: 60000 });
+export async function generateReport(recordId, token = null) {
+  const url = token ? `/report/${recordId}?token=${token}` : `/report/${recordId}`;
+  const { data } = await api.post(url, null, { timeout: 60000 });
   return data;
 }
 
@@ -10,8 +11,9 @@ export function reportDownloadUrl(recordId) {
   return `${base}/report/${recordId}/download`;
 }
 
-export async function downloadReportBlob(recordId) {
-  const { data } = await api.get(`/report/${recordId}/download`, { responseType: 'blob', timeout: 30000 });
+export async function downloadReportBlob(recordId, token = null) {
+  const url = token ? `/report/${recordId}/download?token=${token}` : `/report/${recordId}/download`;
+  const { data } = await api.get(url, { responseType: 'blob', timeout: 30000 });
   return data;
 }
 

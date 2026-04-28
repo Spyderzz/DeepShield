@@ -259,9 +259,7 @@ async def analyze_image(
         media_type="image",
         verdict=label,
         authenticity_score=float(score),
-        result_json=json.dumps(resp.model_dump(
-            exclude={"explainability": {"heatmap_base64", "ela_base64", "boxes_base64"}}
-        )),
+        result_json=json.dumps(resp.model_dump()),
         media_hash=media_hash,
         media_path=media_path,
         thumbnail_url=thumbnail_url,
@@ -526,8 +524,13 @@ async def analyze_text_endpoint(
     # lower confidence, but should not give a high floor when classifier is very fake.
     manip_penalty = min(len(manip) * 5, 30)
     raw_score = (1.0 - effective_fake_prob) * 100.0
-    heuristic_score = max(0, 100 - sens.score) * 0.60 + max(0, 100 - manip_penalty) * 0.40
-    weighted = raw_score * 0.90 + heuristic_score * 0.10
+    
+    if lang == "en":
+        heuristic_score = max(0, 100 - sens.score) * 0.60 + max(0, 100 - manip_penalty) * 0.40
+        weighted = raw_score * 0.90 + heuristic_score * 0.10
+    else:
+        weighted = raw_score
+
     score = int(round(max(0.0, min(100.0, weighted))))
     label, severity = get_verdict_label(score)
     duration_ms = int((time.perf_counter() - start) * 1000)
@@ -685,12 +688,18 @@ async def analyze_screenshot_endpoint(
     manip_penalty = min(len(manip) * 5, 30)
     layout_penalty = min(len(layout) * 5, 15)
     raw_score = (1.0 - effective_fake_prob) * 100.0
-    heuristic_score = (
-        max(0, 100 - sens.score) * 0.45
-        + max(0, 100 - manip_penalty) * 0.35
-        + max(0, 100 - layout_penalty) * 0.20
-    )
-    weighted = raw_score * 0.90 + heuristic_score * 0.10
+    
+    if lang == "en":
+        heuristic_score = (
+            max(0, 100 - sens.score) * 0.45
+            + max(0, 100 - manip_penalty) * 0.35
+            + max(0, 100 - layout_penalty) * 0.20
+        )
+        weighted = raw_score * 0.90 + heuristic_score * 0.10
+    else:
+        layout_heuristic = max(0, 100 - layout_penalty)
+        weighted = raw_score * 0.90 + layout_heuristic * 0.10
+
     if not full_text.strip():
         weighted = 50
     score = int(round(max(0.0, min(100.0, weighted))))

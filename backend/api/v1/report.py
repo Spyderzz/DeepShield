@@ -16,13 +16,21 @@ from services.report_service import cleanup_expired, create_report_row, generate
 router = APIRouter(prefix="/report", tags=["report"])
 
 
-def _assert_record_access(record: AnalysisRecord, user: User | None) -> None:
+def _assert_record_access(record: AnalysisRecord, user: User | None, token: str | None = None) -> None:
     """Phase 15.1 — allow access if the requester owns the record, or if the record
-    is anonymous (user_id is None). Everything else is 403."""
-    if record.user_id is None:
-        return
+    is anonymous (user_id is None) AND they provide the correct UUID token. Everything else is 403."""
     if user is not None and record.user_id == user.id:
         return
+    if record.user_id is None:
+        if not token:
+            raise HTTPException(status.HTTP_403_FORBIDDEN, "Anonymous reports require a token")
+        try:
+            import json
+            data = json.loads(record.result_json)
+            if data.get("analysis_id") == token:
+                return
+        except Exception:
+            pass
     raise HTTPException(status.HTTP_403_FORBIDDEN, "You do not own this analysis")
 
 
@@ -32,6 +40,7 @@ def _assert_record_access(record: AnalysisRecord, user: User | None) -> None:
 def generate(
     request: Request,
     analysis_id: int,
+    token: str | None = Query(None),
     db: Session = Depends(get_db),
     user: User | None = Depends(optional_current_user),
 ):
@@ -39,7 +48,7 @@ def generate(
     if not record:
         raise HTTPException(status_code=404, detail="analysis not found")
 
-    _assert_record_access(record, user)
+    _assert_record_access(record, user, token)
 
     existing = db.query(Report).filter(Report.analysis_id == analysis_id).first()
     if existing and Path(existing.file_path).exists():
@@ -70,13 +79,14 @@ def generate(
 def download(
     request: Request,
     analysis_id: int,
+    token: str | None = Query(None),
     db: Session = Depends(get_db),
     user: User | None = Depends(optional_current_user),
 ):
     record = db.query(AnalysisRecord).filter(AnalysisRecord.id == analysis_id).first()
     if not record:
         raise HTTPException(status_code=404, detail="analysis not found")
-    _assert_record_access(record, user)
+    _assert_record_access(record, user, token)
 
     row = db.query(Report).filter(Report.analysis_id == analysis_id).first()
     if not row:

@@ -76,9 +76,10 @@ def _extract_llm_summary(analysis_json: dict) -> dict | None:
 
 
 def render_html(analysis_json: dict) -> str:
-    score = analysis_json.get("verdict", {}).get("authenticity_score", 50)
-    sc = _score_class(score)
-    donut_b64 = _make_donut_chart(score, sc)
+    auth_score = analysis_json.get("verdict", {}).get("authenticity_score", 50)
+    fake_score = 100 - auth_score
+    sc = _score_class(auth_score)
+    donut_b64 = _make_donut_chart(fake_score, sc)
     llm_summary = _extract_llm_summary(analysis_json)
     expl: dict[str, Any] = analysis_json.get("explainability") or {}
 
@@ -96,6 +97,7 @@ def render_html(analysis_json: dict) -> str:
             "AI-based analysis may not be 100% accurate.",
         ),
         score_class=sc,
+        fake_score=fake_score,
         generated_at=datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC"),
         donut_b64=donut_b64,
         llm_summary=llm_summary,
@@ -134,11 +136,11 @@ def _fallback_pdf(record: AnalysisRecord, analysis_json: dict, out_path: Path) -
         Paragraph("DeepShield Analysis Report", styles["Title"]),
         Paragraph(f"Record #{record.id} · {analysis_json.get('media_type', record.media_type)}", styles["Normal"]),
         Spacer(1, 8),
-        Paragraph("Verdict", styles["Heading2"]),
+        Paragraph("Deepfake Probability", styles["Heading2"]),
         Table(
             [
                 ["Label", verdict.get("label", record.verdict)],
-                ["Authenticity score", f"{verdict.get('authenticity_score', record.authenticity_score)}/100"],
+                ["Deepfake probability", f"{100 - verdict.get('authenticity_score', record.authenticity_score)}/100"],
                 ["Model label", verdict.get("model_label", "")],
                 ["Model confidence", f"{float(verdict.get('model_confidence', 0.0)):.3f}"],
             ],
@@ -146,6 +148,14 @@ def _fallback_pdf(record: AnalysisRecord, analysis_json: dict, out_path: Path) -
         ),
         Spacer(1, 8),
     ]
+
+    llm_summary = _extract_llm_summary(analysis_json)
+    if llm_summary and llm_summary.get("paragraph"):
+        story.extend([
+            Paragraph("AI Explanation", styles["Heading2"]),
+            Paragraph(llm_summary["paragraph"], styles["Normal"]),
+            Spacer(1, 8),
+        ])
 
     exif = expl.get("exif") or {}
     if exif:

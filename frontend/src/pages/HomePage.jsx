@@ -510,7 +510,14 @@ function AnalyzeDemo() {
     setUploadedUrl(previewUrl);
     setStage('processing');
     try {
-      const data = await analyzeImage(file);
+      let data;
+      if (file.type && file.type.startsWith('video/')) {
+        const { submitVideoJob, pollVideoJob } = await import('../services/analyzeApi.js');
+        const job = await submitVideoJob(file, { cache: true });
+        data = await pollVideoJob(job.job_id || job.id, { onProgress: (j) => setProgress(j.progress || 50) });
+      } else {
+        data = await analyzeImage(file);
+      }
       setProgress(100);
       setActiveStage(STAGES.length - 1);
       setResult(data);
@@ -578,7 +585,7 @@ function AnalyzeDemo() {
                   <input
                     ref={fileRef}
                     type="file"
-                    accept="image/*"
+                    accept="image/*,video/*"
                     style={{ display: 'none' }}
                     onChange={(e) => onFilePicked(e.target.files?.[0])}
                   />
@@ -662,11 +669,12 @@ function ResultView({ result, imgUrl, onReset }) {
 
   const verdict = result.verdict || {};
   const fakeProb = verdict.fake_probability ?? expl.fake_probability ?? verdict.confidence ?? 0.5;
-  const score = typeof verdict.authenticity_score === 'number'
+  const authScore = typeof verdict.authenticity_score === 'number'
     ? Math.round(verdict.authenticity_score)
     : Math.round(Math.max(0, Math.min(1, 1 - fakeProb)) * 100);
-  const verdictColor = score > 65 ? 'safe' : score > 40 ? 'warn' : 'danger';
-  const verdictLabel = (verdict.label || verdict.classification || (score < 40 ? 'LIKELY FAKE' : score < 65 ? 'SUSPICIOUS' : 'LIKELY REAL')).toString().toUpperCase();
+  const score = 100 - authScore; // Display as deepfake probability
+  const verdictColor = score <= 35 ? 'safe' : score <= 60 ? 'warn' : 'danger';
+  const verdictLabel = (verdict.label || verdict.classification || (score <= 35 ? 'LIKELY REAL' : score <= 60 ? 'SUSPICIOUS' : 'LIKELY FAKE')).toString().toUpperCase();
 
   const expl = result.explainability || {};
   const exif = expl.exif || {};
@@ -698,7 +706,7 @@ function ResultView({ result, imgUrl, onReset }) {
         <div className="verdict-left">
           <ScoreRing value={score} color={verdictColor} />
           <div>
-            <span className="eyebrow">Authenticity verdict</span>
+            <span className="eyebrow">Deepfake probability</span>
             <h3 className="display verdict-label">{verdictLabel}</h3>
             <div className="verdict-meta mono">
               <span>id · {(result.analysis_id || '').slice(0, 8) || '—'}</span>
@@ -737,18 +745,22 @@ function ResultView({ result, imgUrl, onReset }) {
             </div>
           </div>
           <div className="heatmap-stage">
-            <img src={imgUrl} alt="" className="heatmap-base" />
-            {heatmapMode === 'heatmap' && (
+            {result.media_type === 'video' ? (
+              <video src={imgUrl} controls className="heatmap-base" style={{ maxHeight: 520, objectFit: 'contain', width: '100%' }} />
+            ) : (
+              <img src={imgUrl} alt="" className="heatmap-base" />
+            )}
+            {heatmapMode === 'heatmap' && result.media_type !== 'video' && (
               heatmapData
                 ? <img src={heatmapData} alt="" className="heatmap-overlay" style={{ opacity: alpha, position: 'absolute', inset: 0, width: '100%', height: '100%', objectFit: 'cover', mixBlendMode: 'screen' }} />
                 : <div className="heatmap-overlay" style={{ opacity: alpha }} />
             )}
-            {heatmapMode === 'ela' && (
+            {heatmapMode === 'ela' && result.media_type !== 'video' && (
               elaData
                 ? <img src={elaData} alt="" className="ela-overlay" style={{ opacity: alpha, position: 'absolute', inset: 0, width: '100%', height: '100%', objectFit: 'cover', mixBlendMode: 'screen' }} />
                 : <div className="ela-overlay" style={{ opacity: alpha }} />
             )}
-            {heatmapMode === 'boxes' && (
+            {heatmapMode === 'boxes' && result.media_type !== 'video' && (
               boxesData
                 ? <img src={boxesData} alt="" style={{ opacity: alpha, position: 'absolute', inset: 0, width: '100%', height: '100%', objectFit: 'cover' }} />
                 : (

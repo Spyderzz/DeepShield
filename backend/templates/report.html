@@ -84,11 +84,11 @@
   </table>
 
   {# ── Verdict ── #}
-  <h2>Verdict</h2>
+  <h2>Deepfake Probability</h2>
   <table class="verdict-table">
     <tr>
       <td class="verdict-score-cell">
-        <div class="score-num score {{ score_class }}">{{ verdict.authenticity_score }}</div>
+        <div class="score-num score {{ score_class }}">{{ fake_score }}</div>
         <div class="score-denom">/ 100</div>
       </td>
       <td class="verdict-detail-cell">
@@ -206,7 +206,7 @@
         <td><b>{{ sc2 }}</b>/100</td>
         <td>
           <span class="vlm-score-bar-wrap">
-            <span class="vlm-score-bar {{ bar_cls }}" style="width:{{ sc2 }}%;display:block;"></span>
+            <span class="vlm-score-bar {{ bar_cls }}" style="display: block; width: {{ sc2 }}%;"></span>
           </span>
         </td>
         <td class="muted">{{ comp.notes if comp else '' }}</td>

@@ -93,8 +93,9 @@ function ResultsView({ result, id }) {
     if (pdfLoading) return;
     setPdfLoading(true);
     try {
-      await generateReport(id);
-      const blob = await downloadReportBlob(id);
+      const token = result.analysis_id || id;
+      await generateReport(id, token);
+      const blob = await downloadReportBlob(id, token);
       saveReportBlob(blob, id);
     } catch (e) {
       alert(e?.userMessage || 'PDF generation failed. Try again.');
@@ -109,7 +110,9 @@ function ResultsView({ result, id }) {
   const authenticityScore = typeof verdict.authenticity_score === 'number'
     ? verdict.authenticity_score
     : Math.round(Math.max(0, Math.min(1, 1 - (verdict.fake_probability ?? expl.fake_probability ?? 0.5))) * 100);
-  const c = authenticityScore >= 65 ? 'safe' : authenticityScore >= 40 ? 'warn' : 'danger';
+  // Convert to Deepfake Probability (0 = Real, 100 = Fake) for UI display
+  const fakeScore = 100 - authenticityScore;
+  const c = fakeScore <= 35 ? 'safe' : fakeScore <= 60 ? 'warn' : 'danger';
   const verdictLabel = (verdict.label || verdict.classification
     || (c === 'safe' ? 'LIKELY REAL' : c === 'warn' ? 'SUSPICIOUS' : 'LIKELY FAKE')).toString().toUpperCase();
 
@@ -140,11 +143,11 @@ function ResultsView({ result, id }) {
     const tick = (t) => {
       const p = Math.min(1, (t - start) / dur);
       const e = 1 - Math.pow(1 - p, 3);
-      setDisplayScore(Math.round(authenticityScore * e));
+      setDisplayScore(Math.round(fakeScore * e));
       if (p < 1) requestAnimationFrame(tick);
     };
     requestAnimationFrame(tick);
-  }, [authenticityScore]);
+  }, [fakeScore]);
 
   return (
     <>
@@ -186,28 +189,38 @@ function ResultsView({ result, id }) {
         <div className="results-grid">
           <VerdictCard verdict={verdictLabel} displayScore={displayScore} color={c} llm={llm} calibrationApplied={calibrationApplied} />
 
+          {(mediaType === 'image' || mediaType === 'screenshot') && (
+            <div className="result-grid">
+              <HeatmapCard
+                src={baseImg}
+                heatmapData={heatmapData} elaData={elaData} boxesData={boxesData}
+                heatmapMode={heatmapMode} setHeatmapMode={setHeatmapMode}
+                alpha={alpha} setAlpha={setAlpha}
+                status={expl.heatmap_status || 'n/a'}
+              />
+              <EXIFCard exif={exif} />
+            </div>
+          )}
+
+          {mediaType === 'video' && (
+            <VideoFramesCard src={baseImg} frames={expl.frames} />
+          )}
+
+          {mediaType !== 'text' && mediaType !== 'video' && (
+            <BreakdownCard vlm={vlm} fallbackHigh={fakeScore <= 40} expanded={expanded} setExpanded={setExpanded} />
+          )}
+
           <div className="result-grid">
-            <HeatmapCard
-              src={baseImg}
-              heatmapData={heatmapData} elaData={elaData} boxesData={boxesData}
-              heatmapMode={heatmapMode} setHeatmapMode={setHeatmapMode}
-              alpha={alpha} setAlpha={setAlpha}
-              status={expl.heatmap_status || 'n/a'}
-            />
-            <EXIFCard exif={exif} />
+            {(mediaType === 'text' || mediaType === 'screenshot') && <SourcesCard sources={sources} />}
+            {mediaType !== 'text' && <ArtifactsCard artifacts={artifacts} />}
           </div>
 
-          <BreakdownCard vlm={vlm} fallbackHigh={authenticityScore >= 60} expanded={expanded} setExpanded={setExpanded} />
-
-          <div className="result-grid">
-            <SourcesCard sources={sources} />
-            <ArtifactsCard artifacts={artifacts} />
-          </div>
-
-          <div className="result-grid">
-            <AudioCard audio={expl.audio} mediaType={mediaType} />
-            <TemporalCard expl={expl} mediaType={mediaType} />
-          </div>
+          {mediaType !== 'text' && (
+            <div className="result-grid">
+              <AudioCard audio={expl.audio} mediaType={mediaType} />
+              <TemporalCard expl={expl} mediaType={mediaType} />
+            </div>
+          )}
 
           <ProcessingSummaryCard summary={result.processing_summary} />
         </div>
@@ -226,7 +239,7 @@ function VerdictCard({ verdict, displayScore, color, llm, calibrationApplied }) 
       <div className="verdict-left">
         <ScoreRing value={displayScore} size={120} color={color} />
         <div>
-          <span className="eyebrow">Authenticity verdict</span>
+          <span className="eyebrow">Deepfake probability</span>
           <h3 className="display verdict-label">{verdict}</h3>
           <div className="verdict-meta mono">
             <span>score · {displayScore}/100</span>
@@ -333,6 +346,47 @@ function HeatmapCard({ src, heatmapData, elaData, boxesData, heatmapMode, setHea
         <p style={{ fontFamily: 'var(--ff-mono)', fontSize: 10, color: 'var(--ds-muted)', margin: '10px 0 0', lineHeight: 1.5 }}>
           {OVERLAY_DESC[heatmapMode]}
         </p>
+      )}
+    </div>
+  );
+}
+
+/* ==== video frames ==== */
+function VideoFramesCard({ src, frames = [] }) {
+  const [frameIdx, setFrameIdx] = useState(0);
+  const currentFrame = frames[frameIdx];
+
+  return (
+    <div className="card heatmap-card">
+      <div className="card-head">
+        <span className="eyebrow">Extracted video frames</span>
+        <div className="seg-control" style={{ display: 'flex', alignItems: 'center' }}>
+           <button onClick={() => setFrameIdx(Math.max(0, frameIdx-1))} disabled={frameIdx === 0}>&lt;</button>
+           <span style={{ fontFamily: 'var(--ff-mono)', fontSize: 10, padding: '0 8px', color: 'var(--ds-muted)' }}>{frameIdx + 1} / {frames.length || 1}</span>
+           <button onClick={() => setFrameIdx(Math.min(frames.length-1, frameIdx+1))} disabled={frameIdx === frames.length - 1}>&gt;</button>
+        </div>
+      </div>
+      <div className="heatmap-stage" style={{ background: '#0A0D18' }}>
+        <video 
+          src={src} 
+          controls 
+          className="heatmap-base" 
+          style={{ width: '100%', maxHeight: 520, objectFit: 'contain' }} 
+        />
+      </div>
+      {currentFrame && (
+        <div className="heatmap-foot" style={{ marginTop: 14 }}>
+           <span className="mono status-chip" style={{ 
+             color: currentFrame.is_suspicious ? 'var(--ds-danger)' : 'var(--ds-safe)', 
+             borderColor: currentFrame.is_suspicious ? 'var(--ds-danger)' : 'var(--ds-safe)', 
+             background: 'transparent' 
+           }}>
+             timestamp: {currentFrame.timestamp_s.toFixed(2)}s · score: {(currentFrame.suspicious_prob * 100).toFixed(0)}/100
+           </span>
+           <span className="mono status-chip" style={{ marginLeft: 'auto' }}>
+             frame · {currentFrame.label}
+           </span>
+        </div>
       )}
     </div>
   );
