@@ -272,6 +272,12 @@ def classify_image(
         total = w_ffpp + w_vit + w_eff
         ensemble_prob = (w_ffpp * ffpp_fake_prob + w_vit * vit_fake_prob + w_eff * eff_fake_prob) / total
         method = "weighted_ffpp_vit_eff"
+    elif face_present and ffpp_fake_prob is not None and eff_fake_prob is None:
+        w_ffpp = settings.FFPP_WEIGHT_FACE
+        w_vit = settings.VIT_WEIGHT_FACE
+        total = w_ffpp + w_vit
+        ensemble_prob = (w_ffpp * ffpp_fake_prob + w_vit * vit_fake_prob) / total
+        method = "weighted_ffpp_vit"
     elif face_present and eff_fake_prob is not None:
         ensemble_prob = 0.5 * vit_fake_prob + 0.5 * eff_fake_prob
         method = "average_vit_eff"
