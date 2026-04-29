@@ -89,14 +89,59 @@ def _resolve_language_hint(text: str, language_hint: str | None) -> str:
 
 
 def _compute_llm_summary(resp, *, record_id: int, user, media_kind: str, exclude: dict | None = None):
-    """Generate the LLM summary for `resp`. Swallows provider errors gracefully."""
-    try:
-        payload = resp.model_dump(exclude=exclude) if exclude else resp.model_dump()
-        return generate_llm_summary(payload=payload, record_id=str(record_id), media_kind=media_kind)
-    except Exception as e:  # noqa: BLE001
-        logger.warning(f"LLM explainer failed for {media_kind}: {e}")
-        return None
+    """(Disabled) Sync LLM generation is disabled. See /analyze/{record_id}/llm"""
+    return None
 
+
+@router.post("/{record_id}/llm")
+@limiter.limit(AUTH_ANALYZE, exempt_when=is_anon)
+def generate_llm_endpoint(
+    request: Request,
+    record_id: int,
+    db: Session = Depends(get_db),
+    user: User | None = Depends(optional_current_user),
+):
+    record = db.query(AnalysisRecord).filter(AnalysisRecord.id == record_id).first()
+    if not record:
+        raise HTTPException(status_code=404, detail="Analysis not found")
+        
+    if user is None or record.user_id != user.id:
+        if record.user_id is not None:
+            raise HTTPException(status_code=403, detail="Forbidden")
+
+    payload = json.loads(record.result_json)
+    
+    if "explainability" not in payload:
+        payload["explainability"] = {}
+        
+    if payload["explainability"].get("llm_summary"):
+        return {"llm_summary": payload["explainability"]["llm_summary"]}
+        
+    media_type = payload.get("media_type", "media")
+    
+    def _strip_base64(d):
+        if isinstance(d, list): return [_strip_base64(x) for x in d]
+        if not isinstance(d, dict): return d
+        out = {}
+        for k, v in d.items():
+            if str(k).endswith("_base64"): continue
+            out[k] = _strip_base64(v)
+        return out
+        
+    safe_payload = _strip_base64(payload)
+    
+    try:
+        summary_obj = generate_llm_summary(payload=safe_payload, record_id=str(record.id), media_kind=media_type)
+        summary_dict = summary_obj.model_dump() if hasattr(summary_obj, "model_dump") else summary_obj
+        
+        payload["explainability"]["llm_summary"] = summary_dict
+        record.result_json = json.dumps(payload)
+        db.commit()
+        
+        return {"llm_summary": summary_dict}
+    except Exception as e:
+        logger.error(f"LLM generation failed: {e}")
+        raise HTTPException(status_code=500, detail="LLM generation failed")
 
 def _persist_response_payload(db: Session, record: AnalysisRecord, resp) -> None:
     """Keep reloaded/history responses aligned with the fresh API response."""

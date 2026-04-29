@@ -21,11 +21,11 @@ const MODES = [
 ];
 
 const MODE_STAGES = {
-  image:      ['Upload', 'Preprocess', 'ViT + EfficientNet', 'Grad-CAM++', 'ELA + EXIF', 'LLM summary'],
-  video:      ['Upload', 'Extract frames', 'Per-frame classify', 'Temporal consistency', 'Audio lip-sync', 'LLM summary'],
-  text:       ['Paste', 'Tokenize (XLM-R)', 'Sensationalism', 'NER + source lookup', 'Truth-override', 'LLM summary'],
-  screenshot: ['Upload', 'EasyOCR', 'Layout anomaly', 'Claim credibility', 'Phrase map', 'LLM summary'],
-  audio:      ['Upload', 'Preprocess audio', 'Acoustic feature extraction', 'Voice ML model (EN/HI)', 'Signal heuristics', 'LLM summary'],
+  image:      ['Upload media', 'Prepare image', 'Visual deepfake detection', 'Generate evidence map', 'Check metadata & tampering', 'Plain-English summary'],
+  video:      ['Upload media', 'Extract video frames', 'Analyze individual frames', 'Check for unnatural movement', 'Analyze audio & lip-sync', 'Plain-English summary'],
+  text:       ['Read text input', 'Prepare text content', 'Scan for sensationalism', 'Cross-check trusted sources', 'Verify factual accuracy', 'Plain-English summary'],
+  screenshot: ['Upload media', 'Read text from image', 'Check for layout manipulation', 'Analyze claim credibility', 'Generate visual map', 'Plain-English summary'],
+  audio:      ['Upload media', 'Prepare audio', 'Extract vocal patterns', 'Detect synthetic voice cloning', 'Analyze acoustic signals', 'Plain-English summary'],
 };
 
 const VIDEO_STAGE_PROGRESS = {
@@ -97,13 +97,17 @@ export default function AnalyzePage() {
   useEffect(() => {
     (async () => {
       try {
-        const data = await listHistory(6, 0);
-        setRecent(data.items || []);
-      } catch (_e) {
-        setRecent([]);
+        if (isAuthed) {
+          const data = await listHistory(6, 0);
+          setRecent(data.items || []);
+        } else {
+          setRecent([]);
+        }
+      } catch (e) {
+        // ignore
       }
     })();
-  }, []);
+  }, [isAuthed]);
 
   const canStart = mode === 'text' ? textVal.trim().length >= 50 : true;
 

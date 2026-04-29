@@ -4,6 +4,7 @@ import { downloadReportBlob, generateReport, saveReportBlob } from '../services/
 import { SharedNav, SharedFooter } from '../components/layout/SharedNav.jsx';
 import useDottedSurface from '../hooks/useDottedSurface.js';
 import { getHistoryDetail } from '../services/historyApi.js';
+import { generateLLMSummary } from '../services/api.js';
 import './deepshield-landing.css';
 import './deepshield-pages.css';
 
@@ -212,7 +213,7 @@ function ResultsView({ result, id, accessToken }) {
         </div>
 
         <div className="results-grid">
-          <VerdictCard verdict={verdictLabel} displayScore={displayScore} color={c} llm={llm} calibrationApplied={calibrationApplied} />
+          <VerdictCard verdict={verdictLabel} displayScore={displayScore} color={c} llm={llm} calibrationApplied={calibrationApplied} recordId={id} />
 
           {(mediaType === 'image' || mediaType === 'screenshot') && (
             <div className="result-grid">
@@ -262,7 +263,35 @@ function ResultsView({ result, id, accessToken }) {
 }
 
 /* ==== verdict + ring ==== */
-function VerdictCard({ verdict, displayScore, color, llm, calibrationApplied }) {
+function VerdictCard({ verdict, displayScore, color, llm: initialLlm, calibrationApplied, recordId }) {
+  const [llm, setLlm] = useState(initialLlm);
+  const [loading, setLoading] = useState(!initialLlm);
+  const [typedParagraph, setTypedParagraph] = useState('');
+  const [typingIdx, setTypingIdx] = useState(0);
+
+  useEffect(() => {
+    if (!initialLlm && recordId) {
+      setLoading(true);
+      generateLLMSummary(recordId).then(data => {
+        setLlm(data.llm_summary);
+        setLoading(false);
+      }).catch(err => {
+        setLoading(false);
+        setLlm(null);
+      });
+    }
+  }, [initialLlm, recordId]);
+
+  useEffect(() => {
+    if (llm?.paragraph && typingIdx < llm.paragraph.length) {
+      const timer = setTimeout(() => {
+        setTypedParagraph(p => p + llm.paragraph[typingIdx]);
+        setTypingIdx(i => i + 1);
+      }, 15);
+      return () => clearTimeout(timer);
+    }
+  }, [llm, typingIdx]);
+
   return (
     <div className={`verdict-card verdict-${color}`}>
       <div className="verdict-left">
@@ -278,12 +307,17 @@ function VerdictCard({ verdict, displayScore, color, llm, calibrationApplied }) 
         </div>
       </div>
       <div className="verdict-llm">
-        <span className="eyebrow">Plain-English summary{llm?.model_used ? ` · ${llm.model_used}` : ' · Gemini 1.5'}</span>
+        <span className="eyebrow">Plain-English summary{llm?.model_used ? ` · ${llm.model_used}` : (loading ? ' · Generating...' : ' · Gemini 1.5')}</span>
         <p>
-          {llm?.paragraph ||
-            'Model confidence comes from the ensemble forward pass. Review the heatmap, EXIF, and detailed breakdown below for the evidence behind this verdict.'}
+          {loading ? (
+            <span style={{ opacity: 0.7 }}>Generating LLM Summary<span className="typing-dots">...</span></span>
+          ) : llm?.paragraph ? (
+            typedParagraph + (typingIdx < llm.paragraph.length ? '█' : '')
+          ) : (
+            'Model confidence comes from the ensemble forward pass. Review the heatmap, EXIF, and detailed breakdown below for the evidence behind this verdict.'
+          )}
         </p>
-        {Array.isArray(llm?.bullets) && llm.bullets.length > 0 && (
+        {Array.isArray(llm?.bullets) && llm.bullets.length > 0 && typingIdx >= llm.paragraph.length && (
           <div className="verdict-bullets">
             {llm.bullets.slice(0, 4).map((b, i) => <span key={i}>• {b}</span>)}
           </div>
@@ -550,12 +584,12 @@ function SourcesCard({ sources }) {
 /* ==== artifacts ==== */
 function ArtifactsCard({ artifacts }) {
   const items = artifacts.length > 0 ? artifacts : [
-    { name: 'GAN frequency fingerprint', severity: 'low', score: 0.22 },
-    { name: 'JPEG Q-table anomaly', severity: 'medium', score: 0.48 },
-    { name: 'FaceMesh jaw jitter', severity: 'medium', score: 0.55 },
+    { name: 'Synthetic noise pattern', severity: 'low', score: 0.22 },
+    { name: 'Unusual compression artifacts', severity: 'medium', score: 0.48 },
+    { name: 'Unnatural jawline blending', severity: 'medium', score: 0.55 },
     { name: 'Luminance imbalance', severity: 'low', score: 0.18 },
-    { name: 'Over-smoothing (high-pass)', severity: 'medium', score: 0.52 },
-    { name: 'Sensor noise (PRNU)', severity: 'low', score: 0.19 },
+    { name: 'Unnatural skin smoothing', severity: 'medium', score: 0.52 },
+    { name: 'Camera sensor mismatch', severity: 'low', score: 0.19 },
   ];
   return (
     <div className="card artifact-card">
@@ -660,25 +694,25 @@ function ProcessingSummaryCard({ summary }) {
   const models = summary?.models_used?.length ? summary.models_used : summary?.model_used ? [summary.model_used] : [];
 
   const STAGE_LABELS = {
-    validation: 'Upload & validate',
-    classification: 'ViT + EfficientNet ensemble',
-    artifact_scanning: 'Artifact scan (Grad-CAM, GAN freq, ELA)',
-    heatmap_generation: 'Grad-CAM++ heatmap',
-    ela_generation: 'Error Level Analysis (ELA)',
-    boxes_generation: 'Bounding-box detection',
-    exif_extraction: 'EXIF metadata extraction',
-    llm_explanation: 'LLM plain-English summary',
-    vlm_breakdown: 'VLM detailed breakdown (Gemini Vision)',
-    frame_extraction: 'Frame extraction',
-    frame_classification: 'Per-frame classification',
-    aggregation: 'Frame result aggregation',
-    temporal_analysis: 'Temporal consistency check',
-    audio_analysis: 'Audio deepfake detection',
-    text_classification: 'Text classification (XLM-R)',
-    news_lookup: 'Trusted-source lookup',
-    truth_override: 'Truth-override check',
-    ocr: 'OCR text extraction',
-    layout_anomaly: 'Layout anomaly detection',
+    validation: 'Upload & prepare media',
+    classification: 'Deepfake visual detection',
+    artifact_scanning: 'Digital artifact scan',
+    heatmap_generation: 'Generate visual evidence map',
+    ela_generation: 'Check for image tampering',
+    boxes_generation: 'Detect faces & objects',
+    exif_extraction: 'Read hidden file metadata',
+    llm_explanation: 'Generate plain-English summary',
+    vlm_breakdown: 'Analyze visual context & layout',
+    frame_extraction: 'Extract video frames',
+    frame_classification: 'Analyze individual frames',
+    aggregation: 'Calculate overall video score',
+    temporal_analysis: 'Check for unnatural movement',
+    audio_analysis: 'Detect synthetic voice cloning',
+    text_classification: 'Analyze text for misinformation',
+    news_lookup: 'Cross-check with trusted news',
+    truth_override: 'Verify factual accuracy',
+    ocr: 'Read text from image',
+    layout_anomaly: 'Check for layout manipulation',
   };
 
   return (

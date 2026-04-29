@@ -55,9 +55,8 @@ def detect_gan_hf_artifact(pil_img: Image.Image) -> ArtifactIndicator | None:
             type="gan_artifact",
             severity=sev,
             description=(
-                f"High-frequency energy ratio {ratio:.3f} — "
-                + ("elevated fine-detail/compression energy; review with model score" if score > 0.4
-                   else "within expected range for a natural photo")
+                "Unnatural pixel noise detected (common in AI-generated images)" if score > 0.4
+                else "Pixel noise is within expected range for a natural photo"
             ),
             confidence=float(score),
         )
@@ -119,8 +118,7 @@ def detect_compression_anomaly(raw_bytes: bytes) -> ArtifactIndicator | None:
         score = max(0.0, min(1.0, suspicious))
         sev = _severity_from_score(score)
         desc = (
-            f"JPEG Q-table sums {sums}"
-            + (f"; {', '.join(reasons)}" if reasons else "; within typical camera range")
+            "Signs of repeated image compression or manipulation detected" if reasons else "No unusual compression artifacts detected"
         )
         return ArtifactIndicator(
             type="compression",
@@ -172,9 +170,8 @@ def detect_face_based_artifacts(pil_img: Image.Image) -> List[ArtifactIndicator]
                 type="facial_boundary",
                 severity=_severity_from_score(jitter_score),
                 description=(
-                    f"Jaw-contour jitter {jitter:.4f} (normalized) — "
-                    + ("inconsistent boundary blending detected" if jitter_score > 0.4
-                       else "face boundary appears smooth")
+                    "Inconsistent blending detected around the facial boundary" if jitter_score > 0.4
+                    else "Facial boundary blending appears smooth and natural"
                 ),
                 confidence=float(jitter_score),
             )
@@ -204,9 +201,8 @@ def detect_face_based_artifacts(pil_img: Image.Image) -> List[ArtifactIndicator]
                         type="lighting",
                         severity=_severity_from_score(lighting_score),
                         description=(
-                            f"Luminance imbalance across face quadrants {imbalance:.3f} — "
-                            + ("inconsistent lighting direction" if lighting_score > 0.4
-                               else "lighting appears uniform")
+                            "Unnatural or inconsistent lighting detected across the face" if lighting_score > 0.4
+                            else "Facial lighting appears natural and uniform"
                         ),
                         confidence=float(lighting_score),
                     )

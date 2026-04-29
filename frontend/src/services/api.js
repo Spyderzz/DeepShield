@@ -112,3 +112,8 @@ api.interceptors.response.use(
     return Promise.reject(err);
   }
 );
+
+export async function generateLLMSummary(recordId) {
+  const res = await api.post(`/analyze/${recordId}/llm`);
+  return res.data;
+}

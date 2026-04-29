@@ -386,11 +386,11 @@ function ScanOrb() {
 function ModalityCards() {
   const navigate = useNavigate();
   const items = [
-    { k: 'Image', n: '01', title: 'Image Deepfake Detection', desc: 'Detects AI manipulation, edited pixels, and hidden metadata in photos.', sig: ['Residual map', 'EXIF trace', 'Q-table'] },
-    { k: 'Video', n: '02', title: 'Video Manipulation Scan', desc: 'Analyzes video frame-by-frame to spot deepfakes and lip-sync mismatches.', sig: ['Frame rail', 'Motion drift', 'Lip sync'] },
-    { k: 'Audio', n: '03', title: 'Audio & Voice Cloning', desc: 'Scans audio waveforms to identify AI voice cloning and synthetic speech.', sig: ['Spectrogram', 'Voiceprint', 'Clone drift'] },
-    { k: 'Text', n: '04', title: 'Misinformation Check', desc: 'Cross-checks claims, analyzes language patterns, and verifies sources.', sig: ['Source graph', 'Entity trail', 'Claim score'] },
-    { k: 'Screenshot', n: '05', title: 'Screenshot Forensics', desc: 'Detects edited text, manipulated UI elements, and fake social media posts.', sig: ['OCR lanes', 'Layout diff', 'Phrase map'] },
+    { k: 'Image', n: '01', title: 'Image Deepfake Detection', desc: 'Detects AI manipulation, edited pixels, and hidden metadata in photos.', sig: ['Visual noise map', 'Metadata trace', 'Compression check'] },
+    { k: 'Video', n: '02', title: 'Video Manipulation Scan', desc: 'Analyzes video frame-by-frame to spot deepfakes and lip-sync mismatches.', sig: ['Frame sequence', 'Movement continuity', 'Audio lip-sync'] },
+    { k: 'Audio', n: '03', title: 'Audio & Voice Cloning', desc: 'Scans audio waveforms to identify AI voice cloning and synthetic speech.', sig: ['Audio spectrum', 'Vocal identity', 'Synthetic clone check'] },
+    { k: 'Text', n: '04', title: 'Misinformation Check', desc: 'Cross-checks claims, analyzes language patterns, and verifies sources.', sig: ['Source verification', 'Fact-checking', 'Sensationalism score'] },
+    { k: 'Screenshot', n: '05', title: 'Screenshot Forensics', desc: 'Detects edited text, manipulated UI elements, and fake social media posts.', sig: ['Text extraction', 'Layout tampering', 'Context analysis'] },
   ];
   return (
     <section className="ds-modality" id="pipeline">
