@@ -56,6 +56,8 @@ class ExifSummary(BaseModel):
     gps_info: Optional[str] = None
     software: Optional[str] = None
     lens_model: Optional[str] = None
+    icc_profile: Optional[bool] = False
+    maker_note: Optional[bool] = False
     trust_adjustment: int = 0  # negative = more real, positive = more fake
     trust_reason: str = ""
 

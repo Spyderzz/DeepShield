@@ -52,6 +52,9 @@ _PROMPT_TEMPLATE = """\
 You are DeepShield's explainability engine. Given the JSON analysis payload below,
 write a concise, accessible summary for a non-technical user.
 
+This analysis is for a {media_kind}. Please customize the summary terminology to fit this domain
+(e.g., mention wording/tone/heuristics for text, visuals/pixels/metadata for images, frames/motion for video, audio anomalies/frequencies for audio).
+
 **Output format (strict JSON only — no markdown fences):**
 {{
   "paragraph": "<2-3 sentence plain-English summary of the verdict and key signals>",
@@ -63,10 +66,12 @@ write a concise, accessible summary for a non-technical user.
 }}
 
 Rules:
-- Be factual. State what the analysis found, not what you speculate.
-- Reference specific indicators (e.g. "GAN artifact score", "EXIF metadata", "sensationalism level").
-- If the verdict is "Likely Authentic", reassure the user and explain why.
-- If the verdict is "Likely Manipulated" or "Suspicious", highlight the strongest evidence.
+- Be strictly factual. Do NOT hallucinate content or describe the image based on assumptions. Only state what the analysis payload found.
+- If the image contains text (e.g. from OCR), quote it accurately but do NOT assume it applies to the entire image unless relevant.
+- Reference specific technical indicators from the payload (e.g. "GAN artifact score", "EXIF metadata", "sensationalism level").
+- Avoid generic phrases like "The image itself explicitly labels...". Instead, point out specific visual anomalies or text anomalies detected by the models.
+- If the verdict is "Likely Authentic", reassure the user based on the lack of artifacts and strong metadata.
+- If the verdict is "Likely Manipulated" or "Suspicious", highlight the strongest evidence (e.g., specific artifacts, low metadata trust, high model confidence).
 - Keep the paragraph under 60 words. Each bullet under 20 words.
 
 **Analysis payload:**
@@ -211,6 +216,7 @@ def _parse_llm_response(raw: str) -> tuple[str, list[str]]:
 def generate_llm_summary(
     payload: dict[str, Any],
     record_id: str | None = None,
+    media_kind: str = "media",
 ) -> LLMExplainabilitySummary:
     """Generate an LLM-powered plain-English explanation for an analysis result.
 
@@ -248,7 +254,7 @@ def generate_llm_summary(
         slim_payload["explainability"] = expl
 
     prompt_body = json.dumps(slim_payload, indent=2, default=str, sort_keys=True)
-    prompt = _PROMPT_TEMPLATE.format(payload_json=prompt_body)
+    prompt = _PROMPT_TEMPLATE.format(media_kind=media_kind, payload_json=prompt_body)
 
     # Content-hash cache — dedups "same analysis re-run" across users / record_ids
     content_hash = hashlib.sha256(

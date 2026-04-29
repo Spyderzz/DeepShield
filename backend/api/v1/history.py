@@ -21,6 +21,7 @@ class HistoryItem(BaseModel):
     authenticity_score: float
     created_at: datetime
     thumbnail_url: str | None = None
+    media_path: str | None = None
 
 
 class HistoryListResponse(BaseModel):
@@ -46,6 +47,7 @@ def list_history(
             authenticity_score=r.authenticity_score,
             created_at=r.created_at,
             thumbnail_url=r.thumbnail_url,
+            media_path=r.media_path,
         )
         for r in rows
     ]

@@ -40,6 +40,7 @@ def _assert_record_access(record: AnalysisRecord, user: User | None, token: str 
 def generate(
     request: Request,
     analysis_id: int,
+    response: Response,
     token: str | None = Query(None),
     db: Session = Depends(get_db),
     user: User | None = Depends(optional_current_user),
@@ -79,6 +80,7 @@ def generate(
 def download(
     request: Request,
     analysis_id: int,
+    response: Response,
     token: str | None = Query(None),
     db: Session = Depends(get_db),
     user: User | None = Depends(optional_current_user),

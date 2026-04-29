@@ -90,6 +90,13 @@ function ResultsView({ result, id, accessToken }) {
   const [expanded, setExpanded] = useState(null);
   const [displayScore, setDisplayScore] = useState(0);
   const [pdfLoading, setPdfLoading] = useState(false);
+  const [copied, setCopied] = useState(false);
+
+  const handleCopyLink = () => {
+    navigator.clipboard?.writeText(window.location.href);
+    setCopied(true);
+    setTimeout(() => setCopied(false), 2000);
+  };
 
   const handleDownloadPDF = async () => {
     if (pdfLoading) return;
@@ -117,6 +124,22 @@ function ResultsView({ result, id, accessToken }) {
   const c = fakeScore <= 35 ? 'safe' : fakeScore <= 60 ? 'warn' : 'danger';
   const verdictLabel = (verdict.label || verdict.classification
     || (c === 'safe' ? 'LIKELY REAL' : c === 'warn' ? 'SUSPICIOUS' : 'LIKELY FAKE')).toString().toUpperCase();
+
+  const handleShare = async () => {
+    if (navigator.share) {
+      try {
+        await navigator.share({
+          title: `DeepShield Analysis: ${result.filename || mediaType}`,
+          text: `Check out this DeepShield forensic analysis. Deepfake probability: ${fakeScore}/100.`,
+          url: window.location.href,
+        });
+      } catch (err) {
+        console.warn('Share failed or was canceled', err);
+      }
+    } else {
+      handleCopyLink();
+    }
+  };
 
   const exif = expl.exif || {};
   const vlm = expl.vlm_breakdown || {};
@@ -183,8 +206,8 @@ function ResultsView({ result, id, accessToken }) {
             <button className="btn btn-glass btn-sm" onClick={handleDownloadPDF} disabled={pdfLoading}>
               {pdfLoading ? '…' : '⤓ PDF'}
             </button>
-            <button className="btn btn-glass btn-sm" onClick={() => navigator.clipboard?.writeText(window.location.href)}>⎘ Link</button>
-            <button className="btn btn-primary btn-sm btn-shiny">Share →</button>
+            <button className="btn btn-glass btn-sm" onClick={handleCopyLink}>{copied ? '✓ Copied!' : '⎘ Link'}</button>
+            <button className="btn btn-primary btn-sm btn-shiny" onClick={handleShare}>Share →</button>
           </div>
         </div>
 
@@ -200,7 +223,8 @@ function ResultsView({ result, id, accessToken }) {
                 alpha={alpha} setAlpha={setAlpha}
                 status={expl.heatmap_status || 'n/a'}
               />
-              <EXIFCard exif={exif} />
+              {mediaType === 'image' && <EXIFCard exif={exif} />}
+              {mediaType === 'screenshot' && <TextCard text={expl.extracted_text} fullWidth={false} title="Extracted OCR Text" />}
             </div>
           )}
 
@@ -208,9 +232,11 @@ function ResultsView({ result, id, accessToken }) {
             <VideoFramesCard src={baseImg} frames={expl.frames} />
           )}
 
-          {mediaType !== 'text' && mediaType !== 'video' && (
+          {mediaType === 'image' && (
             <BreakdownCard vlm={vlm} fallbackHigh={fakeScore <= 40} expanded={expanded} setExpanded={setExpanded} />
           )}
+
+          {mediaType === 'text' && <TextCard text={expl.original_text} />}
 
           <div className="result-grid">
             {(mediaType === 'text' || mediaType === 'screenshot') && <SourcesCard sources={sources} />}
@@ -228,7 +254,7 @@ function ResultsView({ result, id, accessToken }) {
           <ProcessingSummaryCard summary={result.processing_summary} />
         </div>
 
-        <StickyActions id={id} onNew={() => navigate('/analyze')} onPDF={handleDownloadPDF} pdfLoading={pdfLoading} />
+        <StickyActions id={id} onNew={() => navigate('/analyze')} onPDF={handleDownloadPDF} pdfLoading={pdfLoading} onCopy={handleCopyLink} copied={copied} onShare={handleShare} />
       </section>
       <SharedFooter />
     </>
@@ -316,7 +342,7 @@ function HeatmapCard({ src, heatmapData, elaData, boxesData, heatmapMode, setHea
       <div className="heatmap-stage">
         {/* Base original — always shown */}
         {src
-          ? <img src={src} alt="" className="heatmap-base" />
+          ? <img src={src} alt="" className="heatmap-base" onError={(e) => { e.target.style.display = 'none'; }} />
           : <div className="heatmap-base" style={{ background: '#0A0D18' }} />}
         {/* Overlay: the backend already blends these with the original, so we just
             fade them in over the base image. alpha=1 → full overlay, alpha=0 → original. */}
@@ -405,8 +431,8 @@ function EXIFCard({ exif }) {
     ['GPSInfo', exif.gps || exif.gps_info],
     ['Software', exif.software],
     ['LensModel', exif.lens_model || exif.lens],
-    ['ColorSpace', exif.color_space || exif.colorspace],
-    ['ExposureTime', exif.exposure_time || exif.exposure],
+    ['ICC Profile', exif.icc_profile ? 'Present' : null],
+    ['MakerNote', exif.maker_note ? 'Present' : null],
   ];
   const trustDelta = exif.trust_adjustment ?? exif.trust_delta;
   const presentCount = rows.filter(([, v]) => v).length;
@@ -683,7 +709,21 @@ function ProcessingSummaryCard({ summary }) {
   );
 }
 
-function StickyActions({ id, onNew, onPDF, pdfLoading }) {
+function TextCard({ text, fullWidth = true, title = "Original pasted text" }) {
+  if (!text) return null;
+  return (
+    <div className="card text-card" style={fullWidth ? { gridColumn: '1 / -1' } : {}}>
+      <div className="card-head">
+        <span className="eyebrow">{title}</span>
+      </div>
+      <div className="text-content" style={{ padding: '16px 20px', background: 'rgba(255,255,255,0.02)', borderRadius: 8, marginTop: 14, fontFamily: 'var(--ff-body)', fontSize: 14, lineHeight: 1.6, color: 'var(--ds-ink)', whiteSpace: 'pre-wrap', maxHeight: 400, overflowY: 'auto' }}>
+        {text}
+      </div>
+    </div>
+  );
+}
+
+function StickyActions({ id, onNew, onPDF, pdfLoading, onCopy, copied, onShare }) {
   return (
     <div style={{
       position: 'sticky', bottom: 20, maxWidth: 600, margin: '32px auto 0',
@@ -699,8 +739,8 @@ function StickyActions({ id, onNew, onPDF, pdfLoading }) {
       <button className="btn btn-glass btn-sm" onClick={onPDF} disabled={pdfLoading}>
         {pdfLoading ? 'Generating…' : '⤓ PDF report'}
       </button>
-      <button className="btn btn-glass btn-sm" onClick={() => navigator.clipboard?.writeText(window.location.href)}>⎘ Copy link</button>
-      <button className="btn btn-primary btn-sm btn-shiny">Share verdict →</button>
+      <button className="btn btn-glass btn-sm" onClick={onCopy}>{copied ? '✓ Copied!' : '⎘ Copy link'}</button>
+      <button className="btn btn-primary btn-sm btn-shiny" onClick={onShare}>Share verdict →</button>
     </div>
   );
 }

@@ -37,6 +37,7 @@ class ManipulationIndicatorOut(BaseModel):
 
 
 class TextExplainability(BaseModel):
+    original_text: str = ""
     fake_probability: float
     top_label: str
     all_scores: dict = {}

@@ -92,7 +92,7 @@ def _compute_llm_summary(resp, *, record_id: int, user, media_kind: str, exclude
     """Generate the LLM summary for `resp`. Swallows provider errors gracefully."""
     try:
         payload = resp.model_dump(exclude=exclude) if exclude else resp.model_dump()
-        return generate_llm_summary(payload=payload, record_id=str(record_id))
+        return generate_llm_summary(payload=payload, record_id=str(record_id), media_kind=media_kind)
     except Exception as e:  # noqa: BLE001
         logger.warning(f"LLM explainer failed for {media_kind}: {e}")
         return None
@@ -572,6 +572,7 @@ async def analyze_text_endpoint(
             model_label=clf.label,
         ),
         explainability=TextExplainability(
+            original_text=body.text,
             fake_probability=effective_fake_prob,
             top_label=clf.label,
             all_scores=clf.all_scores,

@@ -76,6 +76,9 @@ def extract_exif(pil_img: Image.Image, raw_bytes: bytes) -> ExifSummary:
                 summary.datetime_original = str(tags.get("EXIF DateTimeOriginal", "")).strip() or None
                 summary.software = str(tags.get("Image Software", "")).strip() or None
                 summary.lens_model = str(tags.get("EXIF LensModel", "")).strip() or None
+                
+                summary.icc_profile = bool(pil_img.info.get("icc_profile"))
+                summary.maker_note = bool(tags.get("EXIF MakerNote"))
         except ImportError:
             logger.debug("exifread not installed, skipping fallback EXIF extraction")
         except Exception as e:
@@ -93,6 +96,9 @@ def extract_exif(pil_img: Image.Image, raw_bytes: bytes) -> ExifSummary:
         summary.software = str(decoded.get("Software", "")).strip() or None
         summary.lens_model = str(decoded.get("LensModel", "")).strip() or None
 
+        summary.icc_profile = bool(pil_img.info.get("icc_profile"))
+        summary.maker_note = bool(decoded.get("MakerNote"))
+
         # GPS
         gps_raw = decoded.get("GPSInfo")
         if gps_raw and isinstance(gps_raw, dict):
@@ -108,7 +114,11 @@ def extract_exif(pil_img: Image.Image, raw_bytes: bytes) -> ExifSummary:
     has_camera_meta = summary.make and summary.model and summary.datetime_original
     if has_camera_meta:
         adjustment -= 8
-        reasons.append("valid camera metadata (Make/Model/DateTime)")
+        reasons.append("valid camera metadata")
+
+    if summary.maker_note:
+        adjustment -= 10
+        reasons.append("proprietary MakerNote present")
 
     if summary.gps_info:
         adjustment -= 2

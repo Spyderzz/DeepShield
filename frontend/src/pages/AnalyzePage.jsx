@@ -362,8 +362,9 @@ export default function AnalyzePage() {
                   style={{ cursor: r.id ? 'pointer' : 'default' }}
                 >
                   <div className="recent-thumb" style={{
-                    backgroundImage: (r.src || r.thumbnail_url) ? `url(${r.src || resolveMediaUrl(r.thumbnail_url)})` : undefined,
-                    background: (r.src || r.thumbnail_url) ? undefined : 'linear-gradient(135deg, rgba(108,125,255,0.08), rgba(61,219,179,0.04))',
+                    backgroundImage: (r.src || r.thumbnail_url || r.media_path)
+                      ? `url("${r.src || resolveMediaUrl(r.thumbnail_url || r.media_path)}")`
+                      : 'linear-gradient(135deg, rgba(108,125,255,0.15), rgba(61,219,179,0.08))',
                   }}>
                     <span className={`verdict-dot h-verdict ${color}`} style={{ position: 'absolute', top: 8, right: 8, padding: '2px 7px', fontSize: 9 }}>{verdictLabel}</span>
                   </div>
