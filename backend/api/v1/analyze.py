@@ -93,6 +93,28 @@ def _compute_llm_summary(resp, *, record_id: int, user, media_kind: str, exclude
     return None
 
 
+def _find_existing_llm_summary(payload: dict) -> dict | None:
+    """Find persisted LLM summaries regardless of media-specific storage shape."""
+    top_level = payload.get("llm_summary")
+    if isinstance(top_level, dict) and top_level.get("paragraph"):
+        return top_level
+    explainability = payload.get("explainability")
+    if isinstance(explainability, dict):
+        nested = explainability.get("llm_summary")
+        if isinstance(nested, dict) and nested.get("paragraph"):
+            return nested
+    return None
+
+
+def _store_llm_summary(payload: dict, summary: dict) -> None:
+    """Persist generated summaries where the response schemas expect them."""
+    media_type = str(payload.get("media_type") or "").lower()
+    if media_type == "image":
+        payload.setdefault("explainability", {})["llm_summary"] = summary
+    else:
+        payload["llm_summary"] = summary
+
+
 @router.post("/{record_id}/llm")
 @limiter.limit(AUTH_ANALYZE, exempt_when=is_anon)
 def generate_llm_endpoint(
@@ -110,34 +132,21 @@ def generate_llm_endpoint(
             raise HTTPException(status_code=403, detail="Forbidden")
 
     payload = json.loads(record.result_json)
-    
-    if "explainability" not in payload:
-        payload["explainability"] = {}
-        
-    if payload["explainability"].get("llm_summary"):
-        return {"llm_summary": payload["explainability"]["llm_summary"]}
-        
+
+    existing_summary = _find_existing_llm_summary(payload)
+    if existing_summary:
+        return {"llm_summary": existing_summary}
+
     media_type = payload.get("media_type", "media")
-    
-    def _strip_base64(d):
-        if isinstance(d, list): return [_strip_base64(x) for x in d]
-        if not isinstance(d, dict): return d
-        out = {}
-        for k, v in d.items():
-            if str(k).endswith("_base64"): continue
-            out[k] = _strip_base64(v)
-        return out
-        
-    safe_payload = _strip_base64(payload)
-    
+
     try:
-        summary_obj = generate_llm_summary(payload=safe_payload, record_id=str(record.id), media_kind=media_type)
+        summary_obj = generate_llm_summary(payload=payload, record_id=str(record.id), media_kind=media_type)
         summary_dict = summary_obj.model_dump() if hasattr(summary_obj, "model_dump") else summary_obj
-        
-        payload["explainability"]["llm_summary"] = summary_dict
+
+        _store_llm_summary(payload, summary_dict)
         record.result_json = json.dumps(payload)
         db.commit()
-        
+
         return {"llm_summary": summary_dict}
     except Exception as e:
         logger.error(f"LLM generation failed: {e}")

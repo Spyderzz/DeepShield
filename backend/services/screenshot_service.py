@@ -37,7 +37,7 @@ class LayoutAnomaly:
 def run_ocr(pil_img: Image.Image) -> List[OCRBox]:
     reader = get_model_loader().load_ocr_engine()
     arr = np.array(pil_img.convert("RGB"))
-    results = reader.readtext(arr, detail=1, paragraph=False)
+    results = reader.readtext(arr, detail=1, paragraph=False, mag_ratio=1.5)
     out: List[OCRBox] = []
     for bbox, text, conf in results:
         out.append(OCRBox(

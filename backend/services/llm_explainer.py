@@ -52,8 +52,7 @@ _PROMPT_TEMPLATE = """\
 You are DeepShield's explainability engine. Given the JSON analysis payload below,
 write a concise, accessible summary for a non-technical user.
 
-This analysis is for a {media_kind}. Please customize the summary terminology to fit this domain
-(e.g., mention wording/tone/heuristics for text, visuals/pixels/metadata for images, frames/motion for video, audio anomalies/frequencies for audio).
+This analysis is for a {media_kind}. 
 
 **Output format (strict JSON only — no markdown fences):**
 {{
@@ -65,18 +64,149 @@ This analysis is for a {media_kind}. Please customize the summary terminology to
   ]
 }}
 
-Rules:
-- Be strictly factual. Do NOT hallucinate content or describe the image based on assumptions. Only state what the analysis payload found.
-- If the image contains text (e.g. from OCR), quote it accurately but do NOT assume it applies to the entire image unless relevant.
-- Reference specific technical indicators from the payload (e.g. "GAN artifact score", "EXIF metadata", "sensationalism level").
-- Avoid generic phrases like "The image itself explicitly labels...". Instead, point out specific visual anomalies or text anomalies detected by the models.
-- If the verdict is "Likely Authentic", reassure the user based on the lack of artifacts and strong metadata.
-- If the verdict is "Likely Manipulated" or "Suspicious", highlight the strongest evidence (e.g., specific artifacts, low metadata trust, high model confidence).
+**General Rules (Apply to all):**
+- Be strictly factual. Do NOT hallucinate content or describe the media based on assumptions.
+- Only state what the analysis payload found. Do not invent details.
+- Avoid generic phrases like "The image itself explicitly labels...". Instead, point out specific anomalies.
+- If the verdict is "Likely Authentic", reassure the user based on the lack of artifacts, strong metadata, or verified claims.
+- If the verdict is "Likely Manipulated" or "Suspicious", highlight the strongest evidence (artifacts, contradicted claims, high sensationalism, missing metadata).
 - Keep the paragraph under 60 words. Each bullet under 20 words.
+
+**Media-Specific Rules (Apply based on media_kind="{media_kind}"):**
+- IF "image": Focus on visual artifacts (e.g., GAN noise, blending issues), EXIF metadata trust, artifact indicators, and VLM anomaly breakdowns. Mention heatmaps only if explicit heatmap evidence is present in the payload.
+- IF "video": Focus on temporal inconsistencies, unnatural movement, frame-by-frame anomalies, and whether lip-sync or audio tampering was detected.
+- IF "audio": Focus on synthetic voice patterns, WavLM anomalies, spectral variance, and background noise consistency.
+- IF "text": Focus on sensationalism scores, manipulation patterns, linguistic anomalies, and cross-reference the extracted claims with "trusted_sources" and "truth_override". State clearly if claims are contradicted by reliable news.
+- IF "screenshot": Focus HEAVILY on the extracted text and news credibility first, evaluating the OCR text against "trusted_sources" and "truth_override". If the text contains fake news or is contradicted by reliable sources, this is the most critical factor. Only after assessing text credibility should you briefly mention visual aspects (like layout anomalies, spacing, or manipulated faces).
 
 **Analysis payload:**
 {payload_json}
 """
+
+_EXPLAINABILITY_LIMITS = {
+    "artifact_indicators": 6,
+    "manipulation_indicators": 6,
+    "suspicious_phrases": 6,
+    "layout_anomalies": 5,
+    "trusted_sources": 5,
+    "contradicting_evidence": 5,
+    "ocr_boxes": 8,
+    "frames": 6,
+    "suspicious_timestamps": 8,
+}
+
+_KEEP_TOP_LEVEL = {
+    "analysis_id",
+    "record_id",
+    "media_type",
+    "timestamp",
+    "verdict",
+    "trusted_sources",
+    "contradicting_evidence",
+    "processing_summary",
+}
+
+_KEEP_EXPLAINABILITY = {
+    "original_text",
+    "extracted_text",
+    "transcript",
+    "fake_probability",
+    "top_label",
+    "all_scores",
+    "keywords",
+    "sensationalism",
+    "manipulation_indicators",
+    "suspicious_phrases",
+    "layout_anomalies",
+    "artifact_indicators",
+    "exif",
+    "no_face_analysis",
+    "vlm_breakdown",
+    "truth_override",
+    "num_frames_sampled",
+    "num_face_frames",
+    "num_suspicious_frames",
+    "mean_suspicious_prob",
+    "max_suspicious_prob",
+    "suspicious_ratio",
+    "insufficient_faces",
+    "suspicious_timestamps",
+    "frames",
+    "temporal_score",
+    "optical_flow_variance",
+    "flicker_score",
+    "blink_rate_anomaly",
+    "audio",
+    "audio_authenticity_score",
+    "has_audio",
+    "duration_s",
+    "silence_ratio",
+    "spectral_variance",
+    "rms_consistency",
+    "notes",
+    "ml_analysis",
+    "ocr_boxes",
+}
+
+_DROP_SUFFIXES = ("_base64",)
+_DROP_KEYS = {
+    "heatmap_base64",
+    "ela_base64",
+    "boxes_base64",
+    "heatmap_url",
+    "ela_url",
+    "boxes_url",
+    "thumbnail_url",
+    "media_path",
+    "media_url",
+}
+
+
+def _truncate_text(value: Any, limit: int = 1200) -> Any:
+    if not isinstance(value, str):
+        return value
+    text = " ".join(value.split())
+    if len(text) <= limit:
+        return text
+    return text[: limit - 3].rstrip() + "..."
+
+
+def _compact_value(key: str, value: Any) -> Any:
+    if isinstance(value, dict):
+        return {
+            k: _compact_value(k, v)
+            for k, v in value.items()
+            if k not in _DROP_KEYS and not str(k).endswith(_DROP_SUFFIXES)
+        }
+    if isinstance(value, list):
+        limit = _EXPLAINABILITY_LIMITS.get(key, 10)
+        return [_compact_value(key, item) for item in value[:limit]]
+    return _truncate_text(value)
+
+
+def _build_llm_payload(payload: dict[str, Any]) -> dict[str, Any]:
+    """Return the compact evidence packet sent to the LLM.
+
+    The full API response can include image overlays, many OCR boxes, per-frame
+    video records, and other large fields. The summary only needs the verdict,
+    strongest evidence, source matches, and pipeline context.
+    """
+    compact: dict[str, Any] = {}
+    for key in _KEEP_TOP_LEVEL:
+        if key in payload and key not in _DROP_KEYS:
+            compact[key] = _compact_value(key, payload[key])
+
+    explainability = payload.get("explainability")
+    if isinstance(explainability, dict):
+        compact["explainability"] = {
+            key: _compact_value(key, value)
+            for key, value in explainability.items()
+            if key in _KEEP_EXPLAINABILITY
+            and key not in _DROP_KEYS
+            and not str(key).endswith(_DROP_SUFFIXES)
+        }
+
+    return compact
 
 
 class _LLMProvider(ABC):
@@ -98,11 +228,18 @@ class _GeminiProvider(_LLMProvider):
 
     def __init__(self) -> None:
         from google import genai
+        from google.genai import types
+
         self._client = genai.Client(api_key=settings.LLM_API_KEY)
         self.model = settings.LLM_MODEL
+        self._config = types.GenerateContentConfig(
+            temperature=0.2,
+            max_output_tokens=220,
+            response_mime_type="application/json",
+        )
 
     def generate(self, prompt: str) -> str:
-        resp = self._client.models.generate_content(model=self.model, contents=prompt)
+        resp = self._client.models.generate_content(model=self.model, contents=prompt, config=self._config)
         return resp.text or ""
 
 
@@ -118,8 +255,9 @@ class _OpenAIProvider(_LLMProvider):
         response = self._client.chat.completions.create(
             model=self.model,
             messages=[{"role": "user", "content": prompt}],
-            temperature=0.3,
-            max_tokens=300,
+            temperature=0.2,
+            max_tokens=220,
+            response_format={"type": "json_object"},
         )
         return response.choices[0].message.content or ""
 
@@ -137,8 +275,8 @@ class _GroqProvider(_LLMProvider):
         response = self._client.chat.completions.create(
             model=self.model,
             messages=[{"role": "user", "content": prompt}],
-            temperature=0.3,
-            max_tokens=400,
+            temperature=0.2,
+            max_tokens=220,
             response_format={"type": "json_object"},
         )
         return response.choices[0].message.content or ""
@@ -244,14 +382,7 @@ def generate_llm_summary(
         logger.warning("LLM_API_KEY not set — using deterministic fallback summary")
         return _fallback_summary(payload, reason="no_api_key")
 
-    # Strip heavy base64 fields to reduce token usage
-    slim_payload = {k: v for k, v in payload.items()
-                    if k not in ("explainability",)}
-    # Include explainability but strip base64 images
-    if "explainability" in payload and isinstance(payload["explainability"], dict):
-        expl = {k: v for k, v in payload["explainability"].items()
-                if not k.endswith("_base64")}
-        slim_payload["explainability"] = expl
+    slim_payload = _build_llm_payload(payload)
 
     prompt_body = json.dumps(slim_payload, indent=2, default=str, sort_keys=True)
     prompt = _PROMPT_TEMPLATE.format(media_kind=media_kind, payload_json=prompt_body)

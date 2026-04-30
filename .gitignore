@@ -15,6 +15,7 @@ env/
 backend/temp_uploads/
 backend/reports/
 backend/temp_reports/
+backend/test_outputs/
 backend/deepshield.db
 
 # Node

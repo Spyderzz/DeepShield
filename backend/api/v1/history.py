@@ -36,9 +36,10 @@ def list_history(
     user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ) -> HistoryListResponse:
+    from sqlalchemy.orm import defer
     q = db.query(AnalysisRecord).filter(AnalysisRecord.user_id == user.id)
     total = q.count()
-    rows = q.order_by(AnalysisRecord.created_at.desc()).offset(offset).limit(limit).all()
+    rows = q.options(defer(AnalysisRecord.result_json)).order_by(AnalysisRecord.created_at.desc()).offset(offset).limit(limit).all()
     items = [
         HistoryItem(
             id=r.id,

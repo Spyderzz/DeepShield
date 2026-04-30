@@ -21,11 +21,11 @@ const MODES = [
 ];
 
 const MODE_STAGES = {
-  image:      ['Upload media', 'Prepare image', 'Visual deepfake detection', 'Generate evidence map', 'Check metadata & tampering', 'Plain-English summary'],
-  video:      ['Upload media', 'Extract video frames', 'Analyze individual frames', 'Check for unnatural movement', 'Analyze audio & lip-sync', 'Plain-English summary'],
-  text:       ['Read text input', 'Prepare text content', 'Scan for sensationalism', 'Cross-check trusted sources', 'Verify factual accuracy', 'Plain-English summary'],
-  screenshot: ['Upload media', 'Read text from image', 'Check for layout manipulation', 'Analyze claim credibility', 'Generate visual map', 'Plain-English summary'],
-  audio:      ['Upload media', 'Prepare audio', 'Extract vocal patterns', 'Detect synthetic voice cloning', 'Analyze acoustic signals', 'Plain-English summary'],
+  image:      ['Upload media', 'Prepare image', 'Visual deepfake detection', 'Generate evidence map', 'Check metadata & tampering', 'Finalizing verdict'],
+  video:      ['Upload media', 'Extract video frames', 'Analyze individual frames', 'Check for unnatural movement', 'Analyze audio & lip-sync', 'Finalizing verdict'],
+  text:       ['Read text input', 'Prepare text content', 'Scan for sensationalism', 'Cross-check trusted sources', 'Verify factual accuracy', 'Finalizing verdict'],
+  screenshot: ['Upload media', 'Read text from image', 'Check for layout manipulation', 'Analyze claim credibility', 'Generate visual map', 'Finalizing verdict'],
+  audio:      ['Upload media', 'Prepare audio', 'Extract vocal patterns', 'Detect synthetic voice cloning', 'Analyze acoustic signals', 'Finalizing verdict'],
 };
 
 const VIDEO_STAGE_PROGRESS = {

@@ -215,7 +215,7 @@ function ResultsView({ result, id, accessToken }) {
         <div className="results-grid">
           <VerdictCard verdict={verdictLabel} displayScore={displayScore} color={c} llm={llm} calibrationApplied={calibrationApplied} recordId={id} />
 
-          {(mediaType === 'image' || mediaType === 'screenshot') && (
+          {mediaType === 'image' && (
             <div className="result-grid">
               <HeatmapCard
                 src={baseImg}
@@ -224,8 +224,21 @@ function ResultsView({ result, id, accessToken }) {
                 alpha={alpha} setAlpha={setAlpha}
                 status={expl.heatmap_status || 'n/a'}
               />
-              {mediaType === 'image' && <EXIFCard exif={exif} />}
-              {mediaType === 'screenshot' && <TextCard text={expl.extracted_text} fullWidth={false} title="Extracted OCR Text" />}
+              <EXIFCard exif={exif} />
+            </div>
+          )}
+
+          {mediaType === 'screenshot' && (
+            <div className="result-grid">
+              <div className="card heatmap-card" style={{ padding: 0, overflow: 'hidden', background: '#0A0D18', position: 'relative' }}>
+                 <div className="card-head" style={{ padding: '20px 24px', position: 'absolute', top: 0, left: 0, right: 0, zIndex: 10, background: 'linear-gradient(to bottom, rgba(10,13,20,0.8), transparent)' }}>
+                    <span className="eyebrow">Screenshot Source</span>
+                 </div>
+                 <div className="heatmap-stage" style={{ height: '100%', minHeight: 300, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                    <img src={baseImg} alt="Screenshot" style={{ maxWidth: '100%', maxHeight: '100%', objectFit: 'contain' }} onError={(e) => { e.target.style.display = 'none'; }} />
+                 </div>
+              </div>
+              <TextCard text={expl.extracted_text} fullWidth={false} title="Extracted OCR Text" />
             </div>
           )}
 
@@ -268,6 +281,7 @@ function VerdictCard({ verdict, displayScore, color, llm: initialLlm, calibratio
   const [loading, setLoading] = useState(!initialLlm);
   const [typedParagraph, setTypedParagraph] = useState('');
   const [typingIdx, setTypingIdx] = useState(0);
+  const pendingSummary = `Core detection is complete: DeepShield estimates ${displayScore}/100 deepfake probability and is preparing a plain-English summary from anomaly scores, visual evidence, metadata, and source checks.`;
 
   useEffect(() => {
     if (!initialLlm && recordId) {
@@ -281,6 +295,11 @@ function VerdictCard({ verdict, displayScore, color, llm: initialLlm, calibratio
       });
     }
   }, [initialLlm, recordId]);
+
+  useEffect(() => {
+    setTypedParagraph('');
+    setTypingIdx(0);
+  }, [llm?.paragraph]);
 
   useEffect(() => {
     if (llm?.paragraph && typingIdx < llm.paragraph.length) {
@@ -310,7 +329,7 @@ function VerdictCard({ verdict, displayScore, color, llm: initialLlm, calibratio
         <span className="eyebrow">Plain-English summary{llm?.model_used ? ` · ${llm.model_used}` : (loading ? ' · Generating...' : ' · Gemini 1.5')}</span>
         <p>
           {loading ? (
-            <span style={{ opacity: 0.7 }}>Generating LLM Summary<span className="typing-dots">...</span></span>
+            <span style={{ opacity: 0.82 }}>{pendingSummary}<span className="typing-dots">...</span></span>
           ) : llm?.paragraph ? (
             typedParagraph + (typingIdx < llm.paragraph.length ? '█' : '')
           ) : (
@@ -550,23 +569,29 @@ function SourcesCard({ sources }) {
       {sources.length > 0 ? (
         <ul className="src-list">
           {sources.slice(0, 5).map((s, i) => {
-            const dom = s.domain || s.source || `source-${i+1}`;
-            const sim = typeof s.similarity === 'number' ? s.similarity : (s.sim ?? 0);
-            const w = typeof s.weight === 'number' ? s.weight : (s.trust_weight ?? 1);
+            const srcName = s.source_name || s.domain || s.source || `source-${i+1}`;
             const contr = s.contradicting || s.state === 'contradict';
+            let dateStr = '—';
+            if (s.published_at) {
+              const d = new Date(s.published_at);
+              if (!isNaN(d.valueOf())) {
+                dateStr = d.toLocaleDateString(undefined, { year: 'numeric', month: 'short', day: 'numeric' });
+              } else {
+                dateStr = s.published_at.slice(0, 12);
+              }
+            }
             return (
               <li key={i}>
                 <div className="src-head">
                   <span className="mono" style={{ display: 'inline-flex', alignItems: 'center', gap: 8 }}>
-                    <span style={{ width: 16, height: 16, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', background: contr ? 'rgba(255,94,122,0.15)' : 'rgba(108,125,255,0.15)', color: contr ? 'var(--ds-danger)' : 'var(--ds-brand)', borderRadius: 3, fontSize: 9 }}>{dom.slice(0, 2).toUpperCase()}</span>
-                    {dom}
+                    <span style={{ width: 16, height: 16, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', background: contr ? 'rgba(255,94,122,0.15)' : 'rgba(108,125,255,0.15)', color: contr ? 'var(--ds-danger)' : 'var(--ds-brand)', borderRadius: 3, fontSize: 9 }}>{srcName.slice(0, 2).toUpperCase()}</span>
+                    {srcName}
                   </span>
-                  <div className="src-bar"><i style={{ width: `${w * 100}%`, background: contr ? 'var(--ds-danger)' : 'var(--ds-safe)' }}/></div>
+                  <div className="src-bar"><i style={{ width: `100%`, background: contr ? 'var(--ds-danger)' : 'var(--ds-safe)' }}/></div>
                 </div>
                 <p>{s.title || s.snippet || s.description || '—'}</p>
                 <div className="src-foot mono">
-                  <span>sim {sim.toFixed ? sim.toFixed(2) : sim}</span>
-                  <span>weight {w.toFixed ? w.toFixed(2) : w}</span>
+                  <span>{dateStr}</span>
                   {contr && <span style={{ color: 'var(--ds-danger)' }}>contradicting</span>}
                   {s.url && <a href={s.url} target="_blank" rel="noreferrer">open ↗</a>}
                 </div>
