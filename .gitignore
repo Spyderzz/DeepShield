@@ -49,3 +49,14 @@ graphify-out/
 
 # ICPR2020 DFDC model repo (large, reference-only — clone separately)
 backend/models/icpr2020dfdc/
+
+# Planning & agent config docs (internal only)
+BUILD_PLAN.md
+BUILD_PLAN2.md
+MERGE_PLAN.md
+FRONTEND_REDESIGN.md
+ISSUES.md
+design_plan.md
+prd.md
+.impeccable.md
+CLAUDE.md
