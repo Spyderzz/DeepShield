@@ -23,6 +23,7 @@
 .model-card-wrapper {
   perspective: 1500px;
   transform-style: preserve-3d;
+  height: 100%;
 }
 
 .model-card {
@@ -37,6 +38,10 @@
   -webkit-backdrop-filter: blur(12px);
   transform-style: preserve-3d;
   will-change: transform;
+  height: 100%;
+  box-sizing: border-box;
+  display: flex;
+  flex-direction: column;
 }
 
 .model-card:hover {
@@ -63,6 +68,9 @@
   z-index: 1;
   transform: translateZ(30px); /* 3D pop effect */
   pointer-events: none;
+  display: flex;
+  flex-direction: column;
+  flex: 1;
 }
 
 .mc-type {
@@ -88,6 +96,7 @@
   color: var(--ds-muted);
   line-height: 1.5;
   margin-bottom: 24px;
+  flex: 1;
 }
 
 .mc-stats {

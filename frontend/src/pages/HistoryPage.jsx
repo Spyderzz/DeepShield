@@ -13,16 +13,19 @@ function toDisplayItem(r) {
   const c = score >= 65 ? 'safe' : score >= 40 ? 'warn' : 'danger';
   const verdict = c === 'safe' ? 'REAL' : c === 'warn' ? 'SUSP' : 'FAKE';
   const idStr = String(r.id);
+  const type = r.media_type || 'image';
+  const visualSrc = type === 'text' ? null : (r.thumbnail_url || r.media_path);
   return {
     id: r.id,
-    type: r.media_type || 'image',
+    type,
     verdict,
     c,
     score,
     title: r.title || `${r.media_type || 'analysis'} · #${idStr}`,
     sub: r.verdict ? `verdict · ${r.verdict}` : '',
     when: r.created_at ? new Date(r.created_at).toLocaleString() : '',
-    src: resolveMediaUrl(r.thumbnail_url) || null,
+    src: resolveMediaUrl(visualSrc) || null,
+    textPreview: r.text_preview || '',
     hash: idStr.padStart(8, '0'),
   };
 }
@@ -156,8 +159,14 @@ export default function HistoryPage() {
             <div className="hist-grid">
               {items.map(i => (
                 <a onClick={() => navigate(`/results/${i.id}`)} key={i.id} className="hist-card" style={{ cursor: 'pointer' }}>
-                  <div className="hist-thumb" style={i.src ? { backgroundImage: `url(${i.src})` } : { background: 'linear-gradient(135deg, rgba(108,125,255,0.08), rgba(61,219,179,0.04))' }}>
-                    {!i.src && <span className="hist-typeicon">{i.type === 'text' ? '¶' : '▦'}</span>}
+                  <div className={`hist-thumb ${i.type === 'text' ? 'is-text' : ''}`} style={i.src ? { backgroundImage: `url(${i.src})` } : { background: 'linear-gradient(135deg, rgba(108,125,255,0.08), rgba(61,219,179,0.04))' }}>
+                    {i.type === 'text' && i.textPreview ? (
+                      <div className="hist-text-preview">
+                        <p>{i.textPreview}</p>
+                      </div>
+                    ) : (
+                      !i.src && <span className="hist-typeicon">{i.type === 'text' ? '¶' : '▦'}</span>
+                    )}
                     <span className={`verdict-dot h-verdict ${i.c}`}>{i.verdict}</span>
                     <span className="hist-type mono">{i.type}</span>
                   </div>

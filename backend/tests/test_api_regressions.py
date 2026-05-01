@@ -11,7 +11,7 @@ from sqlalchemy.orm import sessionmaker
 os.environ["DEBUG"] = "false"
 
 from api.v1.analyze import _find_existing_llm_summary, _persist_response_payload, _store_llm_summary
-from api.v1.history import get_history_detail
+from api.v1.history import get_history_detail, list_history
 from db.models import AnalysisRecord
 from db.database import Base
 from schemas.analyze import TextAnalysisResponse, TextExplainability
@@ -68,6 +68,30 @@ def test_anonymous_history_detail_rejects_missing_analysis_token(db_session):
 
     with pytest.raises(Exception):
         get_history_detail(record.id, token=None, user=None, db=db_session)
+
+
+def test_history_list_includes_text_preview_from_saved_analysis(db_session):
+    payload = {
+        "analysis_id": "analysis-text-preview",
+        "media_type": "text",
+        "verdict": {"label": "Likely Real", "authenticity_score": 81},
+        "explainability": {
+            "original_text": "Government confirms a new public health advisory after verified reports.",
+        },
+    }
+    record = AnalysisRecord(
+        user_id=3,
+        media_type="text",
+        verdict="Likely Real",
+        authenticity_score=81,
+        result_json=json.dumps(payload),
+    )
+    db_session.add(record)
+    db_session.commit()
+
+    result = list_history(limit=50, offset=0, user=type("UserStub", (), {"id": 3})(), db=db_session)
+
+    assert result.items[0].text_preview == payload["explainability"]["original_text"]
 
 
 def test_persist_response_payload_keeps_postprocessing_fields_for_reload(db_session):

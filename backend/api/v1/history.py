@@ -22,11 +22,30 @@ class HistoryItem(BaseModel):
     created_at: datetime
     thumbnail_url: str | None = None
     media_path: str | None = None
+    text_preview: str | None = None
 
 
 class HistoryListResponse(BaseModel):
     items: list[HistoryItem]
     total: int
+
+
+def _history_text_preview(record: AnalysisRecord, limit: int = 260) -> str | None:
+    if record.media_type != "text":
+        return None
+    try:
+        payload = json.loads(record.result_json)
+    except Exception:
+        return None
+    explainability = payload.get("explainability")
+    if not isinstance(explainability, dict):
+        return None
+    text = " ".join(str(explainability.get("original_text") or "").split())
+    if not text:
+        return None
+    if len(text) <= limit:
+        return text
+    return text[: limit - 3].rstrip() + "..."
 
 
 @router.get("", response_model=HistoryListResponse)
@@ -49,6 +68,7 @@ def list_history(
             created_at=r.created_at,
             thumbnail_url=r.thumbnail_url,
             media_path=r.media_path,
+            text_preview=_history_text_preview(r),
         )
         for r in rows
     ]

@@ -67,17 +67,17 @@ export default function DeepShieldAuth({ mode: initial = 'login' }) {
 
         <div className="auth-grid">
           <div className="auth-quote">
-            <span className="eyebrow">DeepShield</span>
+            <span className="eyebrow">DeepShield Platform</span>
             <h2 className="display italic accent">"Evidence over assertion. Calm over alarm."</h2>
-            <p>Sign {isLogin ? 'in' : 'up'} to save your analysis history, get PDF reports, and cross-reference against your org's trusted source list.</p>
+            <p>Sign {isLogin ? 'in' : 'up'} to unlock your personal workspace. Save your scans, generate shareable reports, and uncover the truth behind viral media.</p>
             <ul className="auth-bullets">
-              <li><span className="dot"/>Cached verdicts by SHA</li>
-              <li><span className="dot"/>Team shared history</li>
-              <li><span className="dot"/>Custom trusted-source weighting</li>
-              <li><span className="dot"/>API access for pipelines</li>
+              <li><span className="dot"/>Detect deepfakes across 5 media types</li>
+              <li><span className="dot"/>Save and search past analyses</li>
+              <li><span className="dot"/>Download detailed PDF reports</li>
+              <li><span className="dot"/>Cross-check against trusted news</li>
             </ul>
             <div className="auth-trust mono">
-              <span>· SOC 2 Type II</span><span>· No retention</span><span>· Open models</span>
+              <span>· 100% Private</span><span>· Secure</span><span>· Transparent AI</span>
             </div>
           </div>
 

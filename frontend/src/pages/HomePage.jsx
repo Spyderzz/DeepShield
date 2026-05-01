@@ -1,12 +1,19 @@
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, useCallback } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
+import { AnimatePresence, motion } from 'framer-motion';
 import './deepshield-landing.css';
 import logoImg from '../assets/logo.png';
 import { analyzeImage } from '../services/analyzeApi.js';
 import useDottedSurface from '../hooks/useDottedSurface.js';
 import ScrollReveal from '../components/common/ScrollReveal.jsx';
 import ImageScanPreview from '../components/ImageScanPreview.jsx';
+import PixelatedCanvas from '../components/PixelatedCanvas.jsx';
+import StackedPanels from '../components/StackedPanels.jsx';
 import { useAuth } from '../contexts/AuthContext.jsx';
+
+const SCRAMBLE_SPEED = 10;
+const CYCLES_PER_LETTER = 3;
+const SCRAMBLE_CHARS = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ!@#$%^&*()_+';
 
 /* ============ NAV ============ */
 function Nav() {
@@ -247,14 +254,14 @@ function Hero() {
       <div className="ds-hero-inner">
         <div className="ds-hero-left">
           <h1 className="display ds-hero-title">
-            The leading <br /><em className="italic accent">forensic AI</em><br />
-            platform for detecting<br />
-            deepfake media.
+            Auditable, trustworthy<br /><em className="italic accent">forensic AI</em><br />
+            for identifying and explaining<br />
+            manipulated media.
           </h1>
           <p className="ds-hero-sub">
-            DeepShield inspects every pixel, waveform, and word — returning a calm verdict
-            backed by visual heatmapping, deep structural analysis, and executive-level plain-English explanations.
-            For newsrooms, courts, and platforms.
+            DeepShield inspects pixels, waveforms, and text—delivering clear, auditable verdicts
+            with visual heatmaps, structural analysis, and concise plain-English explanations
+            for newsrooms, courts, and platforms.
           </p>
           <div className="ds-hero-cta">
             <button className="btn btn-primary btn-lg btn-shiny" onClick={() => navigate('/analyze')}>
@@ -315,10 +322,10 @@ function Statement() {
       <div className="ds-statement-inner">
         <span className="eyebrow">What we do</span>
         <h2 className="display ds-statement-text">
-          We <em className="stmt-em">scan</em>{' '}
+          We <em className="stmt-em">analyze</em>{' '}
           every frame,<br />
           every pixel,{' '}
-          <span className="stmt-span">every whisper</span>.<br />
+          <span className="stmt-span">every waveform</span>.<br />
           <span style={{ opacity: 0.55 }}>Forensics for the AI era.</span>
         </h2>
         <ScanOrb />
@@ -492,6 +499,119 @@ function ModalityVisual({ kind }) {
   );
 }
 
+function HyperTextWord({ children, isDimmed, isHighlightable, onHoverStart, onHoverEnd }) {
+  const [displayText, setDisplayText] = useState(children);
+  const [isHovered, setIsHovered] = useState(false);
+  const intervalRef = useRef(null);
+
+  useEffect(() => () => {
+    if (intervalRef.current) clearInterval(intervalRef.current);
+  }, []);
+
+  const stopScramble = useCallback(() => {
+    if (intervalRef.current) clearInterval(intervalRef.current);
+    setDisplayText(children);
+  }, [children]);
+
+  const scramble = useCallback(() => {
+    let pos = 0;
+    if (intervalRef.current) clearInterval(intervalRef.current);
+
+    intervalRef.current = setInterval(() => {
+      setDisplayText(children
+        .split('')
+        .map((char, index) => {
+          if (pos / CYCLES_PER_LETTER > index) return char;
+          return SCRAMBLE_CHARS[Math.floor(Math.random() * SCRAMBLE_CHARS.length)];
+        })
+        .join(''));
+      pos += 1;
+
+      if (pos >= children.length * CYCLES_PER_LETTER) {
+        stopScramble();
+      }
+    }, SCRAMBLE_SPEED);
+  }, [children, stopScramble]);
+
+  const handleMouseEnter = () => {
+    if (!isHighlightable) return;
+    setIsHovered(true);
+    onHoverStart();
+    scramble();
+  };
+
+  const handleMouseLeave = () => {
+    if (!isHighlightable) return;
+    setIsHovered(false);
+    onHoverEnd();
+    stopScramble();
+  };
+
+  return (
+    <motion.span
+      className={`hypertext-word ${isHighlightable ? 'is-highlightable' : ''}`}
+      onMouseEnter={handleMouseEnter}
+      onMouseLeave={handleMouseLeave}
+      animate={{
+        scale: isHovered ? 1.1 : 1,
+        y: isHovered ? -4 : 0,
+        opacity: isDimmed && !isHovered ? 0.3 : 1,
+        filter: isDimmed && !isHovered ? 'blur(2px)' : 'blur(0px)',
+        color: isHovered ? '#ffffff' : isHighlightable ? '#7f8fff' : 'rgba(232,236,245,0.82)',
+        zIndex: isHovered ? 20 : 1,
+      }}
+      transition={{ type: 'spring', stiffness: 300, damping: 20 }}
+    >
+      <AnimatePresence>
+        {isHovered && (
+          <motion.span
+            className="hypertext-hover-bg"
+            initial={{ opacity: 0, scale: 0.8 }}
+            animate={{ opacity: 1, scale: 1 }}
+            exit={{ opacity: 0, scale: 0.8 }}
+            layoutId="misinfo-hover-bg"
+          />
+        )}
+      </AnimatePresence>
+      <span className="hypertext-word-text">{displayText}</span>
+      <AnimatePresence>
+        {isHovered && (
+          <>
+            <motion.span initial={{ scale: 0 }} animate={{ scale: 1 }} exit={{ scale: 0 }} className="hypertext-corner top" />
+            <motion.span initial={{ scale: 0 }} animate={{ scale: 1 }} exit={{ scale: 0 }} className="hypertext-corner bottom" />
+          </>
+        )}
+      </AnimatePresence>
+    </motion.span>
+  );
+}
+
+function HyperTextParagraph({ text, className = '', highlightWords = [] }) {
+  const [isParagraphHovered, setIsParagraphHovered] = useState(false);
+  const clean = (word) => word.toLowerCase().replace(/[^a-z0-9]/g, '');
+
+  return (
+    <div className={`hypertext-paragraph ${className}`}>
+      {text.split(' ').map((word, i) => {
+        const isHighlightable = highlightWords.some((highlight) => clean(highlight) === clean(word));
+        return (
+          <span className="hypertext-token" key={`${word}-${i}`}>
+            <HyperTextWord
+              isDimmed={isParagraphHovered}
+              isHighlightable={isHighlightable}
+              onHoverStart={() => setIsParagraphHovered(true)}
+              onHoverEnd={() => setIsParagraphHovered(false)}
+            >
+              {word}
+            </HyperTextWord>
+            <span className="hypertext-space"> </span>
+          </span>
+        );
+      })}
+    </div>
+  );
+}
+
 function PremiumModalityVisual({ kind }) {
   const grid = Array.from({ length: 16 }, (_, i) => (
     <path key={`g${i}`} d={i < 8 ? `M${40 + i * 70} 45V310` : `M30 ${58 + (i - 8) * 32}H620`} />
@@ -499,70 +619,28 @@ function PremiumModalityVisual({ kind }) {
 
   if (kind === 'Image') return (
     <div className="premium-visual" aria-hidden="true">
-      <svg viewBox="0 0 650 330" role="img">
-        <style>{`
-          .premium-glow.blue { fill: rgba(108,125,255,0.15); filter: blur(40px); }
-          .face-outline { fill: none; stroke: rgba(108,125,255,0.8); stroke-width: 1.5; stroke-dasharray: 300; animation: drawOutline 4s linear infinite; }
-          .face-wire { fill: none; stroke: rgba(108,125,255,0.3); stroke-width: 0.8; }
-          .face-node { fill: rgba(108,125,255,0.6); }
-          .face-node.active { fill: var(--ds-danger); animation: nodePulse 2s infinite; }
-          .svg-scan-line { animation: svgScanHoriz 3s ease-in-out infinite; filter: drop-shadow(0 0 8px var(--ds-brand-2)); }
-          .svg-scan-box { animation: svgScanBoxAnim 3s infinite; transform-origin: center; }
-          
-          @keyframes drawOutline { 0% { stroke-dashoffset: 300; } 40%, 60% { stroke-dashoffset: 0; } 100% { stroke-dashoffset: -300; } }
-          @keyframes nodePulse { 0%, 100% { r: 1.5; opacity: 0.5; } 50% { r: 3; opacity: 1; } }
-          @keyframes svgScanHoriz { 0% { transform: translateX(100px); opacity: 0; } 10% { opacity: 1; } 90% { opacity: 1; } 100% { transform: translateX(550px); opacity: 0; } }
-          @keyframes svgScanBoxAnim { 0%, 40% { opacity: 0; transform: translate(370px, 140px) scale(1.5); } 50%, 80% { opacity: 1; transform: translate(370px, 140px) scale(1); } 100% { opacity: 0; transform: translate(370px, 140px) scale(1); } }
-        `}</style>
-        <rect className="premium-bg" width="650" height="330" />
-        <g className="premium-grid">{grid}</g>
-        <ellipse className="premium-glow blue" cx="325" cy="165" rx="170" ry="90" />
-        
-        <g transform="translate(200, 40) scale(2.5)">
-          <path className="face-outline" d="M30,20 C45,10 55,10 70,20 C85,45 75,70 60,90 C50,90 40,90 25,70 C15,45 30,20 Z" />
-          <path className="face-wire" d="M30,20 L70,20 M25,45 L75,45 M25,70 L60,90 M50,10 L50,90" />
-          <path className="face-wire" d="M30,20 L50,45 L70,20 M25,45 L50,70 L75,45" />
-          
-          <circle className="face-node" cx="30" cy="20" r="1.5" />
-          <circle className="face-node active" cx="70" cy="20" r="1.5" />
-          <circle className="face-node" cx="25" cy="45" r="1.5" />
-          <circle className="face-node" cx="50" cy="45" r="1.5" />
-          <circle className="face-node active" cx="75" cy="45" r="1.5" />
-          <circle className="face-node" cx="25" cy="70" r="1.5" />
-          <circle className="face-node" cx="50" cy="70" r="1.5" />
-          <circle className="face-node" cx="60" cy="90" r="1.5" />
-          <circle className="face-node active" cx="40" cy="90" r="1.5" />
-        </g>
-        
-        <rect fill="var(--ds-brand-2)" width="2" height="330" className="svg-scan-line" />
-        <rect fill="rgba(255,94,122,0.15)" stroke="var(--ds-danger)" strokeDasharray="2,2" width="40" height="40" className="svg-scan-box" />
-      </svg>
+      <PixelatedCanvas
+        src={"/media/donald-trump-gettyimages-687193180.jpg"}
+        width={650}
+        height={330}
+        cellSize={6}
+        dotScale={0.95}
+        shape={'circle'}
+        backgroundColor={"var(--ds-bg, #0b0f1a)"}
+        tintColor={'#6C7DFF'}
+        tintStrength={0.06}
+        interactive={true}
+        distortionMode={'swirl'}
+        distortionStrength={3}
+        distortionRadius={120}
+        className={'premium-pixel'}
+      />
     </div>
   );
 
   if (kind === 'Video') return (
     <div className="premium-visual" aria-hidden="true">
-      <svg viewBox="0 0 650 330" role="img">
-        <rect className="premium-bg" width="650" height="330" />
-        <g className="premium-grid">{grid}</g>
-        <ellipse className="premium-glow indigo" cx="350" cy="134" rx="170" ry="90" />
-        {[0, 1, 2, 3].map(i => (
-          <g className="film-slab" style={{ '--i': i }} key={i}>
-            <path d="M212 86L480 58L570 100L300 132Z" fill="rgba(13,18,30,0.68)" />
-            <ellipse cx="388" cy="88" rx="33" ry="19" fill="rgba(3,5,10,0.9)" />
-          </g>
-        ))}
-        <g className="face-mesh">
-          <path d="M338 146L320 164L314 200L340 228L370 207L368 166Z" />
-          <path d="M320 164L345 176L368 166M314 200L342 194L370 207" />
-        </g>
-        <g className="timeline-track">
-          {Array.from({ length: 18 }, (_, i) => (
-            <rect key={i} className={i > 10 && i < 14 ? 'hot' : ''} x={78 + i * 25} y="256" width="15" height="5" rx="2" />
-          ))}
-          <rect className="timeline-cursor" x="94" y="247" width="3" height="23" rx="1.5" />
-        </g>
-      </svg>
+      <StackedPanels />
     </div>
   );
 
@@ -589,30 +667,14 @@ function PremiumModalityVisual({ kind }) {
   );
 
   if (kind === 'Text') return (
-    <div className="premium-visual" aria-hidden="true">
-      <svg viewBox="0 0 650 300" role="img">
-        <rect className="premium-bg" width="650" height="300" />
-        <g className="premium-grid">{grid.slice(0, 12)}</g>
-        <ellipse className="premium-glow indigo" cx="320" cy="120" rx="170" ry="96" />
-        <g className="claim-network">
-          <path d="M325 132L210 70M325 132L445 78M325 132L220 218M325 132L455 215" />
-          <rect x="278" y="109" width="94" height="46" rx="23" />
-          <rect x="166" y="49" width="88" height="34" rx="17" />
-          <rect x="410" y="58" width="84" height="34" rx="17" />
-          <rect x="178" y="198" width="76" height="34" rx="17" />
-          <rect x="418" y="196" width="92" height="34" rx="17" />
-          <text x="325" y="137">CLAIM</text>
-          <text x="210" y="71">REUTERS</text>
-          <text x="452" y="80">AP</text>
-          <text x="216" y="220">GOV</text>
-          <text x="464" y="218">SOCIAL</text>
-        </g>
-        <g className="claim-card">
-          <rect x="172" y="242" width="306" height="34" rx="8" />
-          <path d="M190 256H452" />
-          <path className="warm" d="M190 267H355" />
-        </g>
-      </svg>
+    <div className="premium-visual premium-hypertext-visual" aria-label="Interactive misinformation text analysis">
+      <div className="hypertext-grid" aria-hidden="true" />
+      <div className="hypertext-orbit" aria-hidden="true" />
+      <HyperTextParagraph
+        className="misinfo-hypertext"
+        text="URGENT: RBI allegedly orders immediate freeze on UPI transactions nationwide after massive data breach reports claim Aadhaar security is compromised."
+        highlightWords={['URGENT', 'allegedly', 'immediate', 'freeze', 'nationwide', 'massive', 'breach', 'compromised']}
+      />
     </div>
   );
 

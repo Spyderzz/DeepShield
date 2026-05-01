@@ -887,6 +887,18 @@ body.ds-page {
   background-position: center;
   position: relative;
 }
+.hist-thumb.is-text {
+  overflow: hidden;
+}
+.hist-thumb.is-text::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background:
+    linear-gradient(180deg, rgba(7,10,18,0.1), rgba(7,10,18,0.72)),
+    radial-gradient(circle at 18% 20%, rgba(108,125,255,0.18), transparent 32%),
+    radial-gradient(circle at 82% 72%, rgba(61,219,179,0.14), transparent 34%);
+}
 .hist-thumb .h-verdict {
   position: absolute; top: 10px; right: 10px;
   padding: 3px 8px; font-size: 9px;
@@ -910,6 +922,40 @@ body.ds-page {
   font-size: 64px;
   color: var(--ds-muted);
   opacity: 0.4;
+}
+.hist-text-preview {
+  position: absolute;
+  inset: 52px 18px 48px;
+  display: flex;
+  align-items: center;
+  min-width: 0;
+}
+.hist-text-preview p {
+  width: 100%;
+  max-height: 5.8em;
+  margin: 0;
+  overflow: hidden;
+  color: rgba(245,247,255,0.88);
+  font-family: var(--ff-mono);
+  font-size: 12px;
+  line-height: 1.45;
+  letter-spacing: 0;
+  clip-path: inset(0 100% 0 0);
+  animation: histTypeReveal 2.3s steps(48, end) 180ms forwards;
+}
+.hist-text-preview::after {
+  content: "";
+  width: 1px;
+  height: 1.2em;
+  margin-left: 4px;
+  background: var(--ds-safe);
+  animation: histCaret 900ms steps(1, end) infinite;
+}
+@keyframes histTypeReveal {
+  to { clip-path: inset(0 0 0 0); }
+}
+@keyframes histCaret {
+  50% { opacity: 0; }
 }
 .hist-body { padding: 14px 16px 16px; }
 .hist-body h4 {
