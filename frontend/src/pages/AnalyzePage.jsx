@@ -9,6 +9,7 @@ import {
 } from '../services/analyzeApi.js';
 import { resolveMediaUrl } from '../services/api.js';
 import { useAuth } from '../contexts/AuthContext.jsx';
+import ConsentModal, { useConsent } from '../components/common/ConsentModal.jsx';
 import './deepshield-landing.css';
 import './deepshield-pages.css';
 
@@ -67,6 +68,7 @@ export default function AnalyzePage() {
   const [recent, setRecent] = useState([]);
   const [previewUrl, setPreviewUrl] = useState(null);
   const previewRef = useRef(null);
+  const { needed: consentNeeded, requestConsent, accept: acceptConsent, decline: declineConsent } = useConsent();
 
   useEffect(() => {
     return () => { if (previewRef.current) URL.revokeObjectURL(previewRef.current); };
@@ -159,8 +161,10 @@ export default function AnalyzePage() {
     }
   };
 
-  const onPickFile = (file) => {
+  const onPickFile = async (file) => {
     if (!file) return;
+    const ok = await requestConsent();
+    if (!ok) return;
     if (previewRef.current) URL.revokeObjectURL(previewRef.current);
     if (file instanceof File && file.type.startsWith('image/')) {
       const url = URL.createObjectURL(file);
@@ -202,6 +206,7 @@ export default function AnalyzePage() {
 
   return (
     <>
+      {consentNeeded && <ConsentModal onAccept={acceptConsent} onDecline={declineConsent} />}
       <SharedNav current="analyze" />
       <section className="analyze-shell page-shell">
         <div className="page-head">

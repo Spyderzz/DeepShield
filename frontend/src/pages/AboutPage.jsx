@@ -51,7 +51,7 @@ export default function AboutPage() {
             <span className="eyebrow">Numbers that matter</span>
             <div className="metric-row">
               <div><b className="display">12</b><span>open models composed</span></div>
-              <div><b className="display italic accent">91%</b><span>detection accuracy (DFDC)</span></div>
+              <div><b className="display italic accent">91%</b><span>detection accuracy</span></div>
               <div><b className="display">2.14<em style={{ fontSize: '0.5em', color: 'var(--ds-muted)' }}>s</em></b><span>median latency (cached)</span></div>
               <div><b className="display">11</b><span>languages supported</span></div>
             </div>

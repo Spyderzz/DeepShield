@@ -958,3 +958,7 @@ TypeError: int() argument must be a string, a bytes-like object or a real number
 2026-04-28 21:34:41.668 | INFO     | main:lifespan:110 - Database initialized
 2026-04-28 21:34:41.668 | INFO     | models.model_loader:load_image_model:48 - Loading image model: prithivMLmods/Deep-Fake-Detector-v2-Model
 2026-04-28 21:34:44.266 | INFO     | models.model_loader:load_image_model:56 - Image model loaded
+2026-05-01 19:46:26.537 | INFO     | main:lifespan:123 - Starting DeepShield backend
+2026-05-01 19:46:26.560 | INFO     | main:lifespan:125 - Database initialized
+2026-05-01 19:46:26.560 | INFO     | models.model_loader:load_image_model:48 - Loading image model: prithivMLmods/Deep-Fake-Detector-v2-Model
+2026-05-01 19:46:33.087 | INFO     | models.model_loader:load_image_model:56 - Image model loaded

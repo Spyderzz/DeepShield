@@ -482,7 +482,7 @@ function ModalityVisual({ kind }) {
         <path className="face-outline" d="M30,20 C45,10 55,10 70,20 C85,45 75,70 60,90 C50,90 40,90 25,70 C15,45 30,20 Z" />
         <path className="face-wire" d="M30,20 L70,20 M25,45 L75,45 M25,70 L60,90 M50,10 L50,90" />
         <path className="face-wire" d="M30,20 L50,45 L70,20 M25,45 L50,70 L75,45" />
-        
+
         <circle className="face-node" cx="30" cy="20" r="1.5" />
         <circle className="face-node active" cx="70" cy="20" r="1.5" />
         <circle className="face-node" cx="25" cy="45" r="1.5" />
@@ -725,7 +725,7 @@ const DEFAULT_RESULT = {
   processing_time_ms: 840,
   models: {
     ensemble: { prediction: "fake", confidence: 0.88 },
-    exif: { suspicious_tags: {"Software": "Adobe Photoshop 24.0"} },
+    exif: { suspicious_tags: { "Software": "Adobe Photoshop 24.0" } },
     ela: { suspicious_regions_detected: true },
   },
   llm_summary: {
@@ -1348,13 +1348,12 @@ function CTAFooter() {
             <div>
               <h5>Research</h5>
               <Link to="/models">Model cards</Link>
-              <a href="https://paperswithcode.com/task/deepfake-detection" target="_blank" rel="noreferrer">Benchmarks</a>
               <a href="https://arxiv.org/abs/1901.08971" target="_blank" rel="noreferrer">Papers</a>
             </div>
             <div>
               <h5>Company</h5>
               <Link to="/about">About</Link>
-              <a href="https://github.com/Spyderzz/DeepShield" target="_blank" rel="noreferrer">Privacy</a>
+              <Link to="/privacy">Privacy</Link>
               <Link to="/contact">Contact</Link>
             </div>
           </div>

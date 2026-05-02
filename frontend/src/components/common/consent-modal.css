@@ -1,0 +1,100 @@
+/* ═══════════════════════════════════════════
+   ConsentModal.css — Phase 22.4
+   ═══════════════════════════════════════════ */
+
+.consent-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 1000;
+  background: rgba(7, 10, 20, 0.78);
+  backdrop-filter: blur(6px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 16px;
+  animation: consent-fade-in 0.2s ease;
+}
+
+@keyframes consent-fade-in {
+  from { opacity: 0; }
+  to   { opacity: 1; }
+}
+
+.consent-modal {
+  background: #0f1528;
+  border: 1px solid rgba(127, 143, 255, 0.2);
+  border-radius: 20px;
+  padding: 36px 32px 28px;
+  max-width: 460px;
+  width: 100%;
+  box-shadow: 0 24px 80px rgba(0, 0, 0, 0.6), 0 0 0 1px rgba(127,143,255,0.08);
+  animation: consent-slide-up 0.22s cubic-bezier(0.34, 1.56, 0.64, 1);
+  outline: none; /* focus managed by JS */
+}
+
+@keyframes consent-slide-up {
+  from { transform: translateY(16px); opacity: 0; }
+  to   { transform: translateY(0);    opacity: 1; }
+}
+
+.consent-icon {
+  margin-bottom: 16px;
+}
+
+.consent-title {
+  font-size: 1.35rem;
+  font-weight: 700;
+  color: #e8ecf5;
+  margin: 0 0 12px;
+  letter-spacing: -.01em;
+}
+
+.consent-desc {
+  font-size: 14.5px;
+  line-height: 1.65;
+  color: rgba(232, 236, 245, 0.62);
+  margin: 0 0 20px;
+}
+
+.consent-list {
+  list-style: none;
+  padding: 0;
+  margin: 0 0 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.consent-list li {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  font-size: 13.5px;
+  color: rgba(232, 236, 245, 0.75);
+  line-height: 1.5;
+}
+
+.consent-check {
+  color: #3ddbb3;
+  font-size: 13px;
+  margin-top: 1px;
+  flex-shrink: 0;
+}
+
+.consent-link-line {
+  font-size: 13px;
+  color: rgba(232,236,245,.45);
+  margin: 0 0 24px;
+}
+.consent-link {
+  color: #7f8fff;
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+.consent-link:hover { color: #a0acff; }
+
+.consent-actions {
+  display: flex;
+  gap: 10px;
+  justify-content: flex-end;
+}

@@ -86,6 +86,49 @@
   box-sizing: border-box;
 }
 
+/* ── Accessibility: Skip Navigation Link (Phase 22.3) ── */
+.skip-nav {
+  position: absolute;
+  top: -100px;
+  left: 16px;
+  z-index: 9999;
+  padding: 10px 20px;
+  background: #7f8fff;
+  color: #fff;
+  border-radius: 6px;
+  font-size: 14px;
+  font-weight: 600;
+  text-decoration: none;
+  transition: top 0.15s;
+}
+.skip-nav:focus {
+  top: 16px;
+}
+
+/* ── Accessibility: Visible Focus Rings (Phase 22.3) ── */
+:focus-visible {
+  outline: 2px solid #7f8fff;
+  outline-offset: 3px;
+  border-radius: 4px;
+}
+
+/* Remove the default outline only when :focus-visible is supported */
+:focus:not(:focus-visible) {
+  outline: none;
+}
+
+/* Buttons & links: ensure contrast */
+button:focus-visible,
+a:focus-visible,
+[role="button"]:focus-visible,
+input:focus-visible,
+select:focus-visible,
+textarea:focus-visible {
+  outline: 2px solid #7f8fff;
+  outline-offset: 3px;
+  box-shadow: 0 0 0 4px rgba(127, 143, 255, 0.18);
+}
+
 html,
 body,
 #root {

@@ -19,6 +19,8 @@ export function SharedNav({ current = '' }) {
     { label: 'Analyze', to: '/analyze', key: 'analyze' },
     { label: 'History', to: '/history', key: 'history' },
     { label: 'About', to: '/about', key: 'about' },
+    { label: 'Privacy', to: '/privacy', key: 'privacy' },
+    { label: 'Contact', to: '/contact', key: 'contact' },
   ];
 
   const refs = useRef([]);
@@ -100,7 +102,7 @@ export function SharedFooter() {
           <div>
             <h5>Company</h5>
             <Link to="/about">About</Link>
-            <a href="https://github.com/Spyderzz/DeepShield" target="_blank" rel="noreferrer">Privacy</a>
+            <Link to="/privacy">Privacy</Link>
             <Link to="/contact">Contact</Link>
           </div>
         </div>

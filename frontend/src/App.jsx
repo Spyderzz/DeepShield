@@ -14,6 +14,7 @@ const AboutPage = lazy(() => import('./pages/AboutPage.jsx'));
 const ContactPage = lazy(() => import('./pages/ContactPage.jsx'));
 const ModelsPage = lazy(() => import('./pages/ModelsPage.jsx'));
 const NotFoundPage = lazy(() => import('./pages/NotFoundPage.jsx'));
+const PrivacyPage  = lazy(() => import('./pages/PrivacyPage.jsx'));
 
 function ScrollToTop() {
   const { pathname } = useLocation();
@@ -51,6 +52,7 @@ export default function App() {
 
   return (
     <>
+      <a href="#main-content" className="skip-nav">Skip to main content</a>
       <ScrollToTop />
       <Suspense fallback={<div style={{ height: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center' }}><div style={{ color: 'var(--ds-muted)', fontSize: 14 }}>Loading...</div></div>}>
         <Routes>
@@ -63,6 +65,7 @@ export default function App() {
           <Route path="/about"    element={<AboutPage />} />
           <Route path="/contact"  element={<ContactPage />} />
           <Route path="/models"   element={<ModelsPage />} />
+          <Route path="/privacy"  element={<PrivacyPage />} />
           <Route path="*"         element={<NotFoundPage />} />
         </Routes>
       </Suspense>
