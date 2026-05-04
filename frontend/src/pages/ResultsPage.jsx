@@ -1,18 +1,29 @@
 import { useEffect, useState } from 'react';
-import { useLocation, useNavigate, useParams, useSearchParams } from 'react-router-dom';
+import { useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import { downloadReportBlob, generateReport, saveReportBlob } from '../services/reportApi.js';
 import { SharedNav, SharedFooter } from '../components/layout/SharedNav.jsx';
 import useDottedSurface from '../hooks/useDottedSurface.js';
 import { getHistoryDetail } from '../services/historyApi.js';
 import { generateLLMSummary } from '../services/api.js';
+import { formatDateIST, formatDateTimeIST } from '../utils/dateTime.js';
 import './deepshield-landing.css';
 import './deepshield-pages.css';
 
 function resolveMediaUrl(url) {
   if (!url) return null;
-  url = String(url).replaceAll('\\', '/');
-  if (url.startsWith('http://') || url.startsWith('https://') || url.startsWith('data:')) return url;
-  const path = url.startsWith('/') ? url : `/${url}`;
+  let normalized = String(url).replaceAll('\\', '/');
+  if (normalized.startsWith('http://') || normalized.startsWith('https://') || normalized.startsWith('data:')) return normalized;
+
+  const mediaIdx = normalized.toLowerCase().indexOf('/media/');
+  if (mediaIdx >= 0) {
+    normalized = normalized.slice(mediaIdx);
+  } else if (normalized.toLowerCase().startsWith('media/')) {
+    normalized = `/${normalized}`;
+  } else if (normalized.toLowerCase().startsWith('./media/')) {
+    normalized = normalized.slice(1);
+  }
+
+  const path = normalized.startsWith('/') ? normalized : `/${normalized}`;
   const apiBase = import.meta.env.VITE_API_BASE_URL || '/api/v1';
   if (apiBase.startsWith('http') && path.startsWith('/media/')) {
     return `${apiBase.replace(/\/api\/v1\/?$/, '')}${path}`;
@@ -24,17 +35,14 @@ export default function ResultsPage() {
   useDottedSurface();
   const { id } = useParams();
   const navigate = useNavigate();
-  const location = useLocation();
   const [searchParams] = useSearchParams();
   const accessToken = searchParams.get('token');
 
-  const preloaded = location.state?.result;
-  const [result, setResult] = useState(preloaded || null);
-  const [loading, setLoading] = useState(!preloaded);
+  const [result, setResult] = useState(null);
+  const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
 
   useEffect(() => {
-    if (preloaded) return;
     (async () => {
       try {
         const data = await getHistoryDetail(id, accessToken);
@@ -46,7 +54,7 @@ export default function ResultsPage() {
       }
     })();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [id]);
+  }, [id, accessToken]);
 
   if (loading) {
     return (
@@ -160,7 +168,7 @@ function ResultsView({ result, id, accessToken }) {
 
   const totalMs = result.processing_summary?.total_ms ?? 0;
   const latency = totalMs ? `${(totalMs / 1000).toFixed(2)}s` : '—';
-  const timestamp = result.timestamp || (result.created_at ? new Date(result.created_at).toUTCString() : '—');
+  const timestamp = formatDateTimeIST(result.created_at || result.timestamp);
   const hash = (result.analysis_id || id || '').toString();
 
   useEffect(() => {
@@ -277,24 +285,33 @@ function ResultsView({ result, id, accessToken }) {
 
 /* ==== verdict + ring ==== */
 function VerdictCard({ verdict, displayScore, color, llm: initialLlm, calibrationApplied, recordId }) {
-  const [llm, setLlm] = useState(initialLlm);
-  const [loading, setLoading] = useState(!initialLlm);
+  const isRealLlm = initialLlm && initialLlm.model_used !== 'auto-summary';
+  const [llm, setLlm] = useState(isRealLlm ? initialLlm : null);
+  const [loading, setLoading] = useState(!isRealLlm);
   const [typedParagraph, setTypedParagraph] = useState('');
   const [typingIdx, setTypingIdx] = useState(0);
-  const pendingSummary = `Core detection is complete: DeepShield estimates ${displayScore}/100 deepfake probability and is preparing a plain-English summary from anomaly scores, visual evidence, metadata, and source checks.`;
+  // Keep auto-summary as fallback
+  const autoSummary = initialLlm?.model_used === 'auto-summary' ? initialLlm : null;
 
+  // Fetch real LLM summary (Gemini → Groq → fallback)
   useEffect(() => {
-    if (!initialLlm && recordId) {
-      setLoading(true);
-      generateLLMSummary(recordId).then(data => {
-        setLlm(data.llm_summary);
-        setLoading(false);
-      }).catch(err => {
-        setLoading(false);
-        setLlm(null);
-      });
-    }
-  }, [initialLlm, recordId]);
+    if (isRealLlm || !recordId) return;
+    setLoading(true);
+    generateLLMSummary(recordId).then(data => {
+      const summary = data.llm_summary;
+      if (summary?.paragraph && summary.model_used !== 'auto-summary') {
+        setLlm(summary);
+      } else if (summary?.paragraph) {
+        // Got auto-summary back from server — use as fallback
+        setLlm(summary);
+      }
+      setLoading(false);
+    }).catch(() => {
+      // Use the auto-summary as fallback if available
+      if (autoSummary) setLlm(autoSummary);
+      setLoading(false);
+    });
+  }, [isRealLlm, recordId]);  // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
     setTypedParagraph('');
@@ -311,6 +328,12 @@ function VerdictCard({ verdict, displayScore, color, llm: initialLlm, calibratio
     }
   }, [llm, typingIdx]);
 
+  const modelLabel = loading
+    ? 'Generating...'
+    : llm?.model_used === 'auto-summary'
+      ? 'Auto-summary'
+      : llm?.model_used || 'Pending';
+
   return (
     <div className={`verdict-card verdict-${color}`}>
       <div className="verdict-left">
@@ -326,17 +349,20 @@ function VerdictCard({ verdict, displayScore, color, llm: initialLlm, calibratio
         </div>
       </div>
       <div className="verdict-llm">
-        <span className="eyebrow">Plain-English summary{llm?.model_used ? ` · ${llm.model_used}` : (loading ? ' · Generating...' : ' · Gemini 1.5')}</span>
+        <span className="eyebrow">Plain-English summary · {modelLabel}</span>
         <p>
           {loading ? (
-            <span style={{ opacity: 0.82 }}>{pendingSummary}<span className="typing-dots">...</span></span>
+            <span className="llm-generating">
+              <span className="llm-gen-icon">◎</span>
+              Generating LLM Summary — analyzing with Gemini & Groq<span className="typing-dots">...</span>
+            </span>
           ) : llm?.paragraph ? (
             typedParagraph + (typingIdx < llm.paragraph.length ? '█' : '')
           ) : (
-            'Model confidence comes from the ensemble forward pass. Review the heatmap, EXIF, and detailed breakdown below for the evidence behind this verdict.'
+            `This media has a deepfake probability of ${displayScore}/100. Review the heatmap, EXIF metadata, and detailed breakdown below for the evidence behind this verdict.`
           )}
         </p>
-        {Array.isArray(llm?.bullets) && llm.bullets.length > 0 && typingIdx >= llm.paragraph.length && (
+        {Array.isArray(llm?.bullets) && llm.bullets.length > 0 && typingIdx >= (llm.paragraph?.length || 0) && (
           <div className="verdict-bullets">
             {llm.bullets.slice(0, 4).map((b, i) => <span key={i}>• {b}</span>)}
           </div>
@@ -571,15 +597,7 @@ function SourcesCard({ sources }) {
           {sources.slice(0, 5).map((s, i) => {
             const srcName = s.source_name || s.domain || s.source || `source-${i+1}`;
             const contr = s.contradicting || s.state === 'contradict';
-            let dateStr = '—';
-            if (s.published_at) {
-              const d = new Date(s.published_at);
-              if (!isNaN(d.valueOf())) {
-                dateStr = d.toLocaleDateString(undefined, { year: 'numeric', month: 'short', day: 'numeric' });
-              } else {
-                dateStr = s.published_at.slice(0, 12);
-              }
-            }
+            const dateStr = formatDateIST(s.published_at, s.published_at ? String(s.published_at).slice(0, 12) : '—');
             return (
               <li key={i}>
                 <div className="src-head">

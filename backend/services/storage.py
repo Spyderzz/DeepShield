@@ -59,8 +59,8 @@ def save_bytes(data: bytes, sha: str, ext: str) -> str:
     dest.parent.mkdir(parents=True, exist_ok=True)
     if not dest.exists():
         dest.write_bytes(data)
-    path = dest.relative_to(MEDIA_ROOT.parent) if MEDIA_ROOT.parent in dest.parents else dest
-    return path.as_posix()
+    rel = dest.relative_to(MEDIA_ROOT)
+    return f"/media/{rel.as_posix()}"
 
 
 def save_file(src_path: str, sha: str, ext: str) -> str:
@@ -75,7 +75,8 @@ def save_file(src_path: str, sha: str, ext: str) -> str:
                 if not chunk:
                     break
                 dst.write(chunk)
-    return dest.as_posix()
+    rel = dest.relative_to(MEDIA_ROOT)
+    return f"/media/{rel.as_posix()}"
 
 
 def make_image_thumbnail(pil: Image.Image, sha: str) -> str | None:

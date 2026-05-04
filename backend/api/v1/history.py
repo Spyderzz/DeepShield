@@ -1,13 +1,18 @@
 from __future__ import annotations
 
+import hashlib
+import hmac
 import json
+from pathlib import Path
 from datetime import datetime
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
+from fastapi.responses import FileResponse
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
 from api.deps import get_current_user, optional_current_user
+from config import settings
 from db.database import get_db
 from db.models import AnalysisRecord, User
 
@@ -28,6 +33,82 @@ class HistoryItem(BaseModel):
 class HistoryListResponse(BaseModel):
     items: list[HistoryItem]
     total: int
+
+
+class HistoryDeleteAllResponse(BaseModel):
+    deleted: int
+
+
+def _analysis_token(record: AnalysisRecord) -> str | None:
+    try:
+        payload = json.loads(record.result_json)
+    except Exception:
+        return None
+    token = payload.get("analysis_id")
+    return str(token) if token else None
+
+
+def _asset_sig(record_id: int, kind: str, exp: int, token: str | None = None) -> str:
+    body = f"{record_id}:{kind}:{exp}:{token or ''}"
+    return hmac.new(settings.JWT_SECRET_KEY.encode("utf-8"), body.encode("utf-8"), hashlib.sha256).hexdigest()
+
+
+def _make_asset_url(record: AnalysisRecord, kind: str, token: str | None = None) -> str:
+    ttl = max(60, int(settings.MEDIA_SIGNED_URL_TTL_SECONDS))
+    exp = int(datetime.now().timestamp()) + ttl
+    sig = _asset_sig(record.id, kind, exp, token)
+    url = f"/api/v1/history/{record.id}/asset/{kind}?exp={exp}&sig={sig}"
+    if token:
+        url += f"&token={token}"
+    return url
+
+
+def _path_from_media_url(value: str | None) -> Path | None:
+    if not value:
+        return None
+    raw = str(value).replace("\\", "/")
+    media_root = Path(settings.MEDIA_ROOT).resolve()
+
+    if raw.startswith("/media/"):
+        rel = raw[len("/media/") :].lstrip("/")
+        return (media_root / rel).resolve()
+    if raw.startswith("media/"):
+        rel = raw[len("media/") :].lstrip("/")
+        return (media_root / rel).resolve()
+    if raw.startswith("./media/"):
+        rel = raw[len("./media/") :].lstrip("/")
+        return (media_root / rel).resolve()
+
+    p = Path(raw)
+    if p.is_absolute():
+        return p.resolve()
+    return (media_root / raw.lstrip("/")).resolve()
+
+
+def _guard_media_path(path: Path | None) -> Path | None:
+    if path is None:
+        return None
+    media_root = Path(settings.MEDIA_ROOT).resolve()
+    try:
+        path.relative_to(media_root)
+        return path
+    except Exception:
+        return None
+
+
+def _rewrite_secure_urls(record: AnalysisRecord, payload: dict, token: str | None = None) -> dict:
+    payload["thumbnail_url"] = _make_asset_url(record, "thumbnail", token) if record.thumbnail_url else None
+    payload["media_path"] = _make_asset_url(record, "media", token) if record.media_path else None
+
+    explainability = payload.get("explainability")
+    if isinstance(explainability, dict):
+        if explainability.get("heatmap_url"):
+            explainability["heatmap_url"] = _make_asset_url(record, "heatmap", token)
+        if explainability.get("ela_url"):
+            explainability["ela_url"] = _make_asset_url(record, "ela", token)
+        if explainability.get("boxes_url"):
+            explainability["boxes_url"] = _make_asset_url(record, "boxes", token)
+    return payload
 
 
 def _history_text_preview(record: AnalysisRecord, limit: int = 260) -> str | None:
@@ -66,8 +147,8 @@ def list_history(
             verdict=r.verdict,
             authenticity_score=r.authenticity_score,
             created_at=r.created_at,
-            thumbnail_url=r.thumbnail_url,
-            media_path=r.media_path,
+            thumbnail_url=_make_asset_url(r, "thumbnail") if r.thumbnail_url else None,
+            media_path=_make_asset_url(r, "media") if r.media_path else None,
             text_preview=_history_text_preview(r),
         )
         for r in rows
@@ -101,9 +182,64 @@ def get_history_detail(
             payload["media_path"] = r.media_path
         if r.thumbnail_url and not payload.get("thumbnail_url"):
             payload["thumbnail_url"] = r.thumbnail_url
-        return payload
+        signed_token = token if user is None else None
+        return _rewrite_secure_urls(r, payload, signed_token)
     except Exception:
         raise HTTPException(status.HTTP_500_INTERNAL_SERVER_ERROR, "Corrupt result payload")
+
+
+@router.get("/{record_id}/asset/{kind}")
+def get_history_asset(
+    record_id: int,
+    kind: str,
+    exp: int = Query(..., ge=1),
+    sig: str = Query(..., min_length=16),
+    token: str | None = Query(None),
+    db: Session = Depends(get_db),
+):
+    if exp < int(datetime.now().timestamp()):
+        raise HTTPException(status.HTTP_403_FORBIDDEN, "Asset link expired")
+
+    r = db.query(AnalysisRecord).filter(AnalysisRecord.id == record_id).first()
+    if not r:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Analysis not found")
+
+    expected = _asset_sig(r.id, kind, exp, token)
+    if not hmac.compare_digest(expected, sig):
+        raise HTTPException(status.HTTP_403_FORBIDDEN, "Invalid asset signature")
+
+    if r.user_id is None:
+        record_token = _analysis_token(r)
+        if not token or not record_token or token != record_token:
+            raise HTTPException(status.HTTP_404_NOT_FOUND, "Analysis not found")
+
+    explainability = None
+    if kind in {"heatmap", "ela", "boxes"}:
+        try:
+            payload = json.loads(r.result_json)
+            explainability = payload.get("explainability") if isinstance(payload, dict) else None
+        except Exception:
+            explainability = None
+
+    source = None
+    if kind == "thumbnail":
+        source = r.thumbnail_url
+    elif kind == "media":
+        source = r.media_path
+    elif kind == "heatmap" and isinstance(explainability, dict):
+        source = explainability.get("heatmap_url")
+    elif kind == "ela" and isinstance(explainability, dict):
+        source = explainability.get("ela_url")
+    elif kind == "boxes" and isinstance(explainability, dict):
+        source = explainability.get("boxes_url")
+    else:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Asset not found")
+
+    path = _guard_media_path(_path_from_media_url(source))
+    if path is None or not path.exists() or not path.is_file():
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Asset not found")
+
+    return FileResponse(path)
 
 
 @router.delete("/{record_id}", status_code=status.HTTP_204_NO_CONTENT)
@@ -118,3 +254,13 @@ def delete_history(
     db.delete(r)
     db.commit()
     return None
+
+
+@router.delete("", response_model=HistoryDeleteAllResponse)
+def delete_all_history(
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> HistoryDeleteAllResponse:
+    deleted = db.query(AnalysisRecord).filter(AnalysisRecord.user_id == user.id).delete(synchronize_session=False)
+    db.commit()
+    return HistoryDeleteAllResponse(deleted=deleted)

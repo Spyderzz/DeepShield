@@ -3,30 +3,34 @@ import { useNavigate } from 'react-router-dom';
 import { SharedNav, SharedFooter } from '../components/layout/SharedNav.jsx';
 import useDottedSurface from '../hooks/useDottedSurface.js';
 import { useAuth } from '../contexts/AuthContext.jsx';
-import { listHistory, deleteHistory } from '../services/historyApi.js';
+import { listHistory, deleteHistory, clearHistory } from '../services/historyApi.js';
 import { resolveMediaUrl } from '../services/api.js';
+import { formatDateTimeIST } from '../utils/dateTime.js';
 import './deepshield-landing.css';
 import './deepshield-pages.css';
 
 function toDisplayItem(r) {
-  const score = typeof r.authenticity_score === 'number' ? Math.round(r.authenticity_score) : 50;
+  const rawId = r.id ?? r.record_id ?? null;
+  const idStr = rawId == null ? 'unknown' : String(rawId);
+  const rawScore = r.authenticity_score ?? r.score;
+  const score = typeof rawScore === 'number' && !Number.isNaN(rawScore) ? Math.round(rawScore) : 50;
   const c = score >= 65 ? 'safe' : score >= 40 ? 'warn' : 'danger';
   const verdict = c === 'safe' ? 'REAL' : c === 'warn' ? 'SUSP' : 'FAKE';
-  const idStr = String(r.id);
   const type = r.media_type || 'image';
   const visualSrc = type === 'text' ? null : (r.thumbnail_url || r.media_path);
   return {
-    id: r.id,
+    id: rawId,
     type,
     verdict,
     c,
     score,
     title: r.title || `${r.media_type || 'analysis'} · #${idStr}`,
     sub: r.verdict ? `verdict · ${r.verdict}` : '',
-    when: r.created_at ? new Date(r.created_at).toLocaleString() : '',
+    when: formatDateTimeIST(r.created_at),
     src: resolveMediaUrl(visualSrc) || null,
     textPreview: r.text_preview || '',
     hash: idStr.padStart(8, '0'),
+    idLabel: `#${idStr}`,
   };
 }
 
@@ -42,6 +46,29 @@ export default function HistoryPage() {
   const [rows, setRows] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
+
+  const handleDeleteOne = async (id) => {
+    if (!confirm('Delete this analysis?')) return;
+    try {
+      await deleteHistory(id);
+      setRows(rs => rs.filter(r => r.id !== id));
+    } catch (e) {
+      setError(e?.response?.data?.detail || e?.message || 'Failed to delete analysis');
+    }
+  };
+
+  const handleClearAll = async () => {
+    if (!rows.length) return;
+    if (!confirm('Delete your entire history? This cannot be undone.')) return;
+    try {
+      await clearHistory();
+      setRows([]);
+      setSearch('');
+      setFilter('all');
+    } catch (e) {
+      setError(e?.response?.data?.detail || e?.message || 'Failed to clear history');
+    }
+  };
 
   useEffect(() => {
     if (!user) {
@@ -141,6 +168,14 @@ export default function HistoryPage() {
               ))}
             </div>
             <div className="grow"/>
+            <button
+              className="btn btn-glass btn-sm"
+              onClick={handleClearAll}
+              disabled={loading || rows.length === 0}
+              title="Delete all your history"
+            >
+              Clear history
+            </button>
             <select className="hist-sort" value={sort} onChange={e => setSort(e.target.value)}>
               <option value="recent">Sort · most recent</option>
               <option value="score">Sort · lowest score</option>
@@ -174,9 +209,17 @@ export default function HistoryPage() {
                     <h4>{i.title}</h4>
                     <p>{i.sub}</p>
                     <div className="hist-foot mono">
-                      <span>id · {i.hash.slice(0, 6)}</span>
-                      <span>· score {i.score}</span>
-                      <span>· {i.when}</span>
+                      <span>id {i.idLabel}</span>
+                      <span>score {i.score}/100</span>
+                      <span>{i.when}</span>
+                      <button
+                        className="mono"
+                        onClick={(e) => { e.preventDefault(); e.stopPropagation(); void handleDeleteOne(i.id); }}
+                        style={{ marginLeft: 'auto', color: 'var(--ds-danger)', background: 'transparent', border: 0, cursor: 'pointer', padding: 0 }}
+                        title="Delete this analysis"
+                      >
+                        delete
+                      </button>
                     </div>
                   </div>
                 </a>
@@ -206,10 +249,7 @@ export default function HistoryPage() {
                       <a
                         className="mono"
                         style={{ color: 'var(--ds-danger)', cursor: 'pointer', marginLeft: 12 }}
-                        onClick={async () => {
-                          if (!confirm('Delete this analysis?')) return;
-                          try { await deleteHistory(i.id); setRows(rs => rs.filter(r => r.id !== i.id)); } catch (_e) {}
-                        }}
+                        onClick={() => void handleDeleteOne(i.id)}
                       >delete</a>
                     </td>
                   </tr>

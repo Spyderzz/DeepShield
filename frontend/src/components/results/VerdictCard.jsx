@@ -1,4 +1,5 @@
 import { SEVERITY_COLORS } from '../../utils/constants.js';
+import { formatDateTimeIST } from '../../utils/dateTime.js';
 
 export default function VerdictCard({ verdict, mediaType, timestamp }) {
   const color = SEVERITY_COLORS[verdict.severity] || 'var(--color-text-secondary)';
@@ -21,7 +22,7 @@ export default function VerdictCard({ verdict, mediaType, timestamp }) {
         <div>Model confidence: <b style={{ color: 'var(--color-text-primary)' }}>{(verdict.model_confidence * 100).toFixed(1)}%</b></div>
         <div>Model label: <b style={{ color: 'var(--color-text-primary)' }}>{verdict.model_label}</b></div>
         <div>Media type: <b style={{ color: 'var(--color-text-primary)' }}>{mediaType}</b></div>
-        <div>Processed: <b style={{ color: 'var(--color-text-primary)' }}>{new Date(timestamp).toLocaleString()}</b></div>
+        <div>Processed: <b style={{ color: 'var(--color-text-primary)' }}>{formatDateTimeIST(timestamp)}</b></div>
       </div>
     </div>
   );

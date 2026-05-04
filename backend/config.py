@@ -152,6 +152,7 @@ class Settings(BaseSettings):
     # Phase 19 — dedup cache + object storage
     CACHE_TTL_DAYS: int = 30
     MEDIA_ROOT: str = "./media"
+    MEDIA_SIGNED_URL_TTL_SECONDS: int = 3600
 
     # LLM Explainability (Phase 12)
     LLM_PROVIDER: str = "gemini"  # "gemini" | "openai"

@@ -89,8 +89,97 @@ def _resolve_language_hint(text: str, language_hint: str | None) -> str:
 
 
 def _compute_llm_summary(resp, *, record_id: int, user, media_kind: str, exclude: dict | None = None):
-    """(Disabled) Sync LLM generation is disabled. See /analyze/{record_id}/llm"""
-    return None
+    """Build a deterministic instant summary from analysis scores.
+
+    This always returns a meaningful summary — no LLM API call.
+    The separate /analyze/{record_id}/llm endpoint upgrades this
+    with a Gemini-generated summary when available.
+    """
+    verdict = resp.verdict
+    score = verdict.authenticity_score
+    label = verdict.label
+    confidence = verdict.model_confidence
+
+    # Media-specific evidence bullets
+    bullets: list[str] = []
+    if media_kind == "image":
+        expl = getattr(resp, "explainability", None)
+        if expl:
+            n_artifacts = len(getattr(expl, "artifact_indicators", []) or [])
+            exif = getattr(expl, "exif", None)
+            if n_artifacts:
+                bullets.append(f"{n_artifacts} artifact indicator(s) detected in the image")
+            if exif and exif.trust_adjustment != 0:
+                direction = "strengthens" if exif.trust_adjustment < 0 else "weakens"
+                bullets.append(f"EXIF metadata {direction} authenticity ({exif.trust_reason or 'metadata analysis'})")
+            no_face = getattr(expl, "no_face_analysis", None)
+            if no_face:
+                bullets.append("No human face detected — non-facial deepfake analysis applied")
+    elif media_kind == "video":
+        expl = getattr(resp, "explainability", None)
+        if expl:
+            bullets.append(f"{getattr(expl, 'num_frames_sampled', 0)} frames analyzed, {getattr(expl, 'num_suspicious_frames', 0)} flagged as suspicious")
+            if getattr(expl, "temporal_score", None) is not None:
+                bullets.append(f"Temporal consistency score: {expl.temporal_score:.2f}")
+            audio = getattr(expl, "audio", None)
+            if audio and audio.has_audio:
+                bullets.append(f"Audio authenticity: {audio.audio_authenticity_score:.0f}/100")
+    elif media_kind in ("text", "screenshot"):
+        expl = getattr(resp, "explainability", None)
+        if expl:
+            sens = getattr(expl, "sensationalism", None)
+            if sens and sens.score > 20:
+                bullets.append(f"Sensationalism score: {sens.score}/100 ({sens.level})")
+            n_manip = len(getattr(expl, "manipulation_indicators", []) or [])
+            if n_manip:
+                bullets.append(f"{n_manip} manipulation pattern(s) found in the text")
+            sources = getattr(resp, "trusted_sources", []) or []
+            if sources:
+                bullets.append(f"Cross-referenced against {len(sources)} trusted source(s)")
+    elif media_kind.startswith("audio"):
+        expl = getattr(resp, "explainability", None)
+        if expl:
+            if getattr(expl, "has_audio", False):
+                bullets.append(f"Audio duration: {getattr(expl, 'duration_s', 0):.1f}s")
+            ml = getattr(expl, "ml_analysis", None)
+            if ml:
+                bullets.append(f"Voice ML prediction: {ml.label} (p_fake={ml.fake_probability:.2f})")
+
+    # Always include the score
+    bullets.insert(0, f"Overall authenticity score: {score}/100")
+    bullets = bullets[:3]  # Cap at 3
+
+    # Generate contextual paragraph
+    if score >= 75:
+        tone = "appears authentic"
+        detail = "No significant manipulation indicators were detected."
+    elif score >= 50:
+        tone = "shows some inconsistencies"
+        detail = "Minor signals were found but are not conclusive — review the evidence below."
+    elif score >= 30:
+        tone = "raises moderate concern"
+        detail = "Multiple indicators suggest possible manipulation — check the detailed breakdown."
+    else:
+        tone = "is likely manipulated"
+        detail = "Strong manipulation indicators were detected across multiple analysis stages."
+
+    # Normalize media_kind for user-facing text
+    display_kind = {
+        "audio_deepfake_analysis": "audio",
+    }.get(media_kind, media_kind)
+
+    paragraph = (
+        f"This {display_kind} {tone} with a deepfake probability of {100 - score}/100 "
+        f"(model confidence: {confidence:.0%}). {detail}"
+    )
+
+    from schemas.common import LLMExplainabilitySummary
+    return LLMExplainabilitySummary(
+        paragraph=paragraph,
+        bullets=bullets,
+        model_used="auto-summary",
+    )
+
 
 
 def _find_existing_llm_summary(payload: dict) -> dict | None:
@@ -133,8 +222,9 @@ def generate_llm_endpoint(
 
     payload = json.loads(record.result_json)
 
+    # Return existing real LLM summary if present (skip auto-summaries)
     existing_summary = _find_existing_llm_summary(payload)
-    if existing_summary:
+    if existing_summary and existing_summary.get("model_used", "") not in ("auto-summary", ""):
         return {"llm_summary": existing_summary}
 
     media_type = payload.get("media_type", "media")
@@ -150,6 +240,9 @@ def generate_llm_endpoint(
         return {"llm_summary": summary_dict}
     except Exception as e:
         logger.error(f"LLM generation failed: {e}")
+        # Return the auto-summary instead of failing with 500
+        if existing_summary:
+            return {"llm_summary": existing_summary}
         raise HTTPException(status_code=500, detail="LLM generation failed")
 
 def _persist_response_payload(db: Session, record: AnalysisRecord, resp) -> None:

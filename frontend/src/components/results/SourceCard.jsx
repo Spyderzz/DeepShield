@@ -1,3 +1,5 @@
+import { formatDateIST } from '../../utils/dateTime.js';
+
 export default function SourceCard({ source }) {
   const trusted = source.relevance_score >= 0.9;
   return (
@@ -35,7 +37,7 @@ export default function SourceCard({ source }) {
             marginTop: 2,
           }}>
             {source.source_name}
-            {source.published_at && ` · ${new Date(source.published_at).toLocaleDateString()}`}
+            {source.published_at && ` · ${formatDateIST(source.published_at)}`}
             {typeof source.relevance_score === 'number' && ` · relevance ${(source.relevance_score * 100).toFixed(0)}%`}
           </div>
         </div>

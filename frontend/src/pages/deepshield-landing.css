@@ -3145,6 +3145,19 @@ body {
 .stage-status { font-size: 11px; color: var(--ds-muted); }
 .stage-list li.done .stage-status { color: var(--ds-safe); }
 
+/* Pulsing glow on the final active stage to show it's still working */
+.stage-list li.stage-pulse {
+  animation: stagePulseGlow 2s ease-in-out infinite;
+}
+@keyframes stagePulseGlow {
+  0%, 100% { border-color: rgba(108,125,255,0.4); background: rgba(108,125,255,0.08); }
+  50% { border-color: rgba(61,219,179,0.5); background: rgba(61,219,179,0.06); }
+}
+@keyframes fadeInUp {
+  from { opacity: 0; transform: translateY(6px); }
+  to { opacity: 0.8; transform: translateY(0); }
+}
+
 /* =====================================================
    Result view
    ===================================================== */
@@ -3191,6 +3204,39 @@ body {
 .verdict-llm p { margin: 8px 0 14px; font-size: 13px; line-height: 1.6; color: var(--ds-ink-2); }
 .verdict-bullets { display: flex; flex-direction: column; gap: 4px; font-size: 12px; color: var(--ds-muted); font-family: var(--ff-mono); }
 .result-reset { position: relative; z-index: 1; align-self: flex-start; }
+
+/* LLM generating placeholder */
+.llm-generating {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--ds-brand);
+  font-family: var(--ff-mono);
+  font-size: 12px;
+  letter-spacing: 0.02em;
+  opacity: 0.9;
+  animation: llmGenPulse 2s ease-in-out infinite;
+}
+.llm-gen-icon {
+  display: inline-block;
+  animation: llmGenSpin 2.4s linear infinite;
+  font-size: 14px;
+}
+.typing-dots {
+  animation: typingBlink 1.2s ease-in-out infinite;
+}
+@keyframes llmGenPulse {
+  0%, 100% { opacity: 0.7; }
+  50% { opacity: 1; }
+}
+@keyframes llmGenSpin {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}
+@keyframes typingBlink {
+  0%, 100% { opacity: 0.3; }
+  50% { opacity: 1; }
+}
 
 .score-ring { flex-shrink: 0; overflow: visible; display: block; }
 

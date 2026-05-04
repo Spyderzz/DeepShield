@@ -10,6 +10,7 @@ from __future__ import annotations
 import hashlib
 import json
 import threading
+from concurrent.futures import ThreadPoolExecutor, TimeoutError as FuturesTimeoutError
 import time
 from abc import ABC, abstractmethod
 from typing import Any
@@ -283,28 +284,54 @@ class _GroqProvider(_LLMProvider):
 
 
 class _ProviderChain:
-    """Primary provider with optional Groq fallback. On a quota error from the
-    primary, transparently retries on Groq. The `last_used` attribute tracks
-    which provider actually produced the response so `model_used` reflects truth.
+    """Primary provider with optional Groq fallback. Each provider gets its own
+    timeout so the fallback gets a full shot even if the primary is slow.
+    The `last_used` attribute tracks which provider produced the response.
     """
+
+    _PRIMARY_TIMEOUT = 10   # seconds for Gemini/OpenAI
+    _FALLBACK_TIMEOUT = 8   # seconds for Groq
 
     def __init__(self, primary: _LLMProvider, fallback: _LLMProvider | None) -> None:
         self._primary = primary
         self._fallback = fallback
         self.last_used: _LLMProvider = primary
 
+    def _call_with_timeout(self, provider: _LLMProvider, prompt: str, timeout: int) -> str:
+        """Run a single provider with a timeout. Raises on failure or timeout."""
+        with ThreadPoolExecutor(max_workers=1) as pool:
+            future = pool.submit(provider.generate, prompt)
+            return future.result(timeout=timeout)
+
     def generate(self, prompt: str) -> str:
+        # Try primary provider with its own timeout
         try:
-            text = self._primary.generate(prompt)
+            text = self._call_with_timeout(self._primary, prompt, self._PRIMARY_TIMEOUT)
             self.last_used = self._primary
             return text
+        except FuturesTimeoutError:
+            logger.warning(f"{self._primary.tag} timed out after {self._PRIMARY_TIMEOUT}s")
+            primary_error = f"{self._primary.tag} timed out"
         except Exception as e:
-            if self._fallback is None:
-                raise
-            logger.info(f"{self._primary.tag} failed ({type(e).__name__}) — failing over to {self._fallback.tag}")
-            text = self._fallback.generate(prompt)
+            logger.warning(f"{self._primary.tag} failed: {type(e).__name__}: {e}")
+            primary_error = f"{self._primary.tag} {type(e).__name__}"
+
+        # Try fallback provider (Groq) with its own timeout
+        if self._fallback is None:
+            raise RuntimeError(primary_error)
+
+        logger.info(f"Failing over to {self._fallback.tag}")
+        try:
+            text = self._call_with_timeout(self._fallback, prompt, self._FALLBACK_TIMEOUT)
             self.last_used = self._fallback
+            logger.info(f"Fallback {self._fallback.tag} succeeded")
             return text
+        except FuturesTimeoutError:
+            logger.warning(f"{self._fallback.tag} also timed out after {self._FALLBACK_TIMEOUT}s")
+            raise RuntimeError(f"Both {self._primary.tag} and {self._fallback.tag} timed out")
+        except Exception as e2:
+            logger.error(f"{self._fallback.tag} also failed: {type(e2).__name__}: {e2}")
+            raise
 
 
 _provider_lock = threading.Lock()
@@ -400,6 +427,7 @@ def generate_llm_summary(
 
     try:
         chain = _get_provider()
+        # Chain handles per-provider timeouts + Groq fallback internally
         raw_response = chain.generate(prompt)
         paragraph, bullets = _parse_llm_response(raw_response)
 
@@ -426,16 +454,16 @@ def generate_llm_summary(
             model_used=chain.last_used.tag,
         )
     except Exception as e:
+        err_msg = str(e).lower()
+        if "timed out" in err_msg:
+            logger.warning(f"LLM providers timed out: {e}")
+            return _fallback_summary(payload, reason="timeout")
         if _is_quota_error(e):
             mark_rate_limited()
             logger.warning(f"LLM quota hit ({type(e).__name__}) — circuit open for {_COOLDOWN_SECONDS}s")
             return _fallback_summary(payload, reason="rate_limited")
         logger.error(f"LLM explainer failed: {e}")
-        return LLMExplainabilitySummary(
-            paragraph="Analysis complete. See the detailed indicators below for specifics.",
-            bullets=["LLM explanation temporarily unavailable"],
-            model_used="error",
-        )
+        return _fallback_summary(payload, reason="error")
 
 
 def _fallback_summary(payload: dict[str, Any], *, reason: str) -> LLMExplainabilitySummary:
@@ -446,6 +474,8 @@ def _fallback_summary(payload: dict[str, Any], *, reason: str) -> LLMExplainabil
     tail = {
         "rate_limited": "LLM paused — automatic summary shown during quota cooldown.",
         "no_api_key": "Note: Configure an LLM API key for deeper contextual analysis.",
+        "timeout": "Both Gemini and Groq timed out — showing automatic summary instead.",
+        "error": "LLM providers encountered an error — showing automatic summary.",
     }.get(reason, "LLM explanation unavailable.")
     return LLMExplainabilitySummary(
         paragraph=(

@@ -7,8 +7,21 @@ export const api = axios.create({
 
 export function resolveMediaUrl(url) {
   if (!url) return null;
-  if (url.startsWith('http') || url.startsWith('data:')) return url;
-  const path = url.startsWith('/') ? url : `/${url}`;
+  const raw = String(url).replaceAll('\\\\', '/');
+  if (raw.startsWith('http') || raw.startsWith('data:')) return raw;
+
+  // Support legacy DB values like C:/.../media/xx/file.jpg or ./media/xx/file.jpg.
+  let normalized = raw;
+  const mediaIdx = normalized.toLowerCase().indexOf('/media/');
+  if (mediaIdx >= 0) {
+    normalized = normalized.slice(mediaIdx);
+  } else if (normalized.toLowerCase().startsWith('media/')) {
+    normalized = `/${normalized}`;
+  } else if (normalized.toLowerCase().startsWith('./media/')) {
+    normalized = normalized.slice(1);
+  }
+
+  const path = normalized.startsWith('/') ? normalized : `/${normalized}`;
   const apiBase = import.meta.env.VITE_API_BASE_URL || '/api/v1';
   if (apiBase.startsWith('http') && path.startsWith('/media/')) {
     return `${apiBase.replace(/\/api\/v1\/?$/, '')}${path}`;
@@ -114,6 +127,6 @@ api.interceptors.response.use(
 );
 
 export async function generateLLMSummary(recordId) {
-  const res = await api.post(`/analyze/${recordId}/llm`);
+  const res = await api.post(`/analyze/${recordId}/llm`, null, { timeout: 25000 });
   return res.data;
 }

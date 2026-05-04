@@ -5,7 +5,6 @@ from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.staticfiles import StaticFiles
 from loguru import logger
 from slowapi import _rate_limit_exceeded_handler
 from slowapi.errors import RateLimitExceeded
@@ -161,12 +160,6 @@ app.add_middleware(
 )
 
 app.include_router(api_router)
-
-# Phase 19.2 — serve stored thumbnails / media under /media/*
-import os as _os
-_media_root = _os.environ.get("MEDIA_ROOT", "./media")
-_os.makedirs(_os.path.join(_media_root, "thumbs"), exist_ok=True)
-app.mount("/media", StaticFiles(directory=_media_root), name="media")
 
 
 @app.get("/")

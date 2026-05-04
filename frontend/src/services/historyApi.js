@@ -15,3 +15,8 @@ export async function getHistoryDetail(id, token = null) {
 export async function deleteHistory(id) {
   await api.delete(`/history/${id}`);
 }
+
+export async function clearHistory() {
+  const { data } = await api.delete('/history');
+  return data;
+}

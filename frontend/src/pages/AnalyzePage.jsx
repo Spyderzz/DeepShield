@@ -7,7 +7,8 @@ import { listHistory } from '../services/historyApi.js';
 import {
   analyzeImage, analyzeText, analyzeScreenshot, analyzeAudio, submitVideoJob, pollVideoJob,
 } from '../services/analyzeApi.js';
-import { resolveMediaUrl } from '../services/api.js';
+import { resolveMediaUrl, generateLLMSummary } from '../services/api.js';
+import { formatDateTimeIST } from '../utils/dateTime.js';
 import { useAuth } from '../contexts/AuthContext.jsx';
 import ConsentModal, { useConsent } from '../components/common/ConsentModal.jsx';
 import './deepshield-landing.css';
@@ -83,15 +84,26 @@ export default function AnalyzePage() {
     if (el) setSegPill({ left: el.offsetLeft, width: el.offsetWidth });
   }, [mode]);
 
+  const elapsedRef = useRef(0);
+  const [elapsed, setElapsed] = useState(0);
+
   useEffect(() => {
-    if (stage !== 'processing') return;
+    if (stage !== 'processing') { elapsedRef.current = 0; setElapsed(0); return; }
     const stages = MODE_STAGES[mode];
-    let p = progress;
+    const t0 = Date.now();
+    elapsedRef.current = 0;
+    // Asymptotic easing: fast start, smooth deceleration — never truly stops
     const id = setInterval(() => {
-      p = Math.min(92, p + 1.4);
+      const secs = (Date.now() - t0) / 1000;
+      elapsedRef.current = secs;
+      setElapsed(secs);
+      // Approaches 98 asymptotically: progress = 98 * (1 - e^(-t/k))
+      // k controls speed: smaller = faster start. 8 gives ~75% at 12s, ~90% at 18s
+      const k = 8;
+      const p = 98 * (1 - Math.exp(-secs / k));
       setProgress(p);
       setActiveStage(Math.min(stages.length - 1, Math.floor(p / (100 / stages.length))));
-    }, 80);
+    }, 100);
     return () => clearInterval(id);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [stage, mode]);
@@ -145,16 +157,37 @@ export default function AnalyzePage() {
       } else if (mode === 'audio') {
         data = await analyzeAudio(payload, options);
       }
-      setProgress(100);
+      setProgress(95);
       setActiveStage(MODE_STAGES[mode].length - 1);
       const id = data?.record_id || data?.analysis_id;
       const tokenParam = !isAuthed && data?.record_id && data?.analysis_id
         ? `?token=${encodeURIComponent(data.analysis_id)}`
         : '';
+
+      if (!id) { setStage('idle'); return; }
+
+      // Fire LLM generation while user sees "Finalizing verdict"
+      // Wait up to 5s — if LLM finishes early, navigate immediately with it
+      const llmResult = await Promise.race([
+        generateLLMSummary(id)
+          .then(res => res.llm_summary || null)
+          .catch(() => null),
+        new Promise(r => setTimeout(() => r(null), 5000)),
+      ]);
+
+      // If LLM resolved in time with a real summary, attach it
+      if (llmResult && llmResult.model_used !== 'auto-summary') {
+        if (data.explainability?.llm_summary !== undefined) {
+          data.explainability.llm_summary = llmResult;
+        } else {
+          data.llm_summary = llmResult;
+        }
+      }
+
+      setProgress(100);
       setTimeout(() => {
-        if (id) navigate(`/results/${id}${tokenParam}`, { state: { result: data } });
-        else setStage('idle');
-      }, 400);
+        navigate(`/results/${id}${tokenParam}`, { state: { result: data } });
+      }, 300);
     } catch (e) {
       setError(e?.response?.data?.detail || e?.message || 'Analysis failed');
       setStage('idle');
@@ -331,18 +364,37 @@ export default function AnalyzePage() {
                 <div>
                   <div className="p-stages-head">
                     <span className="eyebrow">Pipeline</span>
-                    <span className="mono" style={{ fontSize: 11, color: 'var(--ds-muted)' }}>{Math.round(progress)}%</span>
+                    <span className="mono" style={{ fontSize: 11, color: 'var(--ds-muted)' }}>{Math.round(progress)}% · {elapsed.toFixed(1)}s</span>
                   </div>
                   <div className="p-stages-bar"><i style={{ width: `${progress}%` }}/></div>
                   <ol className="stage-list">
-                    {MODE_STAGES[mode].map((s, i) => (
-                      <li key={s} className={i < activeStage ? 'done' : i === activeStage ? 'active' : ''}>
-                        <span className="stage-dot"/>
-                        <span className="stage-label">{s}</span>
-                        <span className="mono stage-status">{i < activeStage ? '✓' : i === activeStage ? '···' : '—'}</span>
-                      </li>
-                    ))}
+                    {MODE_STAGES[mode].map((s, i) => {
+                      const isLast = i === MODE_STAGES[mode].length - 1;
+                      const isCurrent = i === activeStage;
+                      const isDone = i < activeStage;
+                      const isWaiting = !isDone && !isCurrent;
+                      // Show elapsed timer on the active final stage
+                      const statusText = isDone ? '✓'
+                        : isCurrent && isLast && elapsed > 4
+                          ? `${elapsed.toFixed(0)}s`
+                          : isCurrent ? '···'
+                          : '—';
+                      return (
+                        <li key={s} className={`${isDone ? 'done' : isCurrent ? 'active' : ''} ${isCurrent && isLast && elapsed > 3 ? 'stage-pulse' : ''}`}>
+                          <span className="stage-dot"/>
+                          <span className="stage-label">{s}</span>
+                          <span className="mono stage-status">{statusText}</span>
+                        </li>
+                      );
+                    })}
                   </ol>
+                  {activeStage === MODE_STAGES[mode].length - 1 && elapsed > 6 && (
+                    <p style={{ color: 'var(--ds-brand-2)', fontSize: 11, marginTop: 10, fontFamily: 'var(--ff-mono)', opacity: 0.8, animation: 'fadeInUp 400ms ease' }}>
+                      {progress >= 95
+                        ? '● Generating LLM summary — Gemini → Groq fallback chain'
+                        : '● Models are scoring — this can take 10-25s on first run'}
+                    </p>
+                  )}
                   <p style={{ color: 'var(--ds-muted)', fontSize: 12, marginTop: 20, fontFamily: 'var(--ff-mono)' }}>
                     job · {jobId.current} · cache · {cache ? 'on' : 'off'} · lang · {lang}
                   </p>
@@ -362,7 +414,7 @@ export default function AnalyzePage() {
                 ? r.verdict.toString().slice(0, 4).toUpperCase()
                 : (color === 'safe' ? 'REAL' : color === 'warn' ? 'SUSP' : 'FAKE');
               const title = r.title || `${r.media_type || 'analysis'} · ${r.id}`;
-              const when = r.created_at ? new Date(r.created_at).toLocaleString() : (r.d || '');
+              const when = r.created_at ? formatDateTimeIST(r.created_at) : (r.d || '');
               return (
                 <a
                   className="recent-card"

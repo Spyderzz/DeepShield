@@ -38,7 +38,7 @@ export default function ContactPage() {
               <div>
                 <h2 className="display italic" style={{ fontSize: '2.5rem' }}>Email</h2>
                 <p>For partnership inquiries, deployment support, and press, please reach out to our team directly via email.</p>
-                <a href="mailto:deepshield@ar07xd.com" className="btn btn-glass" style={{ marginTop: '16px', textDecoration: 'none', display: 'inline-block' }}>deepshield@ar07xd.com ↗</a>
+                <a href="mailto:hey@ar07xd.com" className="btn btn-glass" style={{ marginTop: '16px', textDecoration: 'none', display: 'inline-block' }}>hey@ar07xd.com ↗</a>
               </div>
             </div>
           </div>
