@@ -69,6 +69,8 @@ MANIPULATION_PATTERNS = [
 ]
 
 _NER_PREFERRED = {"PERSON", "ORG", "GPE", "EVENT", "PRODUCT", "NORP"}
+# Cardinal numbers (counts, amounts) included in news queries only when short and digit-only
+_NER_NUMERIC = {"CARDINAL", "MONEY", "QUANTITY"}
 
 
 @dataclass
@@ -223,6 +225,7 @@ def extract_entities(text: str, max_k: int = 6) -> List[str]:
         other: List[str] = []
         seen: set[str] = set()
 
+        numeric: List[str] = []
         for ent in doc.ents:
             norm = ent.text.strip()
             norm_lower = norm.lower()
@@ -231,10 +234,13 @@ def extract_entities(text: str, max_k: int = 6) -> List[str]:
             seen.add(norm_lower)
             if ent.label_ in _NER_PREFERRED:
                 preferred.append(norm)
+            elif ent.label_ in _NER_NUMERIC and norm.replace(",", "").isdigit() and len(norm) <= 6:
+                # Include small cardinal numbers (e.g. "38", "55") — they're key facts
+                numeric.append(norm)
             else:
                 other.append(norm)
 
-        entities = preferred + other
+        entities = preferred + numeric + other
         if len(entities) >= 2:
             logger.info(f"NER extracted {len(entities)} entities: {entities[:max_k]}")
             return entities[:max_k]
@@ -254,7 +260,7 @@ def _extract_keywords_freq(text: str, max_k: int = 6) -> List[str]:
         "will", "would", "can", "could", "should", "may", "might", "do", "does", "did", "not", "no", "so",
         "than", "then", "there", "their", "they", "them", "we", "our", "you", "your", "he", "she", "his", "her",
     }
-    words = re.findall(r"[A-Za-z][A-Za-z\-']{2,}", text or "")
+    words = re.findall(r"[A-Za-z][A-Za-z\-']{2,}|\b\d{1,5}\b", text or "")
     freq: dict[str, int] = {}
     for w in words:
         wl = w.lower()

@@ -15,19 +15,19 @@ import './deepshield-landing.css';
 import './deepshield-pages.css';
 
 const MODES = [
-  { k: 'image',      label: 'Image',      icon: '🖼', accept: 'image/*' },
-  { k: 'video',      label: 'Video',      icon: '▶',  accept: 'video/*' },
-  { k: 'text',       label: 'Text',       icon: '¶',  accept: null },
-  { k: 'screenshot', label: 'Screenshot', icon: '▭',  accept: 'image/*' },
-  { k: 'audio',      label: 'Audio',      icon: '🎙',  accept: 'audio/*' },
+  { k: 'image', label: 'Image', icon: '🖼', accept: 'image/*' },
+  { k: 'video', label: 'Video', icon: '▶', accept: 'video/*' },
+  { k: 'text', label: 'Text', icon: '¶', accept: null },
+  { k: 'screenshot', label: 'Screenshot', icon: '▭', accept: 'image/*' },
+  { k: 'audio', label: 'Audio', icon: '🎙', accept: 'audio/*' },
 ];
 
 const MODE_STAGES = {
-  image:      ['Upload media', 'Prepare image', 'Visual deepfake detection', 'Generate evidence map', 'Check metadata & tampering', 'Finalizing verdict'],
-  video:      ['Upload media', 'Extract video frames', 'Analyze individual frames', 'Check for unnatural movement', 'Analyze audio & lip-sync', 'Finalizing verdict'],
-  text:       ['Read text input', 'Prepare text content', 'Scan for sensationalism', 'Cross-check trusted sources', 'Verify factual accuracy', 'Finalizing verdict'],
+  image: ['Upload media', 'Prepare image', 'Visual deepfake detection', 'Generate evidence map', 'Check metadata & tampering', 'Finalizing verdict'],
+  video: ['Upload media', 'Extract video frames', 'Analyze individual frames', 'Check for unnatural movement', 'Analyze audio & lip-sync', 'Finalizing verdict'],
+  text: ['Read text input', 'Prepare text content', 'Scan for sensationalism', 'Cross-check trusted sources', 'Verify factual accuracy', 'Finalizing verdict'],
   screenshot: ['Upload media', 'Read text from image', 'Check for layout manipulation', 'Analyze claim credibility', 'Generate visual map', 'Finalizing verdict'],
-  audio:      ['Upload media', 'Prepare audio', 'Extract vocal patterns', 'Detect synthetic voice cloning', 'Analyze acoustic signals', 'Finalizing verdict'],
+  audio: ['Upload media', 'Prepare audio', 'Extract vocal patterns', 'Detect synthetic voice cloning', 'Analyze acoustic signals', 'Finalizing verdict'],
 };
 
 const VIDEO_STAGE_PROGRESS = {
@@ -255,7 +255,7 @@ export default function AnalyzePage() {
 
         <div style={{ display: 'flex', justifyContent: 'center', marginBottom: 32 }}>
           <div className="mode-seg">
-            <div className="mode-seg-pill" style={{ left: segPill.left, width: segPill.width }}/>
+            <div className="mode-seg-pill" style={{ left: segPill.left, width: segPill.width }} />
             {MODES.map((m, i) => (
               <button key={m.k} ref={el => segRefs.current[i] = el}
                 className={`mode-seg-btn ${mode === m.k ? 'active' : ''}`}
@@ -287,12 +287,12 @@ export default function AnalyzePage() {
                     <svg viewBox="0 0 200 200">
                       <defs>
                         <linearGradient id="blobg" x1="0" y1="0" x2="1" y2="1">
-                          <stop stopColor="#7F8FFF"/><stop offset="1" stopColor="#3DDBB3"/>
+                          <stop stopColor="#7F8FFF" /><stop offset="1" stopColor="#3DDBB3" />
                         </linearGradient>
                       </defs>
                       <path d="M100 20 C140 20 170 50 170 90 C170 130 140 170 100 170 C60 170 30 130 30 90 C30 50 60 20 100 20 Z"
-                        fill="none" stroke="url(#blobg)" strokeWidth="1.2" strokeDasharray="5 7" opacity="0.55"/>
-                      <path d="M100 60 L100 120 M80 100 L100 120 L120 100" stroke="url(#blobg)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" fill="none"/>
+                        fill="none" stroke="url(#blobg)" strokeWidth="1.2" strokeDasharray="5 7" opacity="0.55" />
+                      <path d="M100 60 L100 120 M80 100 L100 120 L120 100" stroke="url(#blobg)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" fill="none" />
                     </svg>
                   </div>
                   <h2 className="display">Drop {mode} here</h2>
@@ -304,7 +304,7 @@ export default function AnalyzePage() {
                 <div className="options-row">
                   <label className="opt"><input type="checkbox" checked={cache} onChange={e => setCache(e.target.checked)} /> Cache result</label>
                   <input type="text" placeholder={mode === 'image' ? '…or paste image URL' : '…or paste media URL'} value={urlVal} onChange={e => setUrlVal(e.target.value)} />
-                  <div className="grow"/>
+                  <div className="grow" />
                   <select value={lang} onChange={e => setLang(e.target.value)}>
                     <option value="en">English</option>
                     <option value="hi">Hindi</option>
@@ -338,8 +338,8 @@ export default function AnalyzePage() {
                   {error && <p style={{ color: 'var(--ds-danger)', marginTop: 12, fontSize: 13 }}>{error}</p>}
                 </div>
                 <div className="options-row">
-                  <label className="opt"><input type="checkbox" checked={cache} onChange={e => setCache(e.target.checked)}/> Cache result</label>
-                  <div className="grow"/>
+                  <label className="opt"><input type="checkbox" checked={cache} onChange={e => setCache(e.target.checked)} /> Cache result</label>
+                  <div className="grow" />
                   <select value={lang} onChange={e => setLang(e.target.value)}>
                     <option value="en">English</option>
                     <option value="hi">Hindi</option>
@@ -366,7 +366,7 @@ export default function AnalyzePage() {
                     <span className="eyebrow">Pipeline</span>
                     <span className="mono" style={{ fontSize: 11, color: 'var(--ds-muted)' }}>{Math.round(progress)}% · {elapsed.toFixed(1)}s</span>
                   </div>
-                  <div className="p-stages-bar"><i style={{ width: `${progress}%` }}/></div>
+                  <div className="p-stages-bar"><i style={{ width: `${progress}%` }} /></div>
                   <ol className="stage-list">
                     {MODE_STAGES[mode].map((s, i) => {
                       const isLast = i === MODE_STAGES[mode].length - 1;
@@ -378,10 +378,10 @@ export default function AnalyzePage() {
                         : isCurrent && isLast && elapsed > 4
                           ? `${elapsed.toFixed(0)}s`
                           : isCurrent ? '···'
-                          : '—';
+                            : '—';
                       return (
                         <li key={s} className={`${isDone ? 'done' : isCurrent ? 'active' : ''} ${isCurrent && isLast && elapsed > 3 ? 'stage-pulse' : ''}`}>
-                          <span className="stage-dot"/>
+                          <span className="stage-dot" />
                           <span className="stage-label">{s}</span>
                           <span className="mono stage-status">{statusText}</span>
                         </li>
@@ -391,7 +391,7 @@ export default function AnalyzePage() {
                   {activeStage === MODE_STAGES[mode].length - 1 && elapsed > 6 && (
                     <p style={{ color: 'var(--ds-brand-2)', fontSize: 11, marginTop: 10, fontFamily: 'var(--ff-mono)', opacity: 0.8, animation: 'fadeInUp 400ms ease' }}>
                       {progress >= 95
-                        ? '● Generating LLM summary — Gemini → Groq fallback chain'
+                        ? '● Generating AI summary'
                         : '● Models are scoring — this can take 10-25s on first run'}
                     </p>
                   )}
@@ -422,13 +422,22 @@ export default function AnalyzePage() {
                   onClick={() => r.id && navigate(`/results/${r.id}`)}
                   style={{ cursor: r.id ? 'pointer' : 'default' }}
                 >
-                  <div className="recent-thumb" style={{
-                    backgroundImage: (r.src || r.thumbnail_url || r.media_path)
-                      ? `url("${r.src || resolveMediaUrl(r.thumbnail_url || r.media_path)}")`
-                      : 'linear-gradient(135deg, rgba(108,125,255,0.15), rgba(61,219,179,0.08))',
-                  }}>
-                    <span className={`verdict-dot h-verdict ${color}`} style={{ position: 'absolute', top: 8, right: 8, padding: '2px 7px', fontSize: 9 }}>{verdictLabel}</span>
-                  </div>
+                  {(() => {
+                    const thumbSrc = r.thumbnail_b64 || (r.thumbnail_url ? resolveMediaUrl(r.thumbnail_url) : null) || (r.media_path ? resolveMediaUrl(r.media_path) : null) || r.src || null;
+                    const typeIcon = { text: '¶', screenshot: '▭', audio: '🎙', video: '▶' }[r.media_type] || '🖼';
+                    return (
+                      <div className="recent-thumb" style={{
+                        backgroundImage: thumbSrc ? `url("${thumbSrc}")` : 'linear-gradient(135deg, rgba(108,125,255,0.15), rgba(61,219,179,0.08))',
+                        backgroundSize: 'cover',
+                        backgroundPosition: 'center',
+                      }}>
+                        {!thumbSrc && (
+                          <span style={{ position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 28, opacity: 0.35 }}>{typeIcon}</span>
+                        )}
+                        <span className={`verdict-dot h-verdict ${color}`} style={{ position: 'absolute', top: 8, right: 8, padding: '2px 7px', fontSize: 9 }}>{verdictLabel}</span>
+                      </div>
+                    );
+                  })()}
                   <div className="recent-title">{title}</div>
                   <div className="recent-meta">
                     <span>id · {String(r.id || '').slice(0, 6)}</span>
@@ -506,23 +515,23 @@ function AudioProcessingViz() {
       <div style={{
         position: 'absolute', width: '250px', height: '250px',
         background: 'var(--ds-brand-1)', filter: 'blur(120px)', opacity: 0.15, borderRadius: '50%'
-      }}/>
-      
+      }} />
+
       <div style={{ display: 'flex', alignItems: 'center', gap: 4, zIndex: 1, height: 100 }}>
         {bars.map((h, i) => {
           const isBrand1 = i % 2 === 0;
           return (
             <div key={i} style={{
-              width: 6, height: `${h}%`, 
+              width: 6, height: `${h}%`,
               backgroundColor: isBrand1 ? 'var(--ds-brand-1)' : 'var(--ds-brand-2)',
               borderRadius: 3, transition: 'height 120ms ease-out',
               boxShadow: `0 0 10px ${isBrand1 ? 'rgba(127,143,255,0.4)' : 'rgba(61,219,179,0.4)'}`,
-              opacity: 0.6 + (h/250)
-            }}/>
+              opacity: 0.6 + (h / 250)
+            }} />
           );
         })}
       </div>
-      
+
       <div style={{ zIndex: 1, fontFamily: 'var(--ff-mono)', fontSize: 12, display: 'flex', gap: 32, color: 'var(--ds-muted)' }}>
         <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 4 }}>
           <span>SPECTRUM</span>
@@ -542,8 +551,8 @@ function AudioProcessingViz() {
 }
 
 const DEFAULT_RECENT = [
-  { src: 'https://images.unsplash.com/photo-1488554378835-f7acf46e6c98?w=300&q=80&auto=format', title: 'Staged portrait', d: '2m ago',  authenticity_score: 18, verdict: 'FAKE' },
-  { src: 'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=300&q=80&auto=format', title: 'Press photo',    d: '14m ago', authenticity_score: 88, verdict: 'REAL' },
-  { src: 'https://images.unsplash.com/photo-1496128858413-b36217c2ce36?w=300&q=80&auto=format', title: 'Social post',    d: '1h ago',  authenticity_score: 52, verdict: 'SUSP' },
-  { src: 'https://images.unsplash.com/photo-1531123897727-8f129e1688ce?w=300&q=80&auto=format', title: 'Pipeline test',  d: '3h ago',  authenticity_score: 12, verdict: 'FAKE' },
+  { src: 'https://images.unsplash.com/photo-1488554378835-f7acf46e6c98?w=300&q=80&auto=format', title: 'Staged portrait', d: '2m ago', authenticity_score: 18, verdict: 'FAKE' },
+  { src: 'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=300&q=80&auto=format', title: 'Press photo', d: '14m ago', authenticity_score: 88, verdict: 'REAL' },
+  { src: 'https://images.unsplash.com/photo-1496128858413-b36217c2ce36?w=300&q=80&auto=format', title: 'Social post', d: '1h ago', authenticity_score: 52, verdict: 'SUSP' },
+  { src: 'https://images.unsplash.com/photo-1531123897727-8f129e1688ce?w=300&q=80&auto=format', title: 'Pipeline test', d: '3h ago', authenticity_score: 12, verdict: 'FAKE' },
 ];

@@ -129,6 +129,20 @@ def _text_preview_from_json(result_json: str, limit: int = 260) -> str | None:
     return text[: limit - 3].rstrip() + "..."
 
 
+def _thumbnail_b64_from_json(result_json: str) -> str | None:
+    """Extract the stored thumbnail data URL from result_json for the list view.
+    Only the thumbnail (small ~10KB JPEG base64) is extracted — not the full payload.
+    """
+    try:
+        payload = json.loads(result_json)
+        b64 = payload.get("thumbnail_b64")
+        if b64 and isinstance(b64, str) and b64.startswith("data:"):
+            return b64
+    except Exception:
+        pass
+    return None
+
+
 
 def _count_cache_hits(db: Session, user_id: int) -> int:
     """Count analyses whose media_hash matches an earlier record for this user.
@@ -183,16 +197,25 @@ def list_history(
         .all()
     )
 
-    # For text records only, fetch result_json in one batched query for text previews.
-    text_ids = [r.id for r in rows if r.media_type == "text"]
+    # Batch-load result_json for two purposes:
+    # - text records: extract text preview
+    # - visual records without a thumbnail_url: extract stored thumbnail_b64 as fallback
+    need_json_ids = [
+        r.id for r in rows
+        if r.media_type == "text" or not r.thumbnail_url
+    ]
     text_previews: dict[int, str | None] = {}
-    if text_ids:
+    fallback_b64: dict[int, str | None] = {}
+    if need_json_ids:
         for rec in (
-            db.query(AnalysisRecord.id, AnalysisRecord.result_json)
-            .filter(AnalysisRecord.id.in_(text_ids))
+            db.query(AnalysisRecord.id, AnalysisRecord.media_type, AnalysisRecord.result_json)
+            .filter(AnalysisRecord.id.in_(need_json_ids))
             .all()
         ):
-            text_previews[rec.id] = _text_preview_from_json(rec.result_json)
+            if rec.media_type == "text":
+                text_previews[rec.id] = _text_preview_from_json(rec.result_json)
+            if not any(r.thumbnail_url for r in rows if r.id == rec.id):
+                fallback_b64[rec.id] = _thumbnail_b64_from_json(rec.result_json)
 
     items = [
         HistoryItem(
@@ -202,7 +225,8 @@ def list_history(
             authenticity_score=r.authenticity_score,
             created_at=r.created_at,
             thumbnail_url=_make_asset_url(r.id, "thumbnail") if r.thumbnail_url else None,
-            thumbnail_b64=None,  # omitted from list — signed URL serves the thumbnail
+            # Inline b64 fallback only when the file-based thumbnail is absent
+            thumbnail_b64=fallback_b64.get(r.id) if not r.thumbnail_url else None,
             media_path=_make_asset_url(r.id, "media") if r.media_path else None,
             text_preview=text_previews.get(r.id),
         )

@@ -718,6 +718,16 @@ async def analyze_text_endpoint(
     start = time.perf_counter()
     stages: list[str] = []
 
+    # Dedup cache — hash the normalised text so identical submissions hit cache
+    media_hash = sha256_bytes(body.text.encode("utf-8"))
+    if body.cache:
+        cached = lookup_cached(db, media_hash=media_hash, media_type="text", user_id=user.id if user else None)
+        if cached is not None:
+            payload = cached_payload(cached)
+            if payload is not None:
+                logger.info(f"cache hit text sha={media_hash[:12]} record={cached.id}")
+                return TextAnalysisResponse.model_validate(payload)
+
     # Phase 13: language detection — routes to multilang model when non-English
     lang = _resolve_language_hint(body.text, body.language_hint)
     stages.append("language_detection")
@@ -749,11 +759,14 @@ async def analyze_text_endpoint(
         effective_fake_prob = news.truth_override.fake_prob_after
         stages.append("truth_override_applied")
 
+    # Apply no-source penalty: unverifiable claim nudges fake probability up.
+    effective_fake_prob = min(1.0, effective_fake_prob + news.no_source_penalty)
+
     # Weighted score: keep classifier authoritative. Linguistic heuristics can
     # lower confidence, but should not give a high floor when classifier is very fake.
     manip_penalty = min(len(manip) * 5, 30)
     raw_score = (1.0 - effective_fake_prob) * 100.0
-    
+
     if lang == "en":
         heuristic_score = max(0, 100 - sens.score) * 0.60 + max(0, 100 - manip_penalty) * 0.40
         weighted = raw_score * 0.90 + heuristic_score * 0.10
@@ -825,6 +838,7 @@ async def analyze_text_endpoint(
         verdict=label,
         authenticity_score=float(score),
         result_json=json.dumps(resp.model_dump()),
+        media_hash=media_hash,
     )
     db.add(record)
     db.commit()
@@ -916,6 +930,8 @@ async def analyze_screenshot_endpoint(
     if news.truth_override and news.truth_override.applied:
         effective_fake_prob = news.truth_override.fake_prob_after
         stages.append("truth_override_applied")
+
+    effective_fake_prob = min(1.0, effective_fake_prob + news.no_source_penalty)
 
     manip_penalty = min(len(manip) * 5, 30)
     layout_penalty = min(len(layout) * 5, 15)

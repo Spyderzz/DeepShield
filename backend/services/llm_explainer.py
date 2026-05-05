@@ -50,35 +50,34 @@ def _is_quota_error(exc: Exception) -> bool:
 
 
 _PROMPT_TEMPLATE = """\
-You are DeepShield's explainability engine. Given the JSON analysis payload below,
-write a concise, accessible summary for a non-technical user.
+You are DeepShield's AI explainability engine. Your job is to explain a media forensics analysis result in clear, plain English that a non-technical person (a news reader, student, or concerned citizen) can immediately understand and act on.
 
-This analysis is for a {media_kind}. 
+This analysis is for a **{media_kind}**.
 
 **Output format (strict JSON only — no markdown fences):**
 {{
-  "paragraph": "<2-3 sentence plain-English summary of the verdict and key signals>",
+  "paragraph": "<4-5 sentence plain-English summary: (1) state the verdict clearly, (2) explain what evidence led to that verdict, (3) mention the strongest 1-2 signals, (4) tell the user what this means for them practically — e.g. should they share this, is it reliable, should they be cautious>",
   "bullets": [
-    "<key signal 1>",
-    "<key signal 2>",
-    "<key signal 3>"
+    "<signal 1: specific finding with a number or detail from the payload>",
+    "<signal 2: specific finding with a number or detail from the payload>",
+    "<signal 3: specific finding with a number or detail from the payload>",
+    "<signal 4: what the user should do or be aware of>"
   ]
 }}
 
-**General Rules (Apply to all):**
-- Be strictly factual. Do NOT hallucinate content or describe the media based on assumptions.
-- Only state what the analysis payload found. Do not invent details.
-- Avoid generic phrases like "The image itself explicitly labels...". Instead, point out specific anomalies.
-- If the verdict is "Likely Authentic", reassure the user based on the lack of artifacts, strong metadata, or verified claims.
-- If the verdict is "Likely Manipulated" or "Suspicious", highlight the strongest evidence (artifacts, contradicted claims, high sensationalism, missing metadata).
-- Keep the paragraph under 60 words. Each bullet under 20 words.
+**General Rules:**
+- Write for a general public audience. Avoid jargon like "GAN", "cosine similarity", "EfficientNet". Use plain equivalents instead (e.g. "AI-generated image detector", "news source matching").
+- Be strictly factual — only describe what the payload shows. Do NOT invent details or describe content you have not seen.
+- Be specific: mention actual numbers (scores, counts, probabilities) from the payload.
+- Give practical guidance: if likely real, say it is safe to share with normal caution. If suspicious/fake, warn the user clearly.
+- Paragraph: 4-5 sentences, ~80-120 words. Each bullet: 15-25 words, specific.
 
-**Media-Specific Rules (Apply based on media_kind="{media_kind}"):**
-- IF "image": Focus on visual artifacts (e.g., GAN noise, blending issues), EXIF metadata trust, artifact indicators, and VLM anomaly breakdowns. Mention heatmaps only if explicit heatmap evidence is present in the payload.
-- IF "video": Focus on temporal inconsistencies, unnatural movement, frame-by-frame anomalies, and whether lip-sync or audio tampering was detected.
-- IF "audio": Focus on synthetic voice patterns, WavLM anomalies, spectral variance, and background noise consistency.
-- IF "text": Focus on sensationalism scores, manipulation patterns, linguistic anomalies, and cross-reference the extracted claims with "trusted_sources" and "truth_override". State clearly if claims are contradicted by reliable news.
-- IF "screenshot": Focus HEAVILY on the extracted text and news credibility first, evaluating the OCR text against "trusted_sources" and "truth_override". If the text contains fake news or is contradicted by reliable sources, this is the most critical factor. Only after assessing text credibility should you briefly mention visual aspects (like layout anomalies, spacing, or manipulated faces).
+**Media-Specific Rules (based on media_kind="{media_kind}"):**
+- "image": Lead with whether the AI detector found manipulation. Explain artifact indicators and EXIF metadata findings. Mention if a face was detected and how that affects analysis. Give practical advice.
+- "video": Focus on how many frames were suspicious, temporal consistency score, and audio analysis. Explain what unnatural movement or audio anomalies suggest.
+- "audio": Explain voice synthesis probability, spectral findings, and what a high/low fake probability means for the listener.
+- "text": Report the fake-news classifier result, sensationalism score, manipulation patterns found, and whether the claim was corroborated by trusted news sources. Tell the user if this news looks unreliable.
+- "screenshot": First explain what the OCR extracted and whether the text content itself appears credible. Then explain visual layout anomalies. Be explicit if the claim in the screenshot could not be verified by any trusted news source.
 
 **Analysis payload:**
 {payload_json}
@@ -233,17 +232,10 @@ class _GeminiProvider(_LLMProvider):
 
         self._client = genai.Client(api_key=settings.LLM_API_KEY)
         self.model = settings.LLM_MODEL
-        # Disable thinking for speed — 2.5-flash thinks by default which adds 8-15s latency
-        thinking_cfg = None
-        try:
-            thinking_cfg = types.ThinkingConfig(thinking_budget=0)
-        except Exception:
-            pass  # older SDK version without ThinkingConfig
         self._config = types.GenerateContentConfig(
-            temperature=0.2,
-            max_output_tokens=220,
+            temperature=0.3,
+            max_output_tokens=600,
             response_mime_type="application/json",
-            **({"thinking_config": thinking_cfg} if thinking_cfg is not None else {}),
         )
 
     def generate(self, prompt: str) -> str:
@@ -263,8 +255,8 @@ class _OpenAIProvider(_LLMProvider):
         response = self._client.chat.completions.create(
             model=self.model,
             messages=[{"role": "user", "content": prompt}],
-            temperature=0.2,
-            max_tokens=220,
+            temperature=0.3,
+            max_tokens=600,
             response_format={"type": "json_object"},
         )
         return response.choices[0].message.content or ""
@@ -283,8 +275,8 @@ class _GroqProvider(_LLMProvider):
         response = self._client.chat.completions.create(
             model=self.model,
             messages=[{"role": "user", "content": prompt}],
-            temperature=0.2,
-            max_tokens=220,
+            temperature=0.3,
+            max_tokens=600,
             response_format={"type": "json_object"},
         )
         return response.choices[0].message.content or ""
@@ -296,7 +288,7 @@ class _ProviderChain:
     The `last_used` attribute tracks which provider produced the response.
     """
 
-    _PRIMARY_TIMEOUT = 10   # seconds for Gemini/OpenAI
+    _PRIMARY_TIMEOUT = 7    # gemini-1.5-flash responds in ~2-4s
     _FALLBACK_TIMEOUT = 8   # seconds for Groq
 
     def __init__(self, primary: _LLMProvider, fallback: _LLMProvider | None) -> None:
@@ -342,16 +334,20 @@ class _ProviderChain:
 
 
 _provider_lock = threading.Lock()
-_provider_instance: _ProviderChain | None = None  # reset to None forces re-init with new fallback logic
+_provider_instance: _ProviderChain | None = None
+_provider_model_tag: str = ""  # tracks the model that _provider_instance was built for
 
 
 def _get_provider() -> _ProviderChain:
-    """Lazy-init the configured provider chain (thread-safe singleton)."""
-    global _provider_instance
-    if _provider_instance is not None:
+    """Lazy-init the configured provider chain (thread-safe singleton).
+    Re-initializes when the configured model changes (e.g. hot-reload during dev).
+    """
+    global _provider_instance, _provider_model_tag
+    current_tag = f"{settings.LLM_PROVIDER}:{settings.LLM_MODEL}"
+    if _provider_instance is not None and _provider_model_tag == current_tag:
         return _provider_instance
     with _provider_lock:
-        if _provider_instance is None:
+        if _provider_instance is None or _provider_model_tag != current_tag:
             provider_name = settings.LLM_PROVIDER.lower()
             primary: _LLMProvider = _OpenAIProvider() if provider_name == "openai" else _GeminiProvider()
             fallback: _LLMProvider | None = None
@@ -362,6 +358,7 @@ def _get_provider() -> _ProviderChain:
                 except Exception as e:  # noqa: BLE001
                     logger.warning(f"Groq fallback unavailable: {e}")
             _provider_instance = _ProviderChain(primary, fallback)
+            _provider_model_tag = current_tag
     return _provider_instance
 
 
@@ -382,7 +379,7 @@ def _parse_llm_response(raw: str) -> tuple[str, list[str]]:
     bullets = parsed.get("bullets", [])
     if not isinstance(bullets, list):
         bullets = [str(bullets)]
-    return paragraph, bullets[:3]
+    return paragraph, bullets[:5]
 
 
 def generate_llm_summary(
@@ -484,15 +481,24 @@ def _fallback_summary(payload: dict[str, Any], *, reason: str) -> LLMExplainabil
         "timeout": "Both Gemini and Groq timed out — showing automatic summary instead.",
         "error": "LLM providers encountered an error — showing automatic summary.",
     }.get(reason, "LLM explanation unavailable.")
+    is_likely_real = score >= 65
+    confidence_word = "high" if abs(score - 50) > 30 else "moderate"
+    action = (
+        "This content appears safe to read and share, though independent verification is always recommended."
+        if is_likely_real
+        else "Exercise caution before sharing this content — it shows signs that may indicate manipulation or fabrication."
+    )
     return LLMExplainabilitySummary(
         paragraph=(
-            f"The DeepShield AI engine analyzed this media and determined it is '{label}' "
-            f"with an authenticity score of {score}/100, derived from deepfake detection, "
-            f"artifact scanning, and metadata analysis."
+            f"DeepShield's forensic pipeline analyzed this {payload.get('media_type', 'media')} and returned a verdict of '{label}' "
+            f"with an authenticity score of {score}/100 and {confidence_word} model confidence. "
+            f"The score is derived from deepfake detection models, artifact scanning, metadata integrity checks, and (for text) trusted-source cross-referencing. "
+            f"{action}"
         ),
         bullets=[
-            f"Overall Authenticity Score: {score}/100",
-            f"Primary Verdict: {label}",
+            f"Authenticity score: {score}/100 — {'above' if score >= 50 else 'below'} the suspicion threshold of 50",
+            f"Verdict: {label}",
+            f"Pipeline completed: deepfake detection, artifact analysis, metadata checks",
             tail,
         ],
         model_used=f"static-fallback:{reason}",

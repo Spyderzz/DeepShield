@@ -41,6 +41,9 @@ class NewsLookupResult:
     contradicting_evidence: List[ContradictingEvidence]
     total_articles: int
     truth_override: Optional[TruthOverride] = None
+    # Fake-probability nudge when API key is set but returned 0 results.
+    # Range [0, 1] — added to effective_fake_prob in the caller.
+    no_source_penalty: float = 0.0
 
 
 def _domain_of(url: str) -> str:
@@ -172,14 +175,17 @@ def _compute_truth_override(
 
 async def _fetch(q: str, country: Optional[str]) -> list[dict]:
     params = {"apikey": settings.NEWS_API_KEY, "q": q, "language": "en", "size": 10, "country": country or "in"}
+    logger.info(f"News lookup query: {q!r} country={country or 'in'}")
 
     try:
-        async with httpx.AsyncClient(timeout=httpx.Timeout(5.0, connect=2.0)) as c:
+        async with httpx.AsyncClient(timeout=httpx.Timeout(8.0, connect=3.0)) as c:
             r = await c.get(settings.NEWS_API_BASE_URL, params=params)
             r.raise_for_status()
-            return (r.json() or {}).get("results") or []
+            results = (r.json() or {}).get("results") or []
+            logger.info(f"News lookup returned {len(results)} articles for query: {q!r}")
+            return results
     except Exception as e:
-        logger.warning(f"News lookup failed: {e}")
+        logger.warning(f"News lookup failed (query={q!r}): {e}")
         return []
 
 
@@ -252,9 +258,19 @@ async def search_news_full(
     if original_text and trusted:
         truth_override = _compute_truth_override(original_text, trusted, current_fake_prob)
 
+    # ── No-source penalty: API key is configured but yielded 0 results.
+    # Unverifiable claims should raise fake probability slightly.
+    no_source_penalty = 0.0
+    if settings.NEWS_API_KEY and not trusted and not contradictions:
+        no_source_penalty = 0.08
+        logger.info(
+            f"No trusted sources found for query — applying no_source_penalty={no_source_penalty}"
+        )
+
     return NewsLookupResult(
         trusted_sources=trusted,
         contradicting_evidence=contradictions[:limit],
         total_articles=len(articles),
         truth_override=truth_override,
+        no_source_penalty=no_source_penalty,
     )

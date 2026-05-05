@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from typing import List
 
-from pydantic import BaseModel
+from pydantic import BaseModel, ConfigDict
 
 from schemas.common import (
     ArtifactIndicator,
@@ -213,6 +213,8 @@ class ImageAnalysisResponse(BaseModel):
     )
 
 class AudioMLScore(BaseModel):
+    model_config = ConfigDict(protected_namespaces=())
+
     fake_probability: float
     label: str
     model_used: str

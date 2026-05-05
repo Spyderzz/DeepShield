@@ -164,7 +164,7 @@ function ResultsView({ result, id, accessToken }) {
   const heatmapData = resolveMediaUrl(expl.heatmap_url) || _b64src(expl.heatmap_base64);
   const elaData     = resolveMediaUrl(expl.ela_url)     || _b64src(expl.ela_base64);
   const boxesData   = resolveMediaUrl(expl.boxes_url)   || _b64src(expl.boxes_base64);
-  const baseImg = resolveMediaUrl(result.media_path) || resolveMediaUrl(result.thumbnail_url) || resolveMediaUrl(result.media_url) || heatmapData;
+  const baseImg = resolveMediaUrl(result.media_path) || resolveMediaUrl(result.thumbnail_url) || resolveMediaUrl(result.media_url) || _b64src(result.thumbnail_b64) || heatmapData;
 
   const totalMs = result.processing_summary?.total_ms ?? 0;
   const latency = totalMs ? `${(totalMs / 1000).toFixed(2)}s` : '—';
@@ -366,7 +366,7 @@ function VerdictCard({ verdict, displayScore, color, llm: initialLlm, calibratio
         </p>
         {Array.isArray(llm?.bullets) && llm.bullets.length > 0 && typingIdx >= (llm.paragraph?.length || 0) && (
           <div className="verdict-bullets">
-            {llm.bullets.slice(0, 4).map((b, i) => <span key={i}>• {b}</span>)}
+            {llm.bullets.slice(0, 5).map((b, i) => <span key={i}>• {b}</span>)}
           </div>
         )}
       </div>
