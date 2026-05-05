@@ -80,20 +80,39 @@ def save_file(src_path: str, sha: str, ext: str) -> str:
     return f"/media/{rel.as_posix()}"
 
 
-def make_image_thumbnail(pil: Image.Image, sha: str) -> str | None:
-    """Write a 400px-max JPEG thumbnail. Returns URL-style path or None on failure."""
+def make_image_thumbnail(pil: Image.Image, sha: str) -> tuple[str | None, str | None]:
+    """Write a 400px-max JPEG thumbnail.
+
+    Returns (url_path, data_url) where:
+    - url_path is the served asset path ("/media/thumbs/{sha}_400.jpg") or None
+    - data_url is a base64 JPEG data URL for inline embedding, or None on failure
+    The data URL is always generated (doesn't need file storage) so thumbnails
+    work even when persistent storage is unavailable.
+    """
+    buf = io.BytesIO()
+    data_url: str | None = None
+    url_path: str | None = None
+
     try:
-        _ensure_dirs()
-        dest = THUMB_DIR / f"{sha}_400.jpg"
-        if dest.exists():
-            return f"/media/thumbs/{sha}_400.jpg"
         im = pil.convert("RGB").copy()
         im.thumbnail((THUMB_MAX, THUMB_MAX))
-        im.save(dest, "JPEG", quality=82, optimize=True)
-        return f"/media/thumbs/{sha}_400.jpg"
+        im.save(buf, "JPEG", quality=75, optimize=True)
+        b64 = base64.b64encode(buf.getvalue()).decode("ascii")
+        data_url = f"data:image/jpeg;base64,{b64}"
     except Exception as e:  # noqa: BLE001
-        logger.warning(f"thumbnail generation failed for {sha}: {e}")
-        return None
+        logger.warning(f"thumbnail base64 generation failed for {sha}: {e}")
+
+    if data_url:
+        try:
+            _ensure_dirs()
+            dest = THUMB_DIR / f"{sha}_400.jpg"
+            if not dest.exists():
+                dest.write_bytes(buf.getvalue())
+            url_path = f"/media/thumbs/{sha}_400.jpg"
+        except Exception as e:  # noqa: BLE001
+            logger.warning(f"thumbnail file save failed for {sha}: {e}")
+
+    return url_path, data_url
 
 
 def make_video_thumbnail(video_path: str, sha: str) -> str | None:

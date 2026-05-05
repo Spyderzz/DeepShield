@@ -1,3 +1,4 @@
+import asyncio
 import json
 import os
 import time
@@ -75,6 +76,20 @@ from utils.scoring import compute_authenticity_score, compute_video_authenticity
 router = APIRouter(prefix="/analyze", tags=["analyze"])
 
 IMAGE_MAX_MB = 20
+_VIS_MAX_PX = 1024  # max pixel dimension for forensic visualizations
+
+
+def _resize_for_vis(pil) -> "Image.Image":
+    """Downsample to _VIS_MAX_PX on the longest side, preserving aspect ratio.
+    Forensic overlays (heatmap, ELA, boxes) don't need original resolution and
+    processing them full-size on large images is the primary latency bottleneck.
+    """
+    from PIL import Image
+    w, h = pil.size
+    if max(w, h) <= _VIS_MAX_PX:
+        return pil
+    scale = _VIS_MAX_PX / max(w, h)
+    return pil.resize((int(w * scale), int(h * scale)), Image.LANCZOS)
 VIDEO_MAX_MB = 100
 VIDEO_NUM_FRAMES = 16
 
@@ -208,6 +223,7 @@ def _store_llm_summary(payload: dict, summary: dict) -> None:
 @limiter.limit(AUTH_ANALYZE, exempt_when=is_anon)
 def generate_llm_endpoint(
     request: Request,
+    response: Response,
     record_id: int,
     db: Session = Depends(get_db),
     user: User | None = Depends(optional_current_user),
@@ -258,6 +274,7 @@ def _persist_response_payload(db: Session, record: AnalysisRecord, resp) -> None
 async def analyze_image(
     request: Request,
     response: Response,
+    background_tasks: BackgroundTasks,
     cache: bool = Query(default=True),
     language_hint: str = Query(default="auto"),
     file: UploadFile = File(...),
@@ -282,46 +299,70 @@ async def analyze_image(
             return ImageAnalysisResponse.model_validate(payload)
 
     pil = load_image_from_bytes(raw)
+    pil_vis = _resize_for_vis(pil)  # smaller copy for visualization — avoids 20-30s PNG encoding at 4K+
 
     indicators = scan_artifacts(pil, raw)
     stages.append("artifact_scanning")
 
+    model_family = "efficientnet" if settings.ENSEMBLE_MODE else "vit"
+
+    # ── Run heatmap + ELA + boxes + EXIF in parallel ──
+    def _run_heatmap():
+        return generate_heatmap_base64(pil_vis, model_family=model_family)
+
+    def _run_ela():
+        return generate_ela_base64(pil_vis)
+
+    def _run_boxes():
+        return generate_boxes_base64(pil_vis)
+
+    def _run_exif():
+        return extract_exif(pil, raw)
+
+    heatmap_result, ela_result, boxes_result, exif_result = await asyncio.gather(
+        asyncio.to_thread(_run_heatmap),
+        asyncio.to_thread(_run_ela),
+        asyncio.to_thread(_run_boxes),
+        asyncio.to_thread(_run_exif),
+        return_exceptions=True,
+    )
+
     # ── Phase 12: Grad-CAM++ heatmap ──
     heatmap_status = "success"
     heatmap = ""
-    try:
-        model_family = "efficientnet" if settings.ENSEMBLE_MODE else "vit"
-        heatmap, heatmap_source = generate_heatmap_base64(pil, model_family=model_family)
-        if not heatmap:
-            heatmap_status = heatmap_source  # "none" or "fallback"
-        stages.append("heatmap_generation")
-    except Exception as e:  # noqa: BLE001
-        logger.warning(f"Heatmap generation failed, continuing: {e}")
+    if isinstance(heatmap_result, Exception):
+        logger.warning(f"Heatmap generation failed, continuing: {heatmap_result}")
         heatmap_status = "failed"
+    else:
+        heatmap, heatmap_source = heatmap_result
+        if not heatmap:
+            heatmap_status = heatmap_source
+        else:
+            stages.append("heatmap_generation")
 
     # ── Phase 12: ELA (Error Level Analysis) ──
     ela_b64 = ""
-    try:
-        ela_b64 = generate_ela_base64(pil)
+    if isinstance(ela_result, Exception):
+        logger.warning(f"ELA generation failed, continuing: {ela_result}")
+    else:
+        ela_b64 = ela_result
         stages.append("ela_generation")
-    except Exception as e:  # noqa: BLE001
-        logger.warning(f"ELA generation failed, continuing: {e}")
 
     # ── Phase 12: Bounding box mode ──
     boxes_b64 = ""
-    try:
-        boxes_b64 = generate_boxes_base64(pil)
+    if isinstance(boxes_result, Exception):
+        logger.warning(f"Bounding box generation failed, continuing: {boxes_result}")
+    else:
+        boxes_b64 = boxes_result
         stages.append("boxes_generation")
-    except Exception as e:  # noqa: BLE001
-        logger.warning(f"Bounding box generation failed, continuing: {e}")
 
     # ── Phase 12: EXIF extraction + trust adjustment ──
     exif_summary = None
-    try:
-        exif_summary = extract_exif(pil, raw)
+    if isinstance(exif_result, Exception):
+        logger.warning(f"EXIF extraction failed, continuing: {exif_result}")
+    else:
+        exif_summary = exif_result
         stages.append("exif_extraction")
-    except Exception as e:  # noqa: BLE001
-        logger.warning(f"EXIF extraction failed, continuing: {e}")
 
     clf = classify_image(pil, artifact_indicators=indicators, exif=exif_summary)
     stages.append("classification")
@@ -427,23 +468,42 @@ async def analyze_image(
     resp.record_id = record.id
     logger.info(f"Saved AnalysisRecord id={record.id} score={score} verdict={label}")
 
-    # ── Phase 12+14: LLM + VLM cards (authed users only — conserves LLM quota) ──
+    # ── Phase 12: deterministic instant summary (no API call) ──
     llm_summary = _compute_llm_summary(resp, record_id=record.id, user=user, media_kind="image", exclude=_IMAGE_EXCLUDE)
     if llm_summary:
         resp.explainability.llm_summary = llm_summary
         stages.append("llm_explanation")
 
-    if user is not None and vlm_bd is None:
-        try:
-            vlm_bd = generate_vlm_breakdown(pil, record_id=str(record.id))
-            if vlm_bd:
-                resp.explainability.vlm_breakdown = vlm_bd
-                stages.append("vlm_breakdown")
-        except Exception as e:  # noqa: BLE001
-            logger.warning(f"VLM breakdown failed, continuing: {e}")
-
     resp.processing_summary.stages_completed = stages
     _persist_response_payload(db, record, resp)
+
+    # ── Phase 14: VLM breakdown runs after response is returned ──
+    if user is not None and vlm_bd is None:
+        _record_id = record.id
+        _pil = pil
+
+        def _bg_vlm():
+            try:
+                from db.database import SessionLocal
+                breakdown = generate_vlm_breakdown(_pil, record_id=str(_record_id))
+                if not breakdown:
+                    return
+                bg_db = SessionLocal()
+                try:
+                    bg_rec = bg_db.query(AnalysisRecord).filter(AnalysisRecord.id == _record_id).first()
+                    if bg_rec:
+                        payload = json.loads(bg_rec.result_json)
+                        payload.setdefault("explainability", {})["vlm_breakdown"] = breakdown.model_dump()
+                        bg_rec.result_json = json.dumps(payload)
+                        bg_db.commit()
+                        logger.info(f"VLM breakdown persisted for record={_record_id}")
+                finally:
+                    bg_db.close()
+            except Exception as e:  # noqa: BLE001
+                logger.warning(f"Background VLM breakdown failed: {e}")
+
+        background_tasks.add_task(_bg_vlm)
+
     return resp
 
 
