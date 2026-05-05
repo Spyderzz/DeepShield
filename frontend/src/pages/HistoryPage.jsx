@@ -17,7 +17,10 @@ function toDisplayItem(r) {
   const c = score >= 65 ? 'safe' : score >= 40 ? 'warn' : 'danger';
   const verdict = c === 'safe' ? 'REAL' : c === 'warn' ? 'SUSP' : 'FAKE';
   const type = r.media_type || 'image';
-  const visualSrc = type === 'text' ? null : (r.thumbnail_url || r.media_path);
+  // Inline base64 is preferred: no extra request and survives storage outages
+  const src = type === 'text'
+    ? null
+    : (r.thumbnail_b64 || resolveMediaUrl(r.thumbnail_url || r.media_path) || null);
   return {
     id: rawId,
     type,
@@ -27,7 +30,7 @@ function toDisplayItem(r) {
     title: r.title || `${r.media_type || 'analysis'} · #${idStr}`,
     sub: r.verdict ? `verdict · ${r.verdict}` : '',
     when: formatDateTimeIST(r.created_at),
-    src: resolveMediaUrl(visualSrc) || null,
+    src,
     textPreview: r.text_preview || '',
     hash: idStr.padStart(8, '0'),
     idLabel: `#${idStr}`,
@@ -46,6 +49,7 @@ export default function HistoryPage() {
   const [rows, setRows] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
+  const [cacheHits, setCacheHits] = useState(0);
 
   const handleDeleteOne = async (id) => {
     if (!confirm('Delete this analysis?')) return;
@@ -80,6 +84,7 @@ export default function HistoryPage() {
       try {
         const data = await listHistory(200, 0);
         setRows((data.items || []).map(toDisplayItem));
+        setCacheHits(data.cache_hits ?? 0);
       } catch (e) {
         setError(e?.response?.data?.detail || e?.message || 'Failed to load history');
       } finally {
@@ -153,7 +158,7 @@ export default function HistoryPage() {
             <div className="hs-cell"><span className="eyebrow" style={{ color: 'var(--ds-warn)' }}>Suspicious</span><b>{stats.susp}</b></div>
             <div className="hs-cell"><span className="eyebrow" style={{ color: 'var(--ds-safe)' }}>Real</span><b>{stats.real}</b></div>
             <div className="hs-cell avg"><span className="eyebrow">Avg score</span><b>{stats.avg}</b></div>
-            <div className="hs-cell"><span className="eyebrow">Cache hit</span><b>—</b></div>
+            <div className="hs-cell"><span className="eyebrow">Cache hit</span><b>{cacheHits}</b></div>
           </div>
 
           <div className="hist-toolbar">

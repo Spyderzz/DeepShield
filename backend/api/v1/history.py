@@ -26,6 +26,7 @@ class HistoryItem(BaseModel):
     authenticity_score: float
     created_at: datetime
     thumbnail_url: str | None = None
+    thumbnail_b64: str | None = None  # inline data URL; preferred over thumbnail_url
     media_path: str | None = None
     text_preview: str | None = None
 
@@ -33,6 +34,7 @@ class HistoryItem(BaseModel):
 class HistoryListResponse(BaseModel):
     items: list[HistoryItem]
     total: int
+    cache_hits: int = 0
 
 
 class HistoryDeleteAllResponse(BaseModel):
@@ -129,6 +131,42 @@ def _history_text_preview(record: AnalysisRecord, limit: int = 260) -> str | Non
     return text[: limit - 3].rstrip() + "..."
 
 
+def _thumbnail_b64_from_record(r: AnalysisRecord) -> str | None:
+    """Extract inline thumbnail base64 from result_json if present."""
+    try:
+        payload = json.loads(r.result_json)
+        b64 = payload.get("thumbnail_b64")
+        if b64 and str(b64).startswith("data:image"):
+            return b64
+    except Exception:
+        pass
+    return None
+
+
+def _count_cache_hits(db: Session, user_id: int) -> int:
+    """Count analyses whose media_hash matches an earlier record for this user.
+    Each duplicate re-submission that was served from cache is a cache hit.
+    """
+    from sqlalchemy import func, text as sa_text
+    try:
+        result = db.execute(
+            sa_text(
+                "SELECT COUNT(*) FROM analyses a1 "
+                "WHERE a1.user_id = :uid AND a1.media_hash IS NOT NULL "
+                "AND EXISTS ("
+                "  SELECT 1 FROM analyses a2 "
+                "  WHERE a2.user_id = :uid AND a2.media_hash = a1.media_hash "
+                "  AND a2.id < a1.id"
+                ")"
+            ),
+            {"uid": user_id},
+        )
+        row = result.fetchone()
+        return int(row[0]) if row else 0
+    except Exception:
+        return 0
+
+
 @router.get("", response_model=HistoryListResponse)
 def list_history(
     limit: int = Query(default=50, ge=1, le=200),
@@ -136,10 +174,10 @@ def list_history(
     user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ) -> HistoryListResponse:
-    from sqlalchemy.orm import defer
     q = db.query(AnalysisRecord).filter(AnalysisRecord.user_id == user.id)
     total = q.count()
-    rows = q.options(defer(AnalysisRecord.result_json)).order_by(AnalysisRecord.created_at.desc()).offset(offset).limit(limit).all()
+    # Load result_json so we can extract thumbnail_b64
+    rows = q.order_by(AnalysisRecord.created_at.desc()).offset(offset).limit(limit).all()
     items = [
         HistoryItem(
             id=r.id,
@@ -148,12 +186,14 @@ def list_history(
             authenticity_score=r.authenticity_score,
             created_at=r.created_at,
             thumbnail_url=_make_asset_url(r, "thumbnail") if r.thumbnail_url else None,
+            thumbnail_b64=_thumbnail_b64_from_record(r),
             media_path=_make_asset_url(r, "media") if r.media_path else None,
             text_preview=_history_text_preview(r),
         )
         for r in rows
     ]
-    return HistoryListResponse(items=items, total=total)
+    cache_hits = _count_cache_hits(db, user.id)
+    return HistoryListResponse(items=items, total=total, cache_hits=cache_hits)
 
 
 @router.get("/{record_id}")

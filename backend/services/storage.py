@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import base64
 import hashlib
+import io
 import os
 from pathlib import Path
 
@@ -115,15 +116,11 @@ def make_image_thumbnail(pil: Image.Image, sha: str) -> tuple[str | None, str | 
     return url_path, data_url
 
 
-def make_video_thumbnail(video_path: str, sha: str) -> str | None:
-    """Grab a frame ~1s in as the video thumbnail."""
+def make_video_thumbnail(video_path: str, sha: str) -> tuple[str | None, str | None]:
+    """Grab a frame ~1s in as the video thumbnail. Returns (url_path, data_url)."""
     try:
         import cv2  # lazy import — heavy
 
-        _ensure_dirs()
-        dest = THUMB_DIR / f"{sha}_400.jpg"
-        if dest.exists():
-            return f"/media/thumbs/{sha}_400.jpg"
         cap = cv2.VideoCapture(video_path)
         try:
             fps = cap.get(cv2.CAP_PROP_FPS) or 25
@@ -133,17 +130,31 @@ def make_video_thumbnail(video_path: str, sha: str) -> str | None:
                 cap.set(cv2.CAP_PROP_POS_FRAMES, 0)
                 ok, frame = cap.read()
             if not ok:
-                return None
+                return None, None
         finally:
             cap.release()
         rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
         im = Image.fromarray(rgb)
         im.thumbnail((THUMB_MAX, THUMB_MAX))
-        im.save(dest, "JPEG", quality=82, optimize=True)
-        return f"/media/thumbs/{sha}_400.jpg"
+        buf = io.BytesIO()
+        im.save(buf, "JPEG", quality=75, optimize=True)
+        b64 = base64.b64encode(buf.getvalue()).decode("ascii")
+        data_url = f"data:image/jpeg;base64,{b64}"
     except Exception as e:  # noqa: BLE001
         logger.warning(f"video thumbnail failed for {sha}: {e}")
-        return None
+        return None, None
+
+    url_path: str | None = None
+    try:
+        _ensure_dirs()
+        dest = THUMB_DIR / f"{sha}_400.jpg"
+        if not dest.exists():
+            dest.write_bytes(buf.getvalue())
+        url_path = f"/media/thumbs/{sha}_400.jpg"
+    except Exception as e:  # noqa: BLE001
+        logger.warning(f"video thumbnail file save failed for {sha}: {e}")
+
+    return url_path, data_url
 
 
 def save_overlay(data_url: str, sha: str, suffix: str) -> str | None:

@@ -104,6 +104,7 @@ class ScreenshotAnalysisResponse(BaseModel):
     record_id: int = 0
     cached: bool = False
     thumbnail_url: str | None = None
+    thumbnail_b64: str | None = None
     media_type: str = "screenshot"
     timestamp: str
     verdict: Verdict
@@ -179,6 +180,7 @@ class VideoAnalysisResponse(BaseModel):
     record_id: int = 0
     cached: bool = False
     thumbnail_url: str | None = None
+    thumbnail_b64: str | None = None
     media_type: str = "video"
     timestamp: str
     verdict: Verdict
@@ -197,6 +199,7 @@ class ImageAnalysisResponse(BaseModel):
     record_id: int = 0
     cached: bool = False
     thumbnail_url: str | None = None
+    thumbnail_b64: str | None = None  # inline data URL, survives without file storage
     media_path: str | None = None
     media_type: str = "image"
     timestamp: str
@@ -230,6 +233,7 @@ class AudioAnalysisResponse(BaseModel):
     record_id: int = 0
     cached: bool = False
     thumbnail_url: str | None = None
+    thumbnail_b64: str | None = None
     media_type: str = "audio"
     timestamp: str
     verdict: Verdict

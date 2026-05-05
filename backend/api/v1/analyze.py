@@ -433,8 +433,9 @@ async def analyze_image(
     except Exception as e:  # noqa: BLE001
         logger.warning(f"media save failed: {e}")
         media_path = None
-    thumbnail_url = make_image_thumbnail(pil, media_hash)
+    thumbnail_url, thumbnail_b64 = make_image_thumbnail(pil, media_hash)
     resp.thumbnail_url = thumbnail_url
+    resp.thumbnail_b64 = thumbnail_b64
     if media_path:
         resp.media_path = media_path
 
@@ -648,8 +649,9 @@ async def analyze_video_endpoint(
     except Exception as e:  # noqa: BLE001
         logger.warning(f"video media save failed: {e}")
         media_path = None
-    thumbnail_url = make_video_thumbnail(path, media_hash)
+    thumbnail_url, thumbnail_b64 = make_video_thumbnail(path, media_hash)
     resp.thumbnail_url = thumbnail_url
+    resp.thumbnail_b64 = thumbnail_b64
 
     record = AnalysisRecord(
         user_id=user.id if user else None,
@@ -996,8 +998,9 @@ async def analyze_screenshot_endpoint(
     except Exception as e:  # noqa: BLE001
         logger.warning(f"screenshot media save failed: {e}")
         media_path = None
-    thumbnail_url = make_image_thumbnail(pil, media_hash)
+    thumbnail_url, thumbnail_b64 = make_image_thumbnail(pil, media_hash)
     resp.thumbnail_url = thumbnail_url
+    resp.thumbnail_b64 = thumbnail_b64
 
     record = AnalysisRecord(
         user_id=user.id if user else None,
@@ -1157,8 +1160,9 @@ async def analyze_video_async(
             except Exception as e:  # noqa: BLE001
                 logger.warning(f"async video media save failed: {e}")
                 media_path = None
-            thumb = make_video_thumbnail(path, media_hash)
-            resp.thumbnail_url = thumb
+            thumb_url, thumb_b64 = make_video_thumbnail(path, media_hash)
+            resp.thumbnail_url = thumb_url
+            resp.thumbnail_b64 = thumb_b64
 
             rec = AnalysisRecord(
                 user_id=user_id,
@@ -1168,7 +1172,7 @@ async def analyze_video_async(
                 result_json=json.dumps(resp.model_dump()),
                 media_hash=media_hash,
                 media_path=media_path,
-                thumbnail_url=thumb,
+                thumbnail_url=thumb_url,
             )
             local_db.add(rec)
             local_db.commit()
