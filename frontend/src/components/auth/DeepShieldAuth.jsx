@@ -3,6 +3,7 @@ import { useNavigate, useLocation } from 'react-router-dom';
 import { SharedNav, SharedFooter } from '../layout/SharedNav.jsx';
 import useDottedSurface from '../../hooks/useDottedSurface.js';
 import { useAuth } from '../../contexts/AuthContext.jsx';
+import { beginOAuth } from '../../services/authApi.js';
 import '../../pages/deepshield-landing.css';
 import '../../pages/deepshield-pages.css';
 
@@ -15,6 +16,7 @@ export default function DeepShieldAuth({ mode: initial = 'login' }) {
   const [name, setName] = useState('');
   const [remember, setRemember] = useState(true);
   const [busy, setBusy] = useState(false);
+  const [oauthBusy, setOauthBusy] = useState(null);
   const [error, setError] = useState(null);
   const { login, register, isAuthed } = useAuth();
   const navigate = useNavigate();
@@ -40,6 +42,18 @@ export default function DeepShieldAuth({ mode: initial = 'login' }) {
       setError(err?.response?.data?.detail || err?.message || 'Authentication failed');
     } finally {
       setBusy(false);
+    }
+  };
+
+  const onOAuth = async (provider) => {
+    setOauthBusy(provider);
+    setError(null);
+    try {
+      const { authorization_url } = await beginOAuth(provider, from, remember);
+      window.location.assign(authorization_url);
+    } catch (err) {
+      setError(err?.response?.data?.detail || err?.message || `${provider} sign-in failed`);
+      setOauthBusy(null);
     }
   };
 
@@ -92,9 +106,13 @@ export default function DeepShieldAuth({ mode: initial = 'login' }) {
             <p className="auth-sub">{isLogin ? 'Sign in to continue to DeepShield.' : 'Start analyzing media in under a minute.'}</p>
 
             <div className="auth-social">
-              <button type="button" className="btn btn-glass btn-sm" disabled><span className="mono">G</span> Google</button>
-              <button type="button" className="btn btn-glass btn-sm" disabled><span className="mono">◎</span> GitHub</button>
-              <button type="button" className="btn btn-glass btn-sm" disabled><span className="mono">⎆</span> SSO</button>
+              <button type="button" className="btn btn-glass btn-sm" onClick={() => onOAuth('google')} disabled={busy || oauthBusy === 'google'}>
+                <span className="mono">G</span> {oauthBusy === 'google' ? 'Redirecting…' : 'Google'}
+              </button>
+              <button type="button" className="btn btn-glass btn-sm" onClick={() => onOAuth('github')} disabled={busy || oauthBusy === 'github'}>
+                <span className="mono">◎</span> {oauthBusy === 'github' ? 'Redirecting…' : 'GitHub'}
+              </button>
+              <button type="button" className="btn btn-glass btn-sm" disabled title="SSO/OIDC not configured yet"><span className="mono">⎆</span> SSO</button>
             </div>
             <div className="auth-divider"><span>or with email</span></div>
 

@@ -7,6 +7,7 @@ import tempfile
 from typing import Iterable
 
 from fastapi import HTTPException, UploadFile, status
+from config import settings
 
 IMAGE_MAGIC_BYTES: dict[bytes, str] = {
     b"\xff\xd8\xff": "image/jpeg",
@@ -76,7 +77,9 @@ async def save_upload_to_tempfile(
         )
 
     max_bytes = max_size_mb * 1024 * 1024
-    fd, path = tempfile.mkstemp(suffix=suffix, prefix="ds_vid_")
+    upload_dir = os.path.abspath(settings.UPLOAD_DIR)
+    os.makedirs(upload_dir, exist_ok=True)
+    fd, path = tempfile.mkstemp(suffix=suffix, prefix="ds_vid_", dir=upload_dir)
     written = 0
     try:
         with os.fdopen(fd, "wb") as out:

@@ -10,6 +10,7 @@ const ResultsPage = lazy(() => import('./pages/ResultsPage.jsx'));
 const HistoryPage = lazy(() => import('./pages/HistoryPage.jsx'));
 const LoginPage = lazy(() => import('./pages/LoginPage.jsx'));
 const RegisterPage = lazy(() => import('./pages/RegisterPage.jsx'));
+const OAuthCallbackPage = lazy(() => import('./pages/OAuthCallbackPage.jsx'));
 const AboutPage = lazy(() => import('./pages/AboutPage.jsx'));
 const ContactPage = lazy(() => import('./pages/ContactPage.jsx'));
 const ModelsPage = lazy(() => import('./pages/ModelsPage.jsx'));
@@ -62,6 +63,7 @@ export default function App() {
           <Route path="/history"     element={<ProtectedRoute><HistoryPage /></ProtectedRoute>} />
           <Route path="/login"    element={<LoginPage />} />
           <Route path="/register" element={<RegisterPage />} />
+          <Route path="/auth/callback" element={<OAuthCallbackPage />} />
           <Route path="/about"    element={<AboutPage />} />
           <Route path="/contact"  element={<ContactPage />} />
           <Route path="/models"   element={<ModelsPage />} />

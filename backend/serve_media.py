@@ -3,6 +3,8 @@ from fastapi.staticfiles import StaticFiles
 from fastapi.middleware.cors import CORSMiddleware
 import os
 
+from config import settings
+
 app = FastAPI()
 
 app.add_middleware(
@@ -14,10 +16,10 @@ app.add_middleware(
 )
 
 # Create media directory if it doesn't exist
-os.makedirs("./media", exist_ok=True)
+os.makedirs(settings.MEDIA_ROOT, exist_ok=True)
 
 # Mount static files
-app.mount("/media", StaticFiles(directory="./media"), name="media")
+app.mount("/media", StaticFiles(directory=settings.MEDIA_ROOT), name="media")
 
 @app.get("/")
 def root():

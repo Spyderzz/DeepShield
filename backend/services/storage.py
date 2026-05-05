@@ -16,8 +16,9 @@ from pathlib import Path
 
 from PIL import Image
 from loguru import logger
+from config import settings
 
-MEDIA_ROOT = Path(os.environ.get("MEDIA_ROOT", "./media")).resolve()
+MEDIA_ROOT = Path(settings.MEDIA_ROOT).resolve()
 THUMB_DIR = MEDIA_ROOT / "thumbs"
 THUMB_MAX = 400
 

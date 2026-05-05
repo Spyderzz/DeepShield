@@ -36,12 +36,28 @@ BACKEND_ROOT = Path(__file__).resolve().parents[1]
 LOGO_PATH = REPO_ROOT / "frontend" / "src" / "assets" / "logo.png"
 IST = ZoneInfo("Asia/Kolkata")
 
-SLATE = colors.HexColor("#172033")
-TEXT = colors.HexColor("#263241")
-MUTED = colors.HexColor("#667085")
+# Typography & Spacing Grid (base unit: 6pt)
+BASE_SPACING = 6
+
+# Font constants (ReportLab uses these exact names; fallbacks handled by OS)
+FONT_SANS = "Helvetica"      # Primary: available on all systems
+FONT_SANS_BOLD = "Helvetica-Bold"
+FONT_SANS_OBLIQUE = "Helvetica-Oblique"
+FONT_MONO = "Courier"        # Monospace fallback
+
+# Severity badge colors (high > medium > low)
+SEVERITY_HIGH = colors.HexColor("#DC2626")    # Red
+SEVERITY_MEDIUM = colors.HexColor("#EA580C")  # Orange
+SEVERITY_LOW = colors.HexColor("#2563EB")     # Blue
+SEVERITY_NEUTRAL = colors.HexColor("#6B7280") # Gray
+
+# Improved color palette with better contrast
+SLATE = colors.HexColor("#0F1A2D")  # Darker title color for contrast
+TEXT = colors.HexColor("#1A202C")  # Darker body text
+MUTED = colors.HexColor("#4B5563")  # Darker muted (was #667085)
 LINE = colors.HexColor("#D9E0EA")
-PANEL = colors.HexColor("#F7F9FC")
-PANEL_2 = colors.HexColor("#EEF3F8")
+PANEL = colors.HexColor("#EDF0F7")  # Slightly darker for better contrast (was #F7F9FC)
+PANEL_2 = colors.HexColor("#E0E7F4")  # Slightly darker (was #EEF3F8)
 CRIMSON = colors.HexColor("#C81E3A")
 AMBER = colors.HexColor("#C77700")
 GREEN = colors.HexColor("#168A4A")
@@ -73,11 +89,40 @@ def _xml(value: Any, default: str = "") -> str:
     return html.escape(_clean(value, default), quote=True)
 
 
-def _shorten(value: Any, limit: int = 700) -> str:
+def _shorten(value: Any, limit: int = 700) -> tuple[str, bool]:
+    """Shorten text and return (text, was_truncated)."""
     text = " ".join(_clean(value).split())
     if len(text) <= limit:
-        return text
-    return text[: limit - 1].rstrip() + "..."
+        return (text, False)
+    return (text[: limit - 1].rstrip() + "...", True)
+
+
+def _severity_badge_color(severity: str) -> colors.Color:
+    """Return color for severity level (high/medium/low)."""
+    sev_lower = _clean(severity).lower()
+    if "high" in sev_lower or "critical" in sev_lower:
+        return SEVERITY_HIGH
+    if "medium" in sev_lower or "warn" in sev_lower:
+        return SEVERITY_MEDIUM
+    if "low" in sev_lower:
+        return SEVERITY_LOW
+    return SEVERITY_NEUTRAL
+
+
+def _format_anomaly_score(score: float) -> str:
+    """Format anomaly score consistently (always as % anomaly)."""
+    anomaly_pct = 100 - _clamp(score, 0, 100)
+    return f"{anomaly_pct:.0f}% anomaly"
+
+
+def _placeholder_image(width: float = 78 * mm, height: float = 58 * mm) -> Image:
+    """Return a gray placeholder image when media is unavailable."""
+    placeholder_pil = PILImage.new("RGB", (int(width * 2.83), int(height * 2.83)), color=(220, 224, 232))
+    stream = BytesIO()
+    placeholder_pil.save(stream, format="PNG")
+    stream.seek(0)
+    img = Image(stream, width=width, height=height)
+    return img
 
 
 def _as_dict(value: Any) -> dict[str, Any]:
@@ -160,10 +205,12 @@ def _resolve_media_path(value: Any) -> Path | None:
     return None
 
 
-def _image_from_base64(data: Any, max_width: float, max_height: float) -> Image | None:
+def _image_from_base64(data: Any, max_width: float, max_height: float) -> Image:
+    """Decode base64 image or return placeholder with error logging."""
     raw = _clean(data)
     if not raw:
-        return None
+        logger.debug("No base64 image data provided")
+        return _placeholder_image(max_width, max_height)
     try:
         encoded = raw.split(",", 1)[1] if "," in raw else raw
         blob = base64.b64decode(encoded)
@@ -172,20 +219,22 @@ def _image_from_base64(data: Any, max_width: float, max_height: float) -> Image 
             width, height = pil.size
         return _scaled_image(stream, width, height, max_width, max_height)
     except Exception as exc:  # noqa: BLE001
-        logger.debug(f"Unable to render base64 report image: {exc}")
-        return None
+        logger.warning(f"Base64 image decode failed: {exc} — using placeholder")
+        return _placeholder_image(max_width, max_height)
 
 
-def _image_from_path(path: Path | None, max_width: float, max_height: float) -> Image | None:
+def _image_from_path(path: Path | None, max_width: float, max_height: float) -> Image:
+    """Load image from path or return placeholder with error logging."""
     if path is None:
-        return None
+        logger.debug("No image path provided")
+        return _placeholder_image(max_width, max_height)
     try:
         with PILImage.open(path) as pil:
             width, height = pil.size
         return _scaled_image(str(path), width, height, max_width, max_height)
     except Exception as exc:  # noqa: BLE001
-        logger.debug(f"Unable to render report image {path}: {exc}")
-        return None
+        logger.warning(f"Image not found at {path}: {exc} — using placeholder")
+        return _placeholder_image(max_width, max_height)
 
 
 def _scaled_image(source: Any, width: int, height: int, max_width: float, max_height: float) -> Image:
@@ -197,88 +246,91 @@ def _scaled_image(source: Any, width: int, height: int, max_width: float, max_he
 
 
 def _styles() -> dict[str, ParagraphStyle]:
+    """Typography system with improved readability (10pt+ body, 1.5x leading)."""
     base = getSampleStyleSheet()
     return {
         "title": ParagraphStyle(
             "DeepShieldTitle",
             parent=base["Title"],
-            fontName="Helvetica-Bold",
-            fontSize=19,
-            leading=22,
+            fontName=FONT_SANS_BOLD,
+            fontSize=20,
+            leading=24,  # 1.2x leading for titles
             textColor=SLATE,
             alignment=TA_LEFT,
-            spaceAfter=2,
+            spaceAfter=BASE_SPACING * 2,  # 12pt after
         ),
         "section": ParagraphStyle(
             "DeepShieldSection",
             parent=base["Heading2"],
-            fontName="Helvetica-Bold",
-            fontSize=12.5,
-            leading=16,
+            fontName=FONT_SANS_BOLD,
+            fontSize=13,
+            leading=16,  # 1.23x leading
             textColor=SLATE,
-            spaceBefore=14,
-            spaceAfter=7,
+            spaceBefore=BASE_SPACING * 2,  # 12pt before section
+            spaceAfter=BASE_SPACING + 1,  # 7pt after
+            keepWithNext=True,
         ),
         "body": ParagraphStyle(
             "DeepShieldBody",
             parent=base["BodyText"],
-            fontName="Helvetica",
-            fontSize=9.1,
-            leading=13.2,
+            fontName=FONT_SANS,
+            fontSize=10,  # Increased from 9.1pt
+            leading=15,  # 1.5x leading (was 13.2)
             textColor=TEXT,
-            spaceAfter=5,
+            spaceAfter=BASE_SPACING,  # 6pt
         ),
         "small": ParagraphStyle(
             "DeepShieldSmall",
             parent=base["BodyText"],
-            fontName="Helvetica",
-            fontSize=7.8,
-            leading=10.5,
+            fontName=FONT_SANS,
+            fontSize=9,  # Increased from 7.8pt
+            leading=13.5,  # 1.5x leading
             textColor=MUTED,
+            spaceAfter=3,
         ),
         "meta": ParagraphStyle(
             "DeepShieldMeta",
             parent=base["BodyText"],
-            fontName="Helvetica",
-            fontSize=8.2,
-            leading=11.5,
+            fontName=FONT_SANS,
+            fontSize=9,  # Increased from 8.2pt
+            leading=13.5,  # 1.5x leading
             textColor=MUTED,
             alignment=TA_RIGHT,
         ),
         "badge": ParagraphStyle(
             "DeepShieldBadge",
             parent=base["BodyText"],
-            fontName="Helvetica-Bold",
-            fontSize=8.5,
-            leading=11,
+            fontName=FONT_SANS_BOLD,
+            fontSize=9,  # Increased from 8.5pt
+            leading=13,
             textColor=colors.white,
             alignment=TA_CENTER,
         ),
         "quote": ParagraphStyle(
             "DeepShieldQuote",
             parent=base["BodyText"],
-            fontName="Helvetica",
-            fontSize=9.2,
-            leading=13.5,
+            fontName=FONT_SANS,
+            fontSize=10,  # Increased from 9.2pt
+            leading=15,  # 1.5x leading
             textColor=SLATE,
-            leftIndent=8,
-            rightIndent=8,
+            leftIndent=12,  # Increased from 8
+            rightIndent=12,
         ),
         "caption": ParagraphStyle(
             "DeepShieldCaption",
             parent=base["BodyText"],
-            fontName="Helvetica-Oblique",
-            fontSize=7.7,
-            leading=10,
+            fontName=FONT_SANS_OBLIQUE,
+            fontSize=8.5,  # Increased from 7.7pt
+            leading=12.75,  # 1.5x leading
             textColor=MUTED,
             alignment=TA_CENTER,
         ),
         "link": ParagraphStyle(
             "DeepShieldLink",
             parent=base["BodyText"],
-            fontName="Helvetica",
-            fontSize=8.4,
-            leading=11.5,
+            fontName=FONT_SANS,
+            fontSize=9,  # Increased from 8.4pt
+            leading=13.5,  # 1.5x leading
             textColor=BLUE,
         ),
     }
@@ -307,12 +359,12 @@ class ScoreGauge(Flowable):
         c.setStrokeColor(self.color)
         c.arc(*bbox, startAng=180 - (180 * self.score / 100), extent=180 * self.score / 100)
         c.setFillColor(SLATE)
-        c.setFont("Helvetica-Bold", 25)
+        c.setFont(FONT_SANS_BOLD, 25)
         c.drawCentredString(cx, cy + 9, f"{self.score}")
-        c.setFont("Helvetica", 7.5)
+        c.setFont(FONT_SANS, 7.5)
         c.setFillColor(MUTED)
         c.drawCentredString(cx, cy - 4, "DEEPFAKE PROBABILITY")
-        c.setFont("Helvetica-Bold", 8.5)
+        c.setFont(FONT_SANS_BOLD, 8.5)
         c.setFillColor(self.color)
         c.drawCentredString(cx, cy - 18, self.label[:34])
         c.restoreState()
@@ -336,14 +388,14 @@ class BarChart(Flowable):
             pct = _clamp(value)
             color = _severity_color(pct)
             c.setFillColor(SLATE)
-            c.setFont("Helvetica", 8.2)
+            c.setFont(FONT_SANS, 8.2)
             c.drawString(0, y + 5, label[:35])
             c.setFillColor(colors.HexColor("#E8EDF3"))
             c.roundRect(label_w, y + 5, bar_w, 7, 3, fill=1, stroke=0)
             c.setFillColor(color)
             c.roundRect(label_w, y + 5, max(2, bar_w * pct / 100), 7, 3, fill=1, stroke=0)
             c.setFillColor(MUTED)
-            c.setFont("Helvetica-Bold", 8)
+            c.setFont(FONT_SANS_BOLD, 8)
             c.drawRightString(label_w + bar_w + value_w, y + 4, value_text)
             y -= self.row_height
 
@@ -359,7 +411,7 @@ class PipelineFlow(Flowable):
         c = self.canv
         if not self.stages:
             c.setFillColor(MUTED)
-            c.setFont("Helvetica", 8)
+            c.setFont(FONT_SANS, 8)
             c.drawString(0, 4, "No pipeline stages were recorded.")
             return
         gap = 11
@@ -371,7 +423,7 @@ class PipelineFlow(Flowable):
             c.setStrokeColor(LINE)
             c.roundRect(x, y, box_w, 26, 5, fill=1, stroke=1)
             c.setFillColor(SLATE)
-            c.setFont("Helvetica-Bold", 6.5)
+            c.setFont(FONT_SANS_BOLD, 6.5)
             c.drawCentredString(x + box_w / 2, y + 15, stage.replace("_", " ")[:18])
             if idx < len(self.stages) - 1:
                 ax = x + box_w + 2
@@ -387,18 +439,19 @@ def _section(title: str, styles: dict[str, ParagraphStyle]) -> Paragraph:
 
 
 def _panel(rows: list[list[Any]], col_widths: list[float] | None = None) -> Table:
+    """Detail panel with improved spacing (10pt padding)."""
     table = Table(rows, colWidths=col_widths, hAlign="LEFT")
     table.setStyle(
         TableStyle(
             [
                 ("BACKGROUND", (0, 0), (-1, -1), PANEL),
                 ("BOX", (0, 0), (-1, -1), 0.5, LINE),
-                ("INNERGRID", (0, 0), (-1, -1), 0.25, colors.HexColor("#E8EDF3")),
+                ("INNERGRID", (0, 0), (-1, -1), 0.25, colors.HexColor("#D9DFE8")),  # Darker grid
                 ("VALIGN", (0, 0), (-1, -1), "TOP"),
-                ("LEFTPADDING", (0, 0), (-1, -1), 8),
-                ("RIGHTPADDING", (0, 0), (-1, -1), 8),
-                ("TOPPADDING", (0, 0), (-1, -1), 7),
-                ("BOTTOMPADDING", (0, 0), (-1, -1), 7),
+                ("LEFTPADDING", (0, 0), (-1, -1), 10),  # Increased from 8
+                ("RIGHTPADDING", (0, 0), (-1, -1), 10),
+                ("TOPPADDING", (0, 0), (-1, -1), 10),  # Increased from 7
+                ("BOTTOMPADDING", (0, 0), (-1, -1), 10),
             ]
         )
     )
@@ -452,7 +505,8 @@ def _executive_summary(analysis_json: dict[str, Any], styles: dict[str, Paragrap
     verdict = _as_dict(analysis_json.get("verdict"))
     fake_score = _deepfake_probability(analysis_json)
     label = _clean(verdict.get("label"), "Inconclusive")
-    color = _severity_color(fake_score)
+    severity = verdict.get("severity")
+    color = _severity_badge_color(severity) if severity else _severity_color(fake_score)
     confidence = _confidence_percent(verdict)
     llm = _extract_llm_summary(analysis_json)
     summary_text = _clean(
@@ -463,6 +517,9 @@ def _executive_summary(analysis_json: dict[str, Any], styles: dict[str, Paragrap
     bullet_html = ""
     if bullets:
         bullet_html = "<br/>" + "<br/>".join(f"- {_xml(b)}" for b in bullets[:4])
+        if len(bullets) > 4:
+            more = len(bullets) - 4
+            bullet_html += f"<br/><i>(+{more} more insight{'s' if more != 1 else ''} available)</i>"
 
     detail = [
         _badge(label, color, styles),
@@ -500,10 +557,11 @@ def _media_context(analysis_json: dict[str, Any], record: AnalysisRecord, styles
     story: list[Any] = [_section("Analyzed Media Context", styles)]
 
     if media_type == "text":
-        snippet = _shorten(expl.get("original_text"), 950)
+        snippet, was_truncated = _shorten(expl.get("original_text"), 950)
+        truncation_note = "<br/><i>[...more text not shown]</i>" if was_truncated else ""
         story.append(
             _panel(
-                [[Paragraph(f"&ldquo;{_xml(snippet, 'No text snippet was stored.')}&rdquo;", styles["quote"])]],
+                [[Paragraph(f"&ldquo;{_xml(snippet, 'No text snippet was stored.')}&rdquo;{truncation_note}", styles["quote"])]],
                 [176 * mm],
             )
         )
@@ -521,10 +579,11 @@ def _media_context(analysis_json: dict[str, Any], record: AnalysisRecord, styles
             48 * mm,
         )
         image_cell: Any = thumb or original or Paragraph("Original thumbnail unavailable", styles["small"])
-        text_value = _shorten(expl.get("extracted_text") or expl.get("transcript"), 800)
+        text_value, was_truncated = _shorten(expl.get("extracted_text") or expl.get("transcript"), 800)
+        truncation_note = " [<b>+more not shown</b>]" if was_truncated else ""
         text_label = "Extracted OCR text" if media_type == "screenshot" else "Context notes"
         text_cell = Paragraph(
-            f"<b>{text_label}</b><br/>{_xml(text_value, 'No OCR or transcript text was recorded.')}",
+            f"<b>{text_label}</b><br/>{_xml(text_value, 'No OCR or transcript text was recorded.')}{truncation_note}",
             styles["body"],
         )
         table = Table([[image_cell, text_cell]], colWidths=[78 * mm, 98 * mm])
@@ -545,7 +604,8 @@ def _media_context(analysis_json: dict[str, Any], record: AnalysisRecord, styles
         return story
 
     if media_type == "audio":
-        transcript = _shorten(expl.get("transcript") or expl.get("extracted_transcript"), 850)
+        transcript, was_truncated = _shorten(expl.get("transcript") or expl.get("extracted_transcript"), 850)
+        truncation_note = " [<b>+more not shown</b>]" if was_truncated else ""
         duration = _clamp(expl.get("duration_s"), 0, 10_000_000)
         fmt = _clean(analysis_json.get("audio_format") or analysis_json.get("format"), "not recorded")
         story.append(
@@ -561,7 +621,7 @@ def _media_context(analysis_json: dict[str, Any], record: AnalysisRecord, styles
                     ],
                     [
                         Paragraph("<b>Transcript</b>", styles["small"]),
-                        Paragraph(_xml(transcript, "No transcript was recorded."), styles["body"]),
+                        Paragraph(_xml(transcript, "No transcript was recorded.") + truncation_note, styles["body"]),
                     ],
                 ],
                 [42 * mm, 134 * mm],
@@ -618,7 +678,7 @@ def _xai_rows(analysis_json: dict[str, Any], styles: dict[str, ParagraphStyle]) 
         rows.append(
             [
                 Paragraph(_xml(label), styles["body"]),
-                Paragraph(f"{anomaly:.0f}% anomaly", styles["small"]),
+                Paragraph(_format_anomaly_score(consistency), styles["small"]),
                 Paragraph(_xml(reason), styles["body"]),
             ]
         )
@@ -682,14 +742,17 @@ def _xai_breakdown(analysis_json: dict[str, Any], styles: dict[str, ParagraphSty
             [
                 ("BACKGROUND", (0, 0), (-1, 0), PANEL_2),
                 ("TEXTCOLOR", (0, 0), (-1, 0), SLATE),
+                ("FONTNAME", (0, 0), (-1, 0), FONT_SANS_BOLD),
+                ("FONTSIZE", (0, 0), (-1, 0), 9),
                 ("BACKGROUND", (0, 1), (-1, -1), colors.white),
                 ("BOX", (0, 0), (-1, -1), 0.5, LINE),
-                ("INNERGRID", (0, 0), (-1, -1), 0.25, colors.HexColor("#EDF1F5")),
+                ("INNERGRID", (0, 0), (-1, -1), 0.25, colors.HexColor("#D9DFE8")),
                 ("VALIGN", (0, 0), (-1, -1), "TOP"),
-                ("LEFTPADDING", (0, 0), (-1, -1), 7),
-                ("RIGHTPADDING", (0, 0), (-1, -1), 7),
-                ("TOPPADDING", (0, 0), (-1, -1), 6),
-                ("BOTTOMPADDING", (0, 0), (-1, -1), 6),
+                ("NOSPLIT", (0, 0), (-1, 1)),
+                ("LEFTPADDING", (0, 0), (-1, -1), 8),  # Increased from 7
+                ("RIGHTPADDING", (0, 0), (-1, -1), 8),
+                ("TOPPADDING", (0, 0), (-1, -1), 8),  # Increased from 6
+                ("BOTTOMPADDING", (0, 0), (-1, -1), 8),  # Increased from 6
             ]
         )
     )
@@ -717,8 +780,7 @@ def _forensic_visuals(analysis_json: dict[str, Any], styles: dict[str, Paragraph
     ]
     cells: list[Any] = []
     for title, caption, image in visuals:
-        if image is None:
-            image = Paragraph("Visual artifact unavailable", styles["small"])
+        # Images are never None now (placeholder returned if unavailable)
         cells.append(
             [
                 Paragraph(f"<b>{_xml(title)}</b>", styles["body"]),
@@ -733,10 +795,10 @@ def _forensic_visuals(analysis_json: dict[str, Any], styles: dict[str, Paragraph
                 ("BACKGROUND", (0, 0), (-1, -1), PANEL),
                 ("BOX", (0, 0), (-1, -1), 0.5, LINE),
                 ("VALIGN", (0, 0), (-1, -1), "TOP"),
-                ("LEFTPADDING", (0, 0), (-1, -1), 8),
-                ("RIGHTPADDING", (0, 0), (-1, -1), 8),
-                ("TOPPADDING", (0, 0), (-1, -1), 8),
-                ("BOTTOMPADDING", (0, 0), (-1, -1), 8),
+                ("LEFTPADDING", (0, 0), (-1, -1), 10),  # Increased from 8
+                ("RIGHTPADDING", (0, 0), (-1, -1), 10),
+                ("TOPPADDING", (0, 0), (-1, -1), 10),  # Increased from 8
+                ("BOTTOMPADDING", (0, 0), (-1, -1), 10),
             ]
         )
     )
@@ -783,13 +845,16 @@ def _exif_metadata(analysis_json: dict[str, Any], styles: dict[str, ParagraphSty
         TableStyle(
             [
                 ("BACKGROUND", (0, 0), (-1, 0), PANEL_2),
+                ("FONTNAME", (0, 0), (-1, 0), FONT_SANS_BOLD),
+                ("FONTSIZE", (0, 0), (-1, 0), 9),
                 ("BOX", (0, 0), (-1, -1), 0.5, LINE),
-                ("INNERGRID", (0, 0), (-1, -1), 0.25, colors.HexColor("#EDF1F5")),
+                ("INNERGRID", (0, 0), (-1, -1), 0.25, colors.HexColor("#D9DFE8")),
                 ("VALIGN", (0, 0), (-1, -1), "TOP"),
-                ("LEFTPADDING", (0, 0), (-1, -1), 7),
-                ("RIGHTPADDING", (0, 0), (-1, -1), 7),
-                ("TOPPADDING", (0, 0), (-1, -1), 5),
-                ("BOTTOMPADDING", (0, 0), (-1, -1), 5),
+                ("NOSPLIT", (0, 0), (-1, 1)),
+                ("LEFTPADDING", (0, 0), (-1, -1), 8),  # Increased from 7
+                ("RIGHTPADDING", (0, 0), (-1, -1), 8),
+                ("TOPPADDING", (0, 0), (-1, -1), 7),  # Increased from 5
+                ("BOTTOMPADDING", (0, 0), (-1, -1), 7),  # Increased from 5
             ]
         )
     )
@@ -826,13 +891,16 @@ def _trusted_sources(analysis_json: dict[str, Any], styles: dict[str, ParagraphS
         TableStyle(
             [
                 ("BACKGROUND", (0, 0), (-1, 0), PANEL_2),
+                ("FONTNAME", (0, 0), (-1, 0), FONT_SANS_BOLD),
+                ("FONTSIZE", (0, 0), (-1, 0), 9),
                 ("BOX", (0, 0), (-1, -1), 0.5, LINE),
-                ("INNERGRID", (0, 0), (-1, -1), 0.25, colors.HexColor("#EDF1F5")),
+                ("INNERGRID", (0, 0), (-1, -1), 0.25, colors.HexColor("#D9DFE8")),
                 ("VALIGN", (0, 0), (-1, -1), "TOP"),
-                ("LEFTPADDING", (0, 0), (-1, -1), 6),
-                ("RIGHTPADDING", (0, 0), (-1, -1), 6),
-                ("TOPPADDING", (0, 0), (-1, -1), 6),
-                ("BOTTOMPADDING", (0, 0), (-1, -1), 6),
+                ("NOSPLIT", (0, 0), (-1, 1)),
+                ("LEFTPADDING", (0, 0), (-1, -1), 8),  # Increased from 6
+                ("RIGHTPADDING", (0, 0), (-1, -1), 8),
+                ("TOPPADDING", (0, 0), (-1, -1), 8),  # Increased from 6
+                ("BOTTOMPADDING", (0, 0), (-1, -1), 8),  # Increased from 6
             ]
         )
     )
@@ -876,13 +944,13 @@ def _draw_footer(canvas, doc, notice: str) -> None:
     canvas.setStrokeColor(LINE)
     canvas.setLineWidth(0.4)
     canvas.line(doc.leftMargin, y + 8, width - doc.rightMargin, y + 8)
-    canvas.setFont("Helvetica", 7)
+    canvas.setFont(FONT_SANS, 7)
     canvas.setFillColor(MUTED)
     canvas.drawString(doc.leftMargin, y, "Expiry Notice: report links expire according to the configured retention policy.")
     canvas.drawRightString(width - doc.rightMargin, y, f"Page {doc.page}")
-    canvas.setFont("Helvetica-Bold", 7.2)
+    canvas.setFont(FONT_SANS_BOLD, 7.2)
     canvas.drawCentredString(width / 2, y + 10, "DeepShield Responsible-AI Notice")
-    canvas.setFont("Helvetica", 6.6)
+    canvas.setFont(FONT_SANS, 6.6)
     canvas.drawCentredString(width / 2, y + 1, notice[:128])
     canvas.restoreState()
 

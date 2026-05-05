@@ -40,3 +40,10 @@ export async function fetchMe() {
   const { data } = await api.get('/auth/me');
   return data;
 }
+
+export async function beginOAuth(provider, redirectTo = '/analyze', remember = true) {
+  const { data } = await api.get(`/auth/oauth/${provider}/start`, {
+    params: { redirect_to: redirectTo, remember: remember ? 1 : 0 },
+  });
+  return data;
+}

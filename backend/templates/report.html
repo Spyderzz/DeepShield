@@ -1,3 +1,27 @@
+<!--
+  ⚠️  DEPRECATED: HTML Report Template
+  
+  This template is no longer used. Report generation now uses ReportLab directly
+  from backend/services/report_service.py for better control over PDF rendering,
+  typography, tables, images, and hyperlinks.
+  
+  KEPT FOR REFERENCE: If future maintainers wish to refactor to weasyprint
+  (HTML → PDF via Cairo), this template provides the HTML contract. All styling,
+  sections, and data bindings are documented here.
+  
+  Current System (ReportLab):
+  - Pros: Pure Python, fast, reliable image/table handling, no external C deps
+  - Cons: API-driven (not designer-friendly)
+  
+  Future Option (weasyprint):
+  - Pros: Designer-friendly CSS, reuse this template, complex layouts easy
+  - Cons: Slower, requires Cairo/Pango system libs, heavier deployment
+  
+  Timeline: Keep this until weasyprint migration is planned (Phase TBD).
+  Last used: Never in production (scaffolded but ReportLab chosen instead)
+  Last updated: 2026-05-05
+-->
+
 <!DOCTYPE html>
 <html>
 <head>

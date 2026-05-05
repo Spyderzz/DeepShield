@@ -124,7 +124,7 @@ class Settings(BaseSettings):
 
     # File Upload
     MAX_UPLOAD_SIZE_MB: int = 100
-    UPLOAD_DIR: str = "./temp_uploads"
+    UPLOAD_DIR: str = "/data/uploads"
     ALLOWED_IMAGE_TYPES: list[str] = ["image/jpeg", "image/png", "image/webp"]
     ALLOWED_VIDEO_TYPES: list[str] = ["video/mp4", "video/avi", "video/mov", "video/webm"]
     FILE_RETENTION_SECONDS: int = 300
@@ -146,12 +146,13 @@ class Settings(BaseSettings):
     NEWS_API_BASE_URL: str = "https://newsdata.io/api/1/news"
 
     # Reports
-    REPORT_DIR: str = "./temp_reports"
+    REPORT_DIR: str = "/data/reports"
     REPORT_TTL_SECONDS: int = 3600  # 1h expiry
+    PUBLIC_APP_URL: str = ""
 
     # Phase 19 — dedup cache + object storage
     CACHE_TTL_DAYS: int = 30
-    MEDIA_ROOT: str = "./media"
+    MEDIA_ROOT: str = "/data/media"
     MEDIA_SIGNED_URL_TTL_SECONDS: int = 3600
 
     # LLM Explainability (Phase 12)
@@ -199,6 +200,10 @@ class Settings(BaseSettings):
     JWT_SECRET_KEY_GENERATED: bool = False
     JWT_ALGORITHM: str = "HS256"
     JWT_EXPIRATION_MINUTES: int = 1440
+    GOOGLE_CLIENT_ID: str = ""
+    GOOGLE_CLIENT_SECRET: str = ""
+    GITHUB_CLIENT_ID: str = ""
+    GITHUB_CLIENT_SECRET: str = ""
 
     @model_validator(mode="after")
     def ensure_jwt_secret(self):
