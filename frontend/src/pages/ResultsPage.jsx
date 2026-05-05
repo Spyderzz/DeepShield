@@ -286,30 +286,30 @@ function ResultsView({ result, id, accessToken }) {
 /* ==== verdict + ring ==== */
 function VerdictCard({ verdict, displayScore, color, llm: initialLlm, calibrationApplied, recordId }) {
   const isRealLlm = initialLlm && initialLlm.model_used !== 'auto-summary';
-  const [llm, setLlm] = useState(isRealLlm ? initialLlm : null);
-  const [loading, setLoading] = useState(!isRealLlm);
+  // Show whatever we have immediately — auto-summary or real LLM
+  const [llm, setLlm] = useState(initialLlm || null);
+  // upgrading = background fetch of real LLM (non-blocking — auto-summary is shown)
+  const [upgrading, setUpgrading] = useState(!isRealLlm && !!recordId);
   const [typedParagraph, setTypedParagraph] = useState('');
   const [typingIdx, setTypingIdx] = useState(0);
-  // Keep auto-summary as fallback
-  const autoSummary = initialLlm?.model_used === 'auto-summary' ? initialLlm : null;
 
-  // Fetch real LLM summary (Gemini → Groq → fallback)
+  // Background upgrade: fetch real LLM without blocking UI
   useEffect(() => {
     if (isRealLlm || !recordId) return;
-    setLoading(true);
     generateLLMSummary(recordId).then(data => {
       const summary = data.llm_summary;
-      if (summary?.paragraph && summary.model_used !== 'auto-summary') {
-        setLlm(summary);
-      } else if (summary?.paragraph) {
-        // Got auto-summary back from server — use as fallback
-        setLlm(summary);
+      if (summary?.paragraph) {
+        setLlm(prev => {
+          // Only upgrade if we got a real LLM response (not another auto-summary)
+          if (summary.model_used !== 'auto-summary') return summary;
+          // If server returned auto-summary and we already have one, keep current
+          return prev || summary;
+        });
       }
-      setLoading(false);
     }).catch(() => {
-      // Use the auto-summary as fallback if available
-      if (autoSummary) setLlm(autoSummary);
-      setLoading(false);
+      // auto-summary is already shown — nothing to do
+    }).finally(() => {
+      setUpgrading(false);
     });
   }, [isRealLlm, recordId]);  // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -328,8 +328,8 @@ function VerdictCard({ verdict, displayScore, color, llm: initialLlm, calibratio
     }
   }, [llm, typingIdx]);
 
-  const modelLabel = loading
-    ? 'Generating...'
+  const modelLabel = upgrading && (!llm || llm.model_used === 'auto-summary')
+    ? 'Auto-summary · upgrading…'
     : llm?.model_used === 'auto-summary'
       ? 'Auto-summary'
       : llm?.model_used || 'Pending';
@@ -351,13 +351,15 @@ function VerdictCard({ verdict, displayScore, color, llm: initialLlm, calibratio
       <div className="verdict-llm">
         <span className="eyebrow">Plain-English summary · {modelLabel}</span>
         <p>
-          {loading ? (
-            <span className="llm-generating">
-              <span className="llm-gen-icon">◎</span>
-              Generating LLM Summary — analyzing with Gemini & Groq<span className="typing-dots">...</span>
-            </span>
-          ) : llm?.paragraph ? (
-            typedParagraph + (typingIdx < llm.paragraph.length ? '█' : '')
+          {llm?.paragraph ? (
+            <>
+              {typedParagraph + (typingIdx < llm.paragraph.length ? '█' : '')}
+              {upgrading && typingIdx >= llm.paragraph.length && (
+                <span style={{ marginLeft: 6, fontSize: 11, color: 'var(--ds-muted)', fontFamily: 'var(--ff-mono)' }}>
+                  ◎ upgrading…
+                </span>
+              )}
+            </>
           ) : (
             `This media has a deepfake probability of ${displayScore}/100. Review the heatmap, EXIF metadata, and detailed breakdown below for the evidence behind this verdict.`
           )}

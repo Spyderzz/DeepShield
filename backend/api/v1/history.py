@@ -55,11 +55,11 @@ def _asset_sig(record_id: int, kind: str, exp: int, token: str | None = None) ->
     return hmac.new(settings.JWT_SECRET_KEY.encode("utf-8"), body.encode("utf-8"), hashlib.sha256).hexdigest()
 
 
-def _make_asset_url(record: AnalysisRecord, kind: str, token: str | None = None) -> str:
+def _make_asset_url(record_id: int, kind: str, token: str | None = None) -> str:
     ttl = max(60, int(settings.MEDIA_SIGNED_URL_TTL_SECONDS))
     exp = int(datetime.now().timestamp()) + ttl
-    sig = _asset_sig(record.id, kind, exp, token)
-    url = f"/api/v1/history/{record.id}/asset/{kind}?exp={exp}&sig={sig}"
+    sig = _asset_sig(record_id, kind, exp, token)
+    url = f"/api/v1/history/{record_id}/asset/{kind}?exp={exp}&sig={sig}"
     if token:
         url += f"&token={token}"
     return url
@@ -99,25 +99,23 @@ def _guard_media_path(path: Path | None) -> Path | None:
 
 
 def _rewrite_secure_urls(record: AnalysisRecord, payload: dict, token: str | None = None) -> dict:
-    payload["thumbnail_url"] = _make_asset_url(record, "thumbnail", token) if record.thumbnail_url else None
-    payload["media_path"] = _make_asset_url(record, "media", token) if record.media_path else None
+    payload["thumbnail_url"] = _make_asset_url(record.id, "thumbnail", token) if record.thumbnail_url else None
+    payload["media_path"] = _make_asset_url(record.id, "media", token) if record.media_path else None
 
     explainability = payload.get("explainability")
     if isinstance(explainability, dict):
         if explainability.get("heatmap_url"):
-            explainability["heatmap_url"] = _make_asset_url(record, "heatmap", token)
+            explainability["heatmap_url"] = _make_asset_url(record.id, "heatmap", token)
         if explainability.get("ela_url"):
-            explainability["ela_url"] = _make_asset_url(record, "ela", token)
+            explainability["ela_url"] = _make_asset_url(record.id, "ela", token)
         if explainability.get("boxes_url"):
-            explainability["boxes_url"] = _make_asset_url(record, "boxes", token)
+            explainability["boxes_url"] = _make_asset_url(record.id, "boxes", token)
     return payload
 
 
-def _history_text_preview(record: AnalysisRecord, limit: int = 260) -> str | None:
-    if record.media_type != "text":
-        return None
+def _text_preview_from_json(result_json: str, limit: int = 260) -> str | None:
     try:
-        payload = json.loads(record.result_json)
+        payload = json.loads(result_json)
     except Exception:
         return None
     explainability = payload.get("explainability")
@@ -130,17 +128,6 @@ def _history_text_preview(record: AnalysisRecord, limit: int = 260) -> str | Non
         return text
     return text[: limit - 3].rstrip() + "..."
 
-
-def _thumbnail_b64_from_record(r: AnalysisRecord) -> str | None:
-    """Extract inline thumbnail base64 from result_json if present."""
-    try:
-        payload = json.loads(r.result_json)
-        b64 = payload.get("thumbnail_b64")
-        if b64 and str(b64).startswith("data:image"):
-            return b64
-    except Exception:
-        pass
-    return None
 
 
 def _count_cache_hits(db: Session, user_id: int) -> int:
@@ -174,10 +161,39 @@ def list_history(
     user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ) -> HistoryListResponse:
-    q = db.query(AnalysisRecord).filter(AnalysisRecord.user_id == user.id)
-    total = q.count()
-    # Load result_json so we can extract thumbnail_b64
-    rows = q.order_by(AnalysisRecord.created_at.desc()).offset(offset).limit(limit).all()
+    # Project only lightweight columns — result_json is excluded because it can
+    # be hundreds of KB per row (full analysis JSON with embedded base64 images).
+    base_filter = AnalysisRecord.user_id == user.id
+    total = db.query(AnalysisRecord.id).filter(base_filter).count()
+
+    rows = (
+        db.query(
+            AnalysisRecord.id,
+            AnalysisRecord.media_type,
+            AnalysisRecord.verdict,
+            AnalysisRecord.authenticity_score,
+            AnalysisRecord.created_at,
+            AnalysisRecord.media_path,
+            AnalysisRecord.thumbnail_url,
+        )
+        .filter(base_filter)
+        .order_by(AnalysisRecord.created_at.desc())
+        .offset(offset)
+        .limit(limit)
+        .all()
+    )
+
+    # For text records only, fetch result_json in one batched query for text previews.
+    text_ids = [r.id for r in rows if r.media_type == "text"]
+    text_previews: dict[int, str | None] = {}
+    if text_ids:
+        for rec in (
+            db.query(AnalysisRecord.id, AnalysisRecord.result_json)
+            .filter(AnalysisRecord.id.in_(text_ids))
+            .all()
+        ):
+            text_previews[rec.id] = _text_preview_from_json(rec.result_json)
+
     items = [
         HistoryItem(
             id=r.id,
@@ -185,10 +201,10 @@ def list_history(
             verdict=r.verdict,
             authenticity_score=r.authenticity_score,
             created_at=r.created_at,
-            thumbnail_url=_make_asset_url(r, "thumbnail") if r.thumbnail_url else None,
-            thumbnail_b64=_thumbnail_b64_from_record(r),
-            media_path=_make_asset_url(r, "media") if r.media_path else None,
-            text_preview=_history_text_preview(r),
+            thumbnail_url=_make_asset_url(r.id, "thumbnail") if r.thumbnail_url else None,
+            thumbnail_b64=None,  # omitted from list — signed URL serves the thumbnail
+            media_path=_make_asset_url(r.id, "media") if r.media_path else None,
+            text_preview=text_previews.get(r.id),
         )
         for r in rows
     ]

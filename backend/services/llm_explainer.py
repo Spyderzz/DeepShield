@@ -233,10 +233,17 @@ class _GeminiProvider(_LLMProvider):
 
         self._client = genai.Client(api_key=settings.LLM_API_KEY)
         self.model = settings.LLM_MODEL
+        # Disable thinking for speed — 2.5-flash thinks by default which adds 8-15s latency
+        thinking_cfg = None
+        try:
+            thinking_cfg = types.ThinkingConfig(thinking_budget=0)
+        except Exception:
+            pass  # older SDK version without ThinkingConfig
         self._config = types.GenerateContentConfig(
             temperature=0.2,
             max_output_tokens=220,
             response_mime_type="application/json",
+            **({"thinking_config": thinking_cfg} if thinking_cfg is not None else {}),
         )
 
     def generate(self, prompt: str) -> str:
@@ -411,7 +418,7 @@ def generate_llm_summary(
 
     slim_payload = _build_llm_payload(payload)
 
-    prompt_body = json.dumps(slim_payload, indent=2, default=str, sort_keys=True)
+    prompt_body = json.dumps(slim_payload, separators=(",", ":"), default=str, sort_keys=True)
     prompt = _PROMPT_TEMPLATE.format(media_kind=media_kind, payload_json=prompt_body)
 
     # Content-hash cache — dedups "same analysis re-run" across users / record_ids
