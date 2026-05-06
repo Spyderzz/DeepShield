@@ -1,0 +1,9 @@
+{
+  "threshold": 0.7596627473831177,
+  "label_mapping": {
+    "fake": 0,
+    "real": 1
+  },
+  "image_size": 224,
+  "score_meaning": "score >= threshold predicts real; score < threshold predicts fake"
+}

@@ -39,6 +39,9 @@ class ModelLoader:
                     cls._instance._efficientnet_detector = None
                     cls._instance._ffpp_model = None
                     cls._instance._ffpp_processor = None
+                    cls._instance._densenet_model = None
+                    cls._instance._densenet_meta = None
+                    cls._instance._densenet_unavailable = False
         return cls._instance
 
     @classmethod
@@ -321,6 +324,78 @@ class ModelLoader:
             logger.warning(f"FFPP ViT load failed (continuing without it): {e}")
             return None
 
+    # ---------- DenseNet121 face-GAN specialist ----------
+    def load_densenet(self) -> Optional[Tuple[object, dict]]:
+        """Lazy-load DenseNet121 PyTorch checkpoint (TF-free).
+
+        Returns (model, meta_dict) or None when disabled / file missing.
+        meta_dict contains threshold, image_size, normalize_mean/std.
+        """
+        if not settings.DENSENET_ENABLED:
+            return None
+        if self._densenet_unavailable:
+            return None
+        if self._densenet_model is not None:
+            return self._densenet_model, self._densenet_meta
+
+        import json
+        import torch
+        from pathlib import Path
+
+        repo_root = Path(__file__).resolve().parent.parent.parent
+
+        def _resolve(rel: str) -> Path:
+            p = Path(rel)
+            return p if p.is_absolute() else (repo_root / p).resolve()
+
+        pt_path   = _resolve(settings.DENSENET_MODEL_PATH)
+        meta_path = _resolve(settings.DENSENET_META_PATH)
+
+        # HF Space fallback when local files are missing
+        if not pt_path.exists() or not meta_path.exists():
+            repo_id = settings.DENSENET_HF_REPO_ID.strip()
+            if repo_id:
+                try:
+                    from huggingface_hub import hf_hub_download
+                    logger.info(f"DenseNet checkpoint not found locally — downloading from {repo_id}")
+                    pt_path = Path(hf_hub_download(
+                        repo_id=repo_id, repo_type="space",
+                        filename="trained_models/densenet121_faces.pt",
+                        revision=settings.DENSENET_HF_REVISION,
+                    ))
+                    meta_path = Path(hf_hub_download(
+                        repo_id=repo_id, repo_type="space",
+                        filename="trained_models/densenet121_faces_meta.json",
+                        revision=settings.DENSENET_HF_REVISION,
+                    ))
+                except Exception as e:
+                    logger.warning(f"DenseNet HF download failed: {e} — skipping")
+                    self._densenet_unavailable = True
+                    return None
+
+        if not pt_path.exists():
+            logger.warning(f"DenseNet checkpoint not found at {pt_path} — skipping")
+            self._densenet_unavailable = True
+            return None
+
+        try:
+            from services.densenet_service import DenseNetFaces
+            meta = json.loads(meta_path.read_text(encoding="utf-8"))
+            logger.info(f"Loading DenseNet checkpoint from {pt_path}")
+            ckpt  = torch.load(str(pt_path), map_location=settings.DEVICE, weights_only=True)
+            model = DenseNetFaces()
+            model.load_state_dict(ckpt["model_state_dict"])
+            model.to(settings.DEVICE)
+            model.eval()
+            self._densenet_model = model
+            self._densenet_meta  = meta
+            logger.info("DenseNet121 face-GAN model loaded")
+            return self._densenet_model, self._densenet_meta
+        except Exception as e:
+            logger.warning(f"DenseNet load failed (continuing without it): {e}")
+            self._densenet_unavailable = True
+            return None
+
     # ---------- Preload ----------
     def preload_phase1(self) -> None:
         """Preload all core models to prevent lazy-loading delays during first analysis."""
@@ -330,6 +405,7 @@ class ModelLoader:
         self.load_face_detector()
         self.load_efficientnet()
         self.load_ffpp_model()
+        self.load_densenet()
         self.load_ocr_engine()
         self.load_text_model()
         self.load_multilang_text_model()

@@ -206,16 +206,73 @@ def _cam_to_full_image(
     return cam_full, orig_np
 
 
+def _compute_gradcam_pp_densenet(
+    pil_img: Image.Image,
+) -> tuple[np.ndarray, str]:
+    """Grad-CAM++ on the DenseNet121 face-GAN model.
+
+    Target signal = fake probability = sigmoid(-logit), so we maximise the
+    negated logit. Target layer = features.norm5 (final BN after last DenseBlock,
+    7×7×1024 activation map). Returns (grayscale_cam, source_tag).
+    """
+    loader = get_model_loader()
+    result = loader.load_densenet()
+    if result is None:
+        raise RuntimeError("DenseNet model unavailable")
+    model, meta = result
+
+    from services.densenet_service import _preprocess
+    image_size = int(meta.get("image_size", 224))
+    input_tensor = _preprocess(pil_img, image_size, settings.DEVICE)
+
+    model.eval()
+    for p in model.parameters():
+        p.requires_grad_(True)
+
+    # Target = last BN after all DenseBlocks (equivalent to conv5_block16_concat in Keras)
+    target_layers = [model.features.norm5]
+
+    # Negate logit so Grad-CAM gradients flow toward the FAKE class
+    # (model output = real_probability logit; higher = more real)
+    class _NegatedLogitWrapper(torch.nn.Module):
+        def __init__(self, m: torch.nn.Module) -> None:
+            super().__init__()
+            self.m = m
+
+        def forward(self, x: torch.Tensor) -> torch.Tensor:  # type: ignore[override]
+            return -self.m(x)   # negative logit → gradient points at fake evidence
+
+    wrapped = _NegatedLogitWrapper(model)
+
+    with GradCAMPlusPlus(model=wrapped, target_layers=target_layers) as cam:
+        grayscale_cam = cam(input_tensor=input_tensor, targets=None)[0]  # (H,W) in [0,1]
+
+    return grayscale_cam, "gradcam++_densenet"
+
+
 def generate_heatmap_base64(
     pil_img: Image.Image,
     target_class_idx: Optional[int] = None,
-    model_family: Literal["vit", "efficientnet"] = "vit",
+    model_family: Literal["vit", "efficientnet", "densenet"] = "vit",
 ) -> tuple[str, str]:
     """Produce a base64 data-URL PNG of the Grad-CAM++ overlay at original image resolution.
 
     Returns (base64_png, heatmap_source).
     """
-    if model_family == "efficientnet":
+    if model_family == "densenet":
+        try:
+            grayscale_cam, source = _compute_gradcam_pp_densenet(pil_img)
+            cam_full, orig_np = _cam_to_full_image(grayscale_cam, pil_img, None)
+        except Exception as e:
+            logger.warning(f"DenseNet heatmap failed ({e}) — falling back to ViT Grad-CAM++")
+            try:
+                grayscale_cam, _ = _compute_gradcam_pp(pil_img, target_class_idx)
+                cam_full, orig_np = _cam_to_full_image(grayscale_cam, pil_img, None)
+                source = "vit_fallback"
+            except Exception as fe:
+                logger.warning(f"ViT fallback heatmap also failed: {fe}")
+                return "", "none"
+    elif model_family == "efficientnet":
         try:
             grayscale_cam, face_bbox, source = _compute_gradcam_pp_efficientnet(pil_img)
             cam_full, orig_np = _cam_to_full_image(grayscale_cam, pil_img, face_bbox)

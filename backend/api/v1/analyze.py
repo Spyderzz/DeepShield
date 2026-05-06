@@ -310,7 +310,17 @@ async def analyze_image(
     indicators = scan_artifacts(pil, raw)
     stages.append("artifact_scanning")
 
-    model_family = "efficientnet" if settings.ENSEMBLE_MODE else "vit"
+    # Heatmap dispatch: DenseNet leads for face still-images (GAN portraits),
+    # EfficientNet for video frames (face-swap / DFDC), ViT for no-face / fallback.
+    from services.image_service import _has_face_for_routing, _looks_like_video_frame
+    _face_for_heatmap    = _has_face_for_routing(pil_vis)
+    _videoframe_heatmap  = _looks_like_video_frame(pil_vis)
+    if _face_for_heatmap and settings.DENSENET_ENABLED and not _videoframe_heatmap:
+        model_family = "densenet"
+    elif settings.ENSEMBLE_MODE and (_face_for_heatmap or _videoframe_heatmap):
+        model_family = "efficientnet"
+    else:
+        model_family = "vit"
 
     # ── Run heatmap + ELA + boxes + EXIF in parallel ──
     def _run_heatmap():

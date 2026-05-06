@@ -116,6 +116,26 @@ def _crop_face_for_face_model(pil_img: Image.Image) -> Image.Image:
     return pil_img
 
 
+def _classify_densenet(pil_img: Image.Image) -> Optional[Tuple[float, dict[str, float]]]:
+    """Run DenseNet121 face-GAN classifier. Returns (fake_prob, all_scores) or None."""
+    loader = get_model_loader()
+    result = loader.load_densenet()
+    if result is None:
+        return None
+    model, meta = result
+    try:
+        from services.densenet_service import detect_image
+        out = detect_image(pil_img, model, meta, device=settings.DEVICE)
+        scores = {
+            "densenet_real": out["score_real"],
+            "densenet_fake": out["fake_prob"],
+        }
+        return out["fake_prob"], scores
+    except Exception as e:
+        logger.warning(f"DenseNet inference failed: {e}")
+        return None
+
+
 def _classify_ffpp(pil_img: Image.Image) -> Optional[Tuple[float, dict[str, float]]]:
     """Run the FFPP-fine-tuned ViT (Phase 11.3). Returns (fake_prob, all_scores) or None."""
     loader = get_model_loader()
@@ -351,6 +371,15 @@ def classify_image(
         models_used.append("ffpp-vit-local")
         scores_out.update({f"ffpp_{k}": v for k, v in ffpp_scores.items()})
 
+    # DenseNet121 inference (face-GAN specialist — face-present path only).
+    densenet_fake_prob: Optional[float] = None
+    if settings.DENSENET_ENABLED and face_present_for_route:
+        dn_res = _classify_densenet(pil_img)
+        if dn_res is not None:
+            densenet_fake_prob, dn_scores = dn_res
+            models_used.append("densenet121-faces")
+            scores_out.update(dn_scores)
+
     if not settings.ENSEMBLE_MODE:
         if ffpp_fake_prob is not None:
             combined = 0.4 * vit_fake_prob + 0.6 * ffpp_fake_prob
@@ -380,23 +409,43 @@ def classify_image(
             scores_out["efficientnet_real"] = 1.0 - eff_fake_prob
             scores_out["efficientnet_calibrator_applied"] = 1.0 if eff_result.get("calibrator_applied") else 0.0
 
-    # ── Face-stack composite (FFPP + ViT + EffNet) ──
-    if face_present and eff_fake_prob is not None and ffpp_fake_prob is not None:
-        w_ffpp, w_vit, w_eff = settings.FFPP_WEIGHT_FACE, settings.VIT_WEIGHT_FACE, settings.EFFNET_WEIGHT_FACE
-        total = w_ffpp + w_vit + w_eff
-        face_stack_prob = (w_ffpp * ffpp_fake_prob + w_vit * vit_fake_prob + w_eff * eff_fake_prob) / total
-        face_stack_method = "ffpp_vit_eff"
-    elif face_present and ffpp_fake_prob is not None and eff_fake_prob is None:
-        w_ffpp, w_vit = settings.FFPP_WEIGHT_FACE, settings.VIT_WEIGHT_FACE
-        total = w_ffpp + w_vit
-        face_stack_prob = (w_ffpp * ffpp_fake_prob + w_vit * vit_fake_prob) / total
-        face_stack_method = "ffpp_vit"
-    elif face_present and eff_fake_prob is not None:
-        face_stack_prob = 0.5 * vit_fake_prob + 0.5 * eff_fake_prob
-        face_stack_method = "vit_eff"
-    else:
-        face_stack_prob = vit_fake_prob
-        face_stack_method = "vit_only"
+    # ── Face-stack composite (DenseNet + FFPP + ViT + EffNet) ──────────────
+    # Video-frame path shifts weight to FFPP/EffNet; still-image path gives
+    # DenseNet the lead (trained specifically on GAN still-face portraits).
+    is_video_frame_early = _looks_like_video_frame(pil_img)
+
+    def _weighted(probs: dict[str, float]) -> float:
+        total = sum(probs.values())
+        return sum(v * w for v, w in probs.items()) / total if total else 0.0
+
+    available: dict[str, float] = {}
+    if densenet_fake_prob is not None:
+        w_dn = settings.DENSENET_VIDEO_WEIGHT if is_video_frame_early else settings.DENSENET_WEIGHT_FACE
+        available["densenet"] = w_dn
+    if ffpp_fake_prob is not None:
+        w_ffpp = settings.VIDEO_FFPP_WEIGHT_FACE if is_video_frame_early else settings.FFPP_WEIGHT_FACE
+        available["ffpp"] = w_ffpp
+    if eff_fake_prob is not None and face_present:
+        w_eff = settings.VIDEO_EFFNET_WEIGHT_FACE if is_video_frame_early else settings.EFFNET_WEIGHT_FACE
+        available["eff"] = w_eff
+    # ViT always present
+    w_vit = settings.VIDEO_VIT_WEIGHT_FACE if is_video_frame_early else settings.VIT_WEIGHT_FACE
+    available["vit"] = w_vit
+
+    prob_map: dict[str, float] = {}
+    if "densenet" in available:
+        prob_map["densenet"] = densenet_fake_prob * available["densenet"]
+    if "ffpp" in available:
+        prob_map["ffpp"] = ffpp_fake_prob * available["ffpp"]
+    if "eff" in available:
+        prob_map["eff"] = eff_fake_prob * available["eff"]
+    prob_map["vit"] = vit_fake_prob * available["vit"]
+
+    total_w = sum(available.values())
+    face_stack_prob = sum(prob_map.values()) / total_w if total_w else vit_fake_prob
+
+    active = [k for k in ["densenet", "ffpp", "eff", "vit"] if k in available]
+    face_stack_method = "_".join(active)
 
     # ── Phase A2/A3: unified evidence fusion (face-stack + general + forensics + EXIF + VLM) ──
     # Video-frame detection: face-swap deepfakes come from video. The AI-image

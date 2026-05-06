@@ -202,16 +202,30 @@ class Settings(BaseSettings):
     FFPP_MODEL_REVISION: str = "main"
     FFPP_BASE_PROCESSOR_ID: str = "google/vit-base-patch16-224-in21k"
     FFPP_ENABLED: bool = True
-    # Ensemble weights — FFPP is trained on a better (face-specific FFPP c40) dataset
-    # and is weighted more heavily when a face is present. When no face is detected,
-    # we still blend it but lean on the generic ViT since FFPP only saw face crops.
-    # Face-stack internal weights (sum = 1.0). These compose the face-swap
-    # ensemble before it is fused with non-face evidence.
-    FFPP_WEIGHT_FACE: float = 0.55
-    VIT_WEIGHT_FACE: float = 0.20
-    EFFNET_WEIGHT_FACE: float = 0.25
+    # DenseNet121 face-GAN specialist (in-house trained on 140k Kaggle dataset).
+    # Loaded from a TF-free PyTorch checkpoint converted via convert_densenet_keras_to_pt.py.
+    DENSENET_ENABLED: bool = True
+    # Path to .pt checkpoint, resolved relative to repo root (or absolute).
+    DENSENET_MODEL_PATH: str = "backend/trained_models/densenet121_faces.pt"
+    DENSENET_META_PATH:  str = "backend/trained_models/densenet121_faces_meta.json"
+    # HF Space fallback when local checkpoint is absent.
+    DENSENET_HF_REPO_ID:  str = "ar07xd/deepshield"
+    DENSENET_HF_REVISION: str = "main"
+
+    # Ensemble weights — DenseNet leads because it is trained on still-image GAN
+    # faces (the dominant upload type). FFPP / EffNet are stronger on video frames.
+    # Face-stack internal weights (sum = 1.0).
+    DENSENET_WEIGHT_FACE: float = 0.45
+    FFPP_WEIGHT_FACE:     float = 0.25
+    VIT_WEIGHT_FACE:      float = 0.15
+    EFFNET_WEIGHT_FACE:   float = 0.15
+    # Video-frame path: FFPP leads since FFPP is trained on FF++ video frames.
+    DENSENET_VIDEO_WEIGHT: float = 0.10
+    VIDEO_FFPP_WEIGHT_FACE: float = 0.50
+    VIDEO_EFFNET_WEIGHT_FACE: float = 0.30
+    VIDEO_VIT_WEIGHT_FACE: float = 0.10
     FFPP_WEIGHT_NOFACE: float = 0.35
-    VIT_WEIGHT_NOFACE: float = 0.65
+    VIT_WEIGHT_NOFACE:  float = 0.65
 
     # Face-present unified evidence weights (Phase A2/A3).
     # face_stack = composite of FFPP+ViT+EffNet (all face-swap models).

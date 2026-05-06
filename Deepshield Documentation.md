@@ -69,7 +69,8 @@ DeepShield addresses all three failures through a multimodal unified pipeline, e
 |---|---|
 | Five-modality unified pipeline | Image, video, text, screenshot, and audio share one API contract and results schema |
 | Seven-layer explainability | Grad-CAM++, ELA, EXIF trust scoring, artifact indicators, VLM 6-component breakdown, LLM narrative, trusted source verification |
-| Ensemble + isotonic calibration | EfficientNetAutoAttB4 (DFDC-trained) + ViT (FFPP fine-tuned) averaged and calibrated via isotonic regression |
+| In-house DenseNet121 GAN specialist | DenseNet121 trained in-house on 140k real/fake faces (StyleGAN portraits) — fills the face-GAN gap left by FFPP/DFDC face-swap models. 89.9% test accuracy, AUC 0.9620, deployed as TF-free PyTorch checkpoint |
+| Ensemble + isotonic calibration | DenseNet121 (GAN stills, leads at 45%) + FFPP-ViT (video frames, 25%) + EfficientNetAutoAttB4 (DFDC, 15%) + generic ViT (15%) — weights auto-invert for video-frame inputs |
 | India-focused truth override | NewsData.io + cosine similarity with `all-MiniLM-L6-v2` suppresses fake probability when trusted Indian/international sources corroborate the claim |
 | SHA-256 dedup cache | Identical file → database lookup → 50ms response with zero model inference |
 | Async job queue | Long video jobs return a `job_id`; frontend polls `/jobs/{id}` every 800ms for real backend-sourced progress |
@@ -491,7 +492,8 @@ Idempotency check → generate → save to `temp_reports/deepshield_report_{id}.
 3. **General AI detection (unconditional):** `classify_general_image()` runs the dual-head ensemble (general + diffusion detectors, blended `0.45/0.55`) → `fake_prob_general`.
 4. **Face detection:** BlazeFace → if 0 faces, MediaPipe FaceMesh fallback.
 5. **Face-present path (unified evidence fusion):**
-   - Face-stack: FFPP-ViT + generic ViT + EfficientNet → `fake_prob_face_stack`.
+   - Face-stack (4-model): DenseNet121 (w=0.45 stills / 0.10 video) + FFPP-ViT (w=0.25 / 0.50) + EfficientNet (w=0.15 / 0.30) + generic ViT (w=0.15 / 0.10) → `fake_prob_face_stack`. Weights renormalize over available models; video-frame detection shifts weight to FFPP/EffNet.
+   - DenseNet fake_prob calibration: piecewise-linear anchored at Youden's J threshold (0.7597): `score=threshold → 0.5`, `score=1 → 0`, `score=0 → 1`.
    - Fuse five signals: `face_stack × 0.40 + general × 0.40 + forensics × 0.10 + exif × 0.05 + vlm × 0.05` (video-frame weights if detected: face_stack × 0.70, general × 0.15).
    - Hard gating: if `general ≥ 0.80` or GAN artifact `≥ 0.70`, floor `fake_prob` to 0.50.
 6. **No-face path:** `general × 0.60 + forensics × 0.20 + exif × 0.10 + vlm × 0.10`, then hard gating.
@@ -1226,9 +1228,10 @@ Raw media files are not publicly accessible. The `StaticFiles` mount that previo
 
 | Model | Architecture | Training Data | Source | RAM | Role |
 |---|---|---|---|---|---|
-| FFPP C40 fine-tuned ViT | ViT-base-patch16-224 | FaceForensics++ C40 | `trained_models/` | ~350 MB | Face-stack classifier (FFPP component) |
-| `EfficientNetAutoAttB4_DFDC` | EfficientNet-B4 + Auto-Attention | DFDC | ICPR2020 weight URL | ~75 MB | Face-stack classifier (EfficientNet component) |
-| `prithivMLmods/Deep-Fake-Detector-v2-Model` | ViT-base | Mixed deepfakes | HuggingFace Hub | ~350 MB | Generic ViT (face-stack component) |
+| DenseNet121-Faces (**in-house**) | DenseNet121 + custom head (sigmoid) | 140k Real-vs-Fake Kaggle (StyleGAN portraits) | `trained_models/densenet121_faces.pt` (TF-free PyTorch) | ~45 MB | Face-stack lead (w=0.45 stills, 0.10 video) — GAN-portrait specialist |
+| FFPP C40 fine-tuned ViT | ViT-base-patch16-224 | FaceForensics++ C40 | `trained_models/` | ~350 MB | Face-stack (w=0.25 stills, 0.50 video) — face-swap/video specialist |
+| `EfficientNetAutoAttB4_DFDC` | EfficientNet-B4 + Auto-Attention | DFDC | ICPR2020 weight URL | ~75 MB | Face-stack (w=0.15 stills, 0.30 video) — DFDC face-manipulation |
+| `prithivMLmods/Deep-Fake-Detector-v2-Model` | ViT-base | Mixed deepfakes | HuggingFace Hub | ~350 MB | Generic ViT (w=0.15 stills, 0.10 video) |
 | `umm-maybe/AI-image-detector` | ViT-based | AI-generated images | HuggingFace Hub | ~350 MB | General AI-image head (weight 0.45 in dual-head blend) |
 | `haywoodsloan/ai-image-detector-deploy` | ViT-based | Diffusion/GAN outputs | HuggingFace Hub | ~350 MB | Diffusion-specialized AI-image head (weight 0.55 in dual-head blend) |
 | `jy46604790/Fake-News-Bert-Detect` | BERT-base | Mixed news | HuggingFace Hub | ~250 MB | Text classifier (English) |
@@ -1240,11 +1243,11 @@ Raw media files are not publicly accessible. The `StaticFiles` mount that previo
 | WavLM / wav2vec2 | Transformer audio | ASVspoof 2019 | HuggingFace Hub | ~300 MB | Audio deepfake classifier |
 | `IsotonicRegression` | Non-parametric | FFPP C40 val split | `calibrator.pkl` | <1 MB | EfficientNet confidence calibration |
 
-**Total preloaded RAM:** ~2–3 GB (two AI-image heads added). Minimum recommended deployment: 4 GB.
+**Total preloaded RAM:** ~2.1–3.1 GB (DenseNet121 adds ~45 MB, no TF runtime). Minimum recommended deployment: 4 GB.
 
 ### 10.2 Training vs. Inference Separation
 
-DeepShield is inference-only in production. No training occurs at request time. The FFPP C40 ViT was fine-tuned offline on Google Colab. The isotonic calibrator was fitted offline via `scripts/fit_calibrator.py`. EfficientNetAutoAttB4 uses pretrained ICPR2020 weights loaded via `torch.utils.model_zoo.load_url(check_hash=False)`.
+DeepShield is inference-only in production. No training occurs at request time. The **DenseNet121** was trained in-house on Google Colab T4 using `FakeFaceDetection_DenseNet.ipynb` (see §10.8). It is converted to a TF-free PyTorch checkpoint via `backend/scripts/convert_densenet_keras_to_pt.py` (runs once; no TensorFlow needed at runtime). The FFPP C40 ViT was fine-tuned offline on Google Colab. The isotonic calibrator was fitted offline via `scripts/fit_calibrator.py`. EfficientNetAutoAttB4 uses pretrained ICPR2020 weights loaded via `torch.utils.model_zoo.load_url(check_hash=False)`.
 
 ### 10.3 Ensemble Inference — Image
 
@@ -1255,12 +1258,22 @@ Dual-head blend: `general_fake_prob = general_head * 0.45 + diffusion_head * 0.5
 BlazeFace primary → MediaPipe FaceMesh fallback. If neither detects a face, routes to the no-face path.
 
 **Step 3a — Face-present path (five-signal unified fusion):**
-- Face-stack composite: FFPP-ViT (`FFPP_WEIGHT_FACE=0.55`) + generic ViT (`VIT_WEIGHT_FACE=0.20`) + EfficientNet (`EFFNET_WEIGHT_FACE=0.25`). EfficientNet: BlazeFace face crop → `isplutils.get_transformer()` → `_to_tensor()` → `sigmoid(logit)` → `_calibrate()`. Isotonic calibration applied here only.
+- **4-model face-stack composite** (weights renormalize over available models):
+
+  | Model | Still-image weight | Video-frame weight | Specialty |
+  |---|---|---|---|
+  | DenseNet121-Faces | **0.45** | 0.10 | GAN portraits (StyleGAN/SG2/SG3) |
+  | FFPP-ViT | 0.25 | **0.50** | FaceForensics++ face-swap, video frames |
+  | EfficientNetAutoAttB4 | 0.15 | 0.30 | DFDC face-manipulation |
+  | Generic ViT | 0.15 | 0.10 | General mixed deepfakes |
+
+- DenseNet fake_prob mapping: piecewise-linear calibration with threshold 0.7597 as midpoint: `score≥threshold → 0.5*(1-score)/(1-threshold)`, else `0.5 + 0.5*(threshold-score)/threshold`. Anchors: score=1→0, score=threshold→0.5, score=0→1.
+- EfficientNet: BlazeFace face crop → `isplutils.get_transformer()` → `_to_tensor()` → `sigmoid(logit)` → `_calibrate()` (isotonic regression, fitted on FFPP C40 val split).
 - Five signals fused: `fake_prob = face_stack × 0.40 + general × 0.40 + forensics × 0.10 + exif × 0.05 + vlm × 0.05`.
-- Video-frame detection overrides face-present weights to face_stack=0.70 / general=0.15 / forensics=0.10 / exif=0.05; VLM retains VLM_WEIGHT_FACE=0.05.
+- Video-frame detection overrides outer fusion weights to face_stack=0.70 / general=0.15 / forensics=0.10 / exif=0.05; VLM retains VLM_WEIGHT_FACE=0.05.
 
 **Step 3b — No-face path:**
-`fake_prob = general × 0.60 + forensics × 0.20 + exif × 0.10 + vlm × 0.10`.
+DenseNet skipped (face-only model). `fake_prob = general × 0.60 + forensics × 0.20 + exif × 0.10 + vlm × 0.10`.
 
 **Step 4 — Hard gating (both paths):**
 If `general ≥ 0.80` OR any GAN artifact indicator `≥ 0.70`: floor `fake_prob = max(fake_prob, 0.50)`. `gating_applied` records which condition fired.
@@ -1277,9 +1290,19 @@ If `general ≥ 0.80` OR any GAN artifact indicator `≥ 0.70`: floor `fake_prob
 
 ### 10.5 Grad-CAM++ Architecture Dispatch
 
-ViT path: `_HFLogitsWrapper` exposes raw logits; `_vit_reshape_transform` drops CLS token, reshapes 196 tokens → 14×14 grid; target layer `model.vit.encoder.layer[-1].layernorm_before`.
+Heatmap family is chosen per-request based on input characteristics:
 
-EfficientNet path: AutoAttB4's built-in attention map is primary (`heatmap_source="attention"`); `GradCAMPlusPlus` on `model.efficientnet._blocks[-1]` as fallback. `heatmap_source` field in response distinguishes which method was used, and is displayed as a chip in the `HeatmapOverlay` component.
+| Condition | Family | `heatmap_source` chip |
+|---|---|---|
+| Face present AND not video-frame AND DenseNet enabled | `densenet` | `gradcam++_densenet` |
+| Face present OR video-frame (ENSEMBLE_MODE) | `efficientnet` | `gradcam++` or `attention` |
+| No face / fallback | `vit` | `gradcam++` |
+
+**DenseNet path (`heatmap_source="gradcam++_densenet"`):** Target layer = `model.features.norm5` (final BN after last DenseBlock, 7×7×1024). Target signal = negated logit (`-real_prob_logit`) so Grad-CAM++ gradients point at fake-evidence regions. Full-image coverage (no face-crop mask — the training data is already face-centered). Uses `pytorch_grad_cam.GradCAMPlusPlus` with `_NegatedLogitWrapper`. Falls back to ViT path on failure.
+
+**ViT path:** `_HFLogitsWrapper` exposes raw logits; `_vit_reshape_transform` drops CLS token, reshapes 196 tokens → 14×14 grid; target layers = last 3 encoder layers averaged (smoother maps).
+
+**EfficientNet path:** `GradCAMPlusPlus` on `model.efficientnet._blocks[-1]`; face crop placed at its detected bbox on a zero-activation background. `heatmap_source` field in response is displayed as a chip in the `HeatmapOverlay` component.
 
 ### 10.6 Truth-Override Mechanism
 
@@ -1289,11 +1312,43 @@ EfficientNet path: AutoAttB4's built-in attention map is primary (`heatmap_sourc
 
 | Media Type | Cache Miss | Cache Hit | Bottleneck |
 |---|---|---|---|
-| Image | 2–4 seconds | ~50 ms | ViT + EfficientNet + heatmap |
+| Image | 2–4 seconds | ~50 ms | ViT + EfficientNet + DenseNet + heatmap |
 | Video (30s clip) | 20–45 seconds | ~50 ms | Frame extraction + 16× ensemble |
 | Text | 0.2–0.5 seconds | ~50 ms | BERT forward |
 | Screenshot | 1.5–3 seconds | ~50 ms | EasyOCR + BERT |
 | Audio | 3–8 seconds | ~50 ms | ffmpeg + audio classifier |
+
+---
+
+### 10.8 Local Training — DenseNet121 Face-GAN Specialist
+
+The DenseNet121 model is the **only model in the DeepShield stack trained in-house** by the project team.
+
+**Training notebook:** `FakeFaceDetection_DenseNet.ipynb` (Google Colab T4 or local RTX 1650 Ti). Optimized from the baseline Kaggle kernel `fake-face-detection-with-keras-accuracy-0-987.ipynb`.
+
+**Dataset:** `xhlulu/140k-real-and-fake-faces` (Kaggle). Real: Flickr portraits. Fake: StyleGAN-generated faces. Sampled subset: 25k real + 25k fake (train), 5k+5k (val), 2.5k+2.5k (test) at 224×224.
+
+**Architecture:**
+- Backbone: `tf.keras.applications.DenseNet121(weights="imagenet")`, input 224×224×3, `densenet.preprocess_input` (ImageNet mean/std, mode='torch').
+- Head: `GlobalAvgPool2D` → `Dropout(0.4)` → `Dense(256, relu)` → `BatchNormalization` → `Dropout(0.3)` → `Dense(1, sigmoid)`. Output = `real_probability` ∈ [0,1].
+
+**Two-phase training schedule:**
+1. **Warmup (5 epochs, lr=3e-4):** Backbone frozen, head-only training. Callback: `ModelCheckpoint` by val_AUC + `EarlyStopping(patience=2)` + `ReduceLROnPlateau`.
+2. **Fine-tune (5 epochs, lr=1e-5):** Last 50 backbone layers unfrozen; BatchNorm layers remain frozen (moving stats stability). `Adam` optimizer.
+
+**Threshold selection:** Youden's J statistic (argmax(TPR−FPR)) on validation ROC curve → **threshold = 0.7597** (score ≥ 0.7597 → Real). Saved to `deepfake_densenet121_threshold.json`.
+
+**Results:**
+| Metric | Value |
+|---|---|
+| Test Accuracy | **89.92%** |
+| ROC AUC | **0.9620** |
+| Precision (Fake) | 0.8926 |
+| Recall (Real) | 0.8908 |
+
+**Runtime deployment:** `.keras` checkpoint converted to TF-free PyTorch `.pt` via `backend/scripts/convert_densenet_keras_to_pt.py` (uses only `h5py`, `numpy`, `torch`, `torchvision`). Weights transferred layer-by-layer via config-order traversal. Parity verified within 1e-4 of original Keras output. Production load: 45 MB PyTorch checkpoint, no TensorFlow dependency.
+
+**Colab persistence:** Training state saved to `training_state.json` (stage, epochs completed, checkpoint paths). If the Colab runtime disconnects, the notebook remounts Drive, loads the latest checkpoint, and resumes from the last completed epoch.
 
 ---
 
