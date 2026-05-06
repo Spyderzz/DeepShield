@@ -1,14 +1,20 @@
 from __future__ import annotations
 
-from typing import Tuple
+import math
+from typing import Optional, Tuple
 
 TRUST_SCALE = [
     (0, 20, "Very Likely Fake", "critical"),
     (21, 40, "Likely Fake", "danger"),
-    (41, 60, "Possibly Manipulated", "warning"),
-    (61, 80, "Likely Real", "positive"),
-    (81, 100, "Very Likely Real", "safe"),
+    (41, 55, "Possibly Manipulated", "warning"),
+    (56, 69, "Uncertain — Needs Verification", "warning"),
+    (70, 88, "Likely Real", "positive"),
+    (89, 100, "Very Likely Real", "safe"),
 ]
+
+# Score range for forced disagreement clamp
+UNCERTAIN_SCORE_LO = 56
+UNCERTAIN_SCORE_HI = 69
 
 
 def _validate_weight_total(weights: list[float], context: str) -> None:
@@ -76,6 +82,50 @@ def compute_video_authenticity_score(
     score = int(round(max(0.0, min(100.0, combined))))
     label, severity = get_verdict_label(score)
     return score, label, severity
+
+
+DISAGREEMENT_THRESHOLD = 0.25
+
+
+def compute_signal_disagreement(components: dict[str, float]) -> Optional[float]:
+    """Compute stdev of the primary evidence signals.
+
+    Only considers signals that carry real model opinion (excludes exif/vlm
+    which are weaker modifiers). Returns None when fewer than 2 signals present.
+    """
+    primary_keys = {"face_stack", "general", "forensics"}
+    values = [v for k, v in components.items() if k in primary_keys]
+    if len(values) < 2:
+        return None
+    mean = sum(values) / len(values)
+    variance = sum((v - mean) ** 2 for v in values) / len(values)
+    return math.sqrt(variance)
+
+
+def maybe_clamp_to_uncertain(score: int, components: dict[str, float]) -> Tuple[int, Optional[str]]:
+    """If primary signals disagree significantly, clamp score into the Uncertain band.
+
+    Returns (final_score, disagreement_reason) where reason is None when no
+    clamp was applied.
+    """
+    stdev = compute_signal_disagreement(components)
+    if stdev is None or stdev < DISAGREEMENT_THRESHOLD:
+        return score, None
+
+    # Only clamp scores that would otherwise land in a confident verdict
+    # (Very Likely Fake is still kept — if everything except one signal says
+    # fake, the anomaly is informational but doesn't override).
+    if score > UNCERTAIN_SCORE_HI:
+        clamped = UNCERTAIN_SCORE_HI
+    elif score < UNCERTAIN_SCORE_LO and score > 20:
+        clamped = UNCERTAIN_SCORE_LO
+    else:
+        return score, None
+
+    signal_summary = ", ".join(f"{k}={v:.2f}" for k, v in components.items()
+                               if k in {"face_stack", "general", "forensics"})
+    reason = f"signal_disagreement(stdev={stdev:.2f}; {signal_summary})"
+    return clamped, reason
 
 
 def get_score_color(score: int) -> str:

@@ -3,6 +3,10 @@
 Extracts camera metadata from uploaded images and computes a trust adjustment
 score: presence of authentic camera metadata lowers fake probability, while
 evidence of editing software raises it.
+
+Phase B3: EXIF acts as a weak modifier (±6 max), not a booster. Positive
+adjustments (toward "real") are suppressed when upstream model signals
+indicate the image is likely synthetic.
 """
 
 from __future__ import annotations
@@ -16,17 +20,76 @@ from PIL.ExifTags import TAGS, GPSTAGS
 from schemas.common import ExifSummary
 
 
-# Software strings that suggest post-processing / generation
+# Software strings that suggest post-processing or generative synthesis.
+# Extended for Phase B3 to cover modern AI image generators.
 _SUSPICIOUS_SOFTWARE = {
     "adobe photoshop", "photoshop", "gimp", "affinity photo",
     "stable diffusion", "midjourney", "dall-e", "comfyui",
-    "automatic1111", "invokeai",
+    "automatic1111", "invokeai", "firefly", "runway", "sora",
+    "flux", "ideogram", "leonardo", "nightcafe", "dreamstudio",
+    "adobe firefly", "canva", "fotor",
 }
 
 # Software strings that are normal camera firmware
 _CAMERA_SOFTWARE = {
     "ver.", "firmware", "camera", "dji", "gopro",
 }
+
+
+def rescore_exif_trust(
+    summary: ExifSummary,
+    *,
+    general_fake_prob: Optional[float] = None,
+) -> ExifSummary:
+    """Re-run trust-adjustment scoring on an already-extracted ExifSummary.
+
+    Used after classification so the general model's fake probability can
+    suppress positive (real-leaning) EXIF boosts (Phase B3).
+    Returns the same summary object mutated in-place.
+    """
+    adjustment = 0
+    reasons = []
+
+    is_generative_software = False
+    if summary.software:
+        sw_lower = summary.software.lower()
+        if any(s in sw_lower for s in _SUSPICIOUS_SOFTWARE):
+            is_generative_software = True
+            adjustment += 6
+            reasons.append(f"generative/editing software detected: {summary.software}")
+        elif any(s in sw_lower for s in _CAMERA_SOFTWARE):
+            adjustment -= 1
+            reasons.append("camera firmware in Software field")
+
+    suppress_positive = (
+        is_generative_software
+        or (general_fake_prob is not None and general_fake_prob >= 0.60)
+    )
+
+    has_camera_meta = summary.make and summary.model and summary.datetime_original
+    if has_camera_meta and not suppress_positive:
+        adjustment -= 5
+        reasons.append("valid camera metadata")
+
+    if summary.maker_note and not suppress_positive:
+        adjustment -= 4
+        reasons.append("proprietary MakerNote present")
+
+    if summary.gps_info and not suppress_positive:
+        adjustment -= 2
+        reasons.append("GPS coordinates present")
+
+    if summary.lens_model and not suppress_positive:
+        adjustment -= 2
+        reasons.append("lens model metadata present")
+
+    if suppress_positive and not is_generative_software:
+        reasons.append("positive EXIF boost suppressed (synthetic model signal)")
+
+    adjustment = max(-6, min(6, adjustment))
+    summary.trust_adjustment = adjustment
+    summary.trust_reason = "; ".join(reasons) if reasons else "no EXIF metadata found"
+    return summary
 
 
 def _decode_gps(gps_info: dict) -> Optional[str]:
@@ -48,14 +111,20 @@ def _decode_gps(gps_info: dict) -> Optional[str]:
         return None
 
 
-def extract_exif(pil_img: Image.Image, raw_bytes: bytes) -> ExifSummary:
+def extract_exif(
+    pil_img: Image.Image,
+    raw_bytes: bytes,
+    *,
+    general_fake_prob: Optional[float] = None,
+) -> ExifSummary:
     """Extract EXIF metadata and compute a trust adjustment score.
 
-    Trust adjustment logic:
-    - Valid Make + Model + DateTimeOriginal → -15 (more likely real camera photo)
-    - GPS info present → -5 additional (real photos often have GPS)
-    - Suspicious editing software detected → +10 (more likely manipulated)
-    - No EXIF at all → 0 (inconclusive — many platforms strip EXIF)
+    Phase B3 rules:
+    - Max impact capped at ±6 (was ±12) to prevent EXIF alone from swinging verdict.
+    - Positive adjustments (toward "real") are suppressed when:
+        * general_fake_prob >= 0.60 (upstream model sees strong synthetic signal), OR
+        * software field names a generative AI tool.
+    - Negative adjustments (toward "fake" for editing software) remain always active.
     """
     summary = ExifSummary()
 
@@ -111,34 +180,46 @@ def extract_exif(pil_img: Image.Image, raw_bytes: bytes) -> ExifSummary:
     adjustment = 0
     reasons = []
 
-    has_camera_meta = summary.make and summary.model and summary.datetime_original
-    if has_camera_meta:
-        adjustment -= 8
-        reasons.append("valid camera metadata")
-
-    if summary.maker_note:
-        adjustment -= 10
-        reasons.append("proprietary MakerNote present")
-
-    if summary.gps_info:
-        adjustment -= 2
-        reasons.append("GPS coordinates present")
-
-    # Lens metadata is useful but spoofable; keep it as a weak corroborating signal.
-    if summary.lens_model:
-        adjustment -= 3
-        reasons.append("lens model metadata present")
-
+    # Phase B3: detect generative software early so we can suppress positive boosts.
+    is_generative_software = False
     if summary.software:
         sw_lower = summary.software.lower()
         if any(s in sw_lower for s in _SUSPICIOUS_SOFTWARE):
-            adjustment += 10
-            reasons.append(f"editing software detected: {summary.software}")
+            is_generative_software = True
+            adjustment += 6
+            reasons.append(f"generative/editing software detected: {summary.software}")
         elif any(s in sw_lower for s in _CAMERA_SOFTWARE):
             adjustment -= 1
             reasons.append("camera firmware in Software field")
 
-    adjustment = max(-12, min(12, adjustment))
+    # Suppress positive (real-leaning) adjustments when upstream signals are
+    # already strongly synthetic. Negative adjustments stay active in all cases.
+    suppress_positive = (
+        is_generative_software
+        or (general_fake_prob is not None and general_fake_prob >= 0.60)
+    )
+
+    has_camera_meta = summary.make and summary.model and summary.datetime_original
+    if has_camera_meta and not suppress_positive:
+        adjustment -= 5
+        reasons.append("valid camera metadata")
+
+    if summary.maker_note and not suppress_positive:
+        adjustment -= 4
+        reasons.append("proprietary MakerNote present")
+
+    if summary.gps_info and not suppress_positive:
+        adjustment -= 2
+        reasons.append("GPS coordinates present")
+
+    if summary.lens_model and not suppress_positive:
+        adjustment -= 2
+        reasons.append("lens model metadata present")
+
+    if suppress_positive and not is_generative_software:
+        reasons.append("positive EXIF boost suppressed (synthetic model signal)")
+
+    adjustment = max(-6, min(6, adjustment))
 
     summary.trust_adjustment = adjustment
     summary.trust_reason = "; ".join(reasons) if reasons else "no EXIF metadata found"

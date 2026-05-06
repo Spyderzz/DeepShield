@@ -132,6 +132,19 @@ class Settings(BaseSettings):
     # AI Models
     IMAGE_MODEL_ID: str = "prithivMLmods/Deep-Fake-Detector-v2-Model"
     GENERAL_IMAGE_MODEL_ID: str = "umm-maybe/AI-image-detector"
+    # Phase C1/C2: second AI-image head specialised on diffusion/GAN output.
+    # Ensembled with the general detector before feeding face-present fusion.
+    # Set to "" to disable (falls back to general detector only).
+    DIFFUSION_IMAGE_MODEL_ID: str = "haywoodsloan/ai-image-detector-deploy"
+    DIFFUSION_MODEL_ENABLED: bool = True
+    # Blend weights for the two-head general ensemble (must sum ≤ 1.0).
+    # When only one head is available the available head gets full weight.
+    GENERAL_AI_WEIGHT: float = 0.45
+    DIFFUSION_AI_WEIGHT: float = 0.55
+    # Temperature scaling for each detector head (> 1.0 = softer probabilities,
+    # < 1.0 = sharper). 1.0 = no scaling. Tune after running run_image_eval.py.
+    GENERAL_MODEL_TEMPERATURE: float = 1.0
+    DIFFUSION_MODEL_TEMPERATURE: float = 1.0
     TEXT_MODEL_ID: str = "jy46604790/Fake-News-Bert-Detect"
     # Multilingual text model for non-English (Hindi etc.). Leave empty to fall back to TEXT_MODEL_ID.
     TEXT_MULTILANG_MODEL_ID: str = ""
@@ -183,15 +196,49 @@ class Settings(BaseSettings):
     # Ensemble weights — FFPP is trained on a better (face-specific FFPP c40) dataset
     # and is weighted more heavily when a face is present. When no face is detected,
     # we still blend it but lean on the generic ViT since FFPP only saw face crops.
-    FFPP_WEIGHT_FACE: float = 0.55       # face-present ensemble weight
+    # Face-stack internal weights (sum = 1.0). These compose the face-swap
+    # ensemble before it is fused with non-face evidence.
+    FFPP_WEIGHT_FACE: float = 0.55
     VIT_WEIGHT_FACE: float = 0.20
     EFFNET_WEIGHT_FACE: float = 0.25
-    FFPP_WEIGHT_NOFACE: float = 0.35     # no-face ensemble weight
+    FFPP_WEIGHT_NOFACE: float = 0.35
     VIT_WEIGHT_NOFACE: float = 0.65
+
+    # Face-present unified evidence weights (Phase A2/A3).
+    # face_stack = composite of FFPP+ViT+EffNet (all face-swap models).
+    # general   = generic AI-image detector (diffusion/GAN whole-image cues).
+    # forensics = artifact scanner output.
+    # exif      = camera-metadata trust signal.
+    # vlm       = VLM consistency breakdown (optional).
+    FACE_STACK_WEIGHT_FACE: float = 0.40
+    GENERAL_WEIGHT_FACE: float = 0.40
+    FORENSICS_WEIGHT_FACE: float = 0.10
+    EXIF_WEIGHT_FACE: float = 0.05
+    VLM_WEIGHT_FACE: float = 0.05
+
+    # No-face evidence weights (existing behavior preserved).
     NOFACE_GENERAL_WEIGHT: float = 0.60
     NOFACE_FORENSICS_WEIGHT: float = 0.20
     NOFACE_EXIF_WEIGHT: float = 0.10
     NOFACE_VLM_WEIGHT: float = 0.10
+
+    # Hard gating thresholds (Phase A4). When the general detector is highly
+    # confident the image is synthetic, or strong GAN artifacts are present,
+    # the final fake probability is floored at GATING_FAKE_FLOOR (0.50 maps to
+    # authenticity score 50, i.e. cannot land in "Likely Real" or above).
+    GENERAL_FAKE_GATING_THRESHOLD: float = 0.80
+    GAN_ARTIFACT_GATING_THRESHOLD: float = 0.70
+    GATING_FAKE_FLOOR: float = 0.50
+
+    # Video-frame weight overrides. When an image is detected as a low-res
+    # video frame (face-swap deepfakes are extracted from video), the general
+    # AI-image detector is unreliable (it's trained on synthesised stills, not
+    # video face-swaps). We shift weight strongly toward the face-swap-trained
+    # models (FFPP / EfficientNet) in that case.
+    VIDEO_FRAME_FACE_STACK_WEIGHT: float = 0.70
+    VIDEO_FRAME_GENERAL_WEIGHT: float = 0.15
+    VIDEO_FRAME_FORENSICS_WEIGHT: float = 0.10
+    VIDEO_FRAME_EXIF_WEIGHT: float = 0.05
     VIDEO_SAMPLE_FRAMES: int = 16  # frames to sample per video for inference
     EXIFTOOL_PATH: str = ""  # full path to ExifTool binary; empty = metadata write disabled
 

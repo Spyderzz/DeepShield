@@ -26,6 +26,9 @@ class ModelLoader:
                     cls._instance._general_image_model = None
                     cls._instance._general_image_processor = None
                     cls._instance._general_image_unavailable = False
+                    cls._instance._diffusion_image_model = None
+                    cls._instance._diffusion_image_processor = None
+                    cls._instance._diffusion_image_unavailable = False
                     cls._instance._text_pipeline = None
                     cls._instance._multilang_text_pipeline = None
                     cls._instance._ocr_reader = None
@@ -76,6 +79,38 @@ class ModelLoader:
                 logger.warning(f"General AI image model load failed: {e}")
                 return None
         return self._general_image_model, self._general_image_processor
+
+    # ---------- Diffusion AI-image detector (Phase C1/C2) ----------
+    def load_diffusion_image_model(self) -> Optional[Tuple[object, object]]:
+        """Lazy-load the diffusion-specialised AI-image detector.
+
+        Uses DIFFUSION_IMAGE_MODEL_ID (default: haywoodsloan/ai-image-detector-deploy).
+        Returns None when disabled, model ID is empty, or load fails.
+        """
+        if not settings.DIFFUSION_MODEL_ENABLED:
+            return None
+        model_id = settings.DIFFUSION_IMAGE_MODEL_ID.strip()
+        if not model_id:
+            return None
+        if self._diffusion_image_unavailable:
+            return None
+        if self._diffusion_image_model is not None:
+            return self._diffusion_image_model, self._diffusion_image_processor
+        try:
+            logger.info(f"Loading diffusion AI-image detector: {model_id}")
+            from transformers import AutoImageProcessor, AutoModelForImageClassification
+
+            self._diffusion_image_processor = AutoImageProcessor.from_pretrained(model_id)
+            model = AutoModelForImageClassification.from_pretrained(model_id)
+            model.to(settings.DEVICE)
+            model.eval()
+            self._diffusion_image_model = model
+            logger.info("Diffusion AI-image detector loaded")
+        except Exception as e:  # noqa: BLE001
+            self._diffusion_image_unavailable = True
+            logger.warning(f"Diffusion AI-image detector load failed (continuing without it): {e}")
+            return None
+        return self._diffusion_image_model, self._diffusion_image_processor
 
     # ---------- Text (BERT fake-news classifier — English) ----------
     def load_text_model(self):
@@ -291,6 +326,7 @@ class ModelLoader:
         """Preload all core models to prevent lazy-loading delays during first analysis."""
         self.load_image_model()
         self.load_general_image_model()
+        self.load_diffusion_image_model()
         self.load_face_detector()
         self.load_efficientnet()
         self.load_ffpp_model()

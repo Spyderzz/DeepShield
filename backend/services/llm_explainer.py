@@ -18,7 +18,7 @@ from typing import Any
 from loguru import logger
 
 from config import settings
-from schemas.common import LLMExplainabilitySummary
+from schemas.common import LLMExplainabilitySummary, SignalObservation
 
 # ── In-memory caches ──
 # Keyed by record_id — one row per analysis
@@ -50,36 +50,23 @@ def _is_quota_error(exc: Exception) -> bool:
 
 
 _PROMPT_TEMPLATE = """\
-You are DeepShield's AI explainability engine. Your job is to explain a media forensics analysis result in clear, plain English that a non-technical person (a news reader, student, or concerned citizen) can immediately understand and act on.
+DeepShield forensics explainer. Media={media_kind}. Plain English, public audience.
 
-This analysis is for a **{media_kind}**.
+OUTPUT — strict JSON, no fences:
+{{"paragraph":"<4-5 sentences: verdict + strongest evidence + practical advice, 80-120 words>","signals":[{{"name":"<name>","observation":"<specific, cite numbers>","verdict":"suspicious|authentic|inconclusive"}}],"bullets":["<finding+number>","<finding+number>","<finding+number>","<user action>"]}}
 
-**Output format (strict JSON only — no markdown fences):**
-{{
-  "paragraph": "<4-5 sentence plain-English summary: (1) state the verdict clearly, (2) explain what evidence led to that verdict, (3) mention the strongest 1-2 signals, (4) tell the user what this means for them practically — e.g. should they share this, is it reliable, should they be cautious>",
-  "bullets": [
-    "<signal 1: specific finding with a number or detail from the payload>",
-    "<signal 2: specific finding with a number or detail from the payload>",
-    "<signal 3: specific finding with a number or detail from the payload>",
-    "<signal 4: what the user should do or be aware of>"
-  ]
-}}
+SIGNALS (images only — [] for video/audio/text/screenshot). Use ONLY payload data, never invent:
+1 Face-Neck Boundary — texture/colour break where face meets neck? Use ARTIFACTS facial_boundary conf.
+2 Lighting Consistency — light direction match face vs background? Use ARTIFACTS lighting conf.
+3 Skin Texture — natural pores/imperfections vs unnaturally smooth? Use VLM skin score + FUSION forensics.
+4 Face Geometry — proportions/jaw blending natural? Use VLM sym+anat scores.
+5 Background/Compression — compression blocks, ghosting, sharpness mismatch? Use ARTIFACTS compression. If FLAGS has video_frame, note it.
+6 AI Generation Markers — synthetic image detector result. Use FUSION general prob. If low and video_frame=true, note detector unreliable for video.
+verdict: suspicious=manipulation signal, authentic=genuine signal, inconclusive=insufficient data.
 
-**General Rules:**
-- Write for a general public audience. Avoid jargon like "GAN", "cosine similarity", "EfficientNet". Use plain equivalents instead (e.g. "AI-generated image detector", "news source matching").
-- Be strictly factual — only describe what the payload shows. Do NOT invent details or describe content you have not seen.
-- Be specific: mention actual numbers (scores, counts, probabilities) from the payload.
-- Give practical guidance: if likely real, say it is safe to share with normal caution. If suspicious/fake, warn the user clearly.
-- Paragraph: 4-5 sentences, ~80-120 words. Each bullet: 15-25 words, specific.
+RULES: no jargon (say "face-swap model" not "EfficientNet", "AI-image detector" not "GAN"). Numbers from payload only. Bullets 15-25 words each.
 
-**Media-Specific Rules (based on media_kind="{media_kind}"):**
-- "image": Lead with whether the AI detector found manipulation. Explain artifact indicators and EXIF metadata findings. Mention if a face was detected and how that affects analysis. Give practical advice.
-- "video": Focus on how many frames were suspicious, temporal consistency score, and audio analysis. Explain what unnatural movement or audio anomalies suggest.
-- "audio": Explain voice synthesis probability, spectral findings, and what a high/low fake probability means for the listener.
-- "text": Report the fake-news classifier result, sensationalism score, manipulation patterns found, and whether the claim was corroborated by trusted news sources. Tell the user if this news looks unreliable.
-- "screenshot": First explain what the OCR extracted and whether the text content itself appears credible. Then explain visual layout anomalies. Be explicit if the claim in the screenshot could not be verified by any trusted news source.
-
-**Analysis payload:**
+DATA:
 {payload_json}
 """
 
@@ -150,63 +137,172 @@ _KEEP_EXPLAINABILITY = {
 
 _DROP_SUFFIXES = ("_base64",)
 _DROP_KEYS = {
-    "heatmap_base64",
-    "ela_base64",
-    "boxes_base64",
-    "heatmap_url",
-    "ela_url",
-    "boxes_url",
-    "thumbnail_url",
-    "media_path",
-    "media_url",
+    "heatmap_base64", "ela_base64", "boxes_base64",
+    "heatmap_url", "ela_url", "boxes_url",
+    "thumbnail_url", "media_path", "media_url",
 }
 
+# ── helpers ──────────────────────────────────────────────────────────────────
 
-def _truncate_text(value: Any, limit: int = 1200) -> Any:
+def _g(obj: Any, key: str, default: Any = None) -> Any:
+    """Get from dict or object attribute."""
+    return obj.get(key, default) if isinstance(obj, dict) else getattr(obj, key, default)
+
+
+def _truncate_text(value: Any, limit: int = 600) -> Any:
     if not isinstance(value, str):
         return value
     text = " ".join(value.split())
-    if len(text) <= limit:
-        return text
-    return text[: limit - 3].rstrip() + "..."
+    return text if len(text) <= limit else text[: limit - 3].rstrip() + "..."
 
 
 def _compact_value(key: str, value: Any) -> Any:
     if isinstance(value, dict):
-        return {
-            k: _compact_value(k, v)
-            for k, v in value.items()
-            if k not in _DROP_KEYS and not str(k).endswith(_DROP_SUFFIXES)
-        }
+        return {k: _compact_value(k, v) for k, v in value.items()
+                if k not in _DROP_KEYS and not str(k).endswith(_DROP_SUFFIXES)}
     if isinstance(value, list):
         limit = _EXPLAINABILITY_LIMITS.get(key, 10)
         return [_compact_value(key, item) for item in value[:limit]]
     return _truncate_text(value)
 
 
-def _build_llm_payload(payload: dict[str, Any]) -> dict[str, Any]:
-    """Return the compact evidence packet sent to the LLM.
+# ── image compact payload ─────────────────────────────────────────────────────
 
-    The full API response can include image overlays, many OCR boxes, per-frame
-    video records, and other large fields. The summary only needs the verdict,
-    strongest evidence, source matches, and pipeline context.
+def _build_image_compact(payload: dict[str, Any]) -> str:
+    """Dense line-based payload for image analysis — ~70% fewer tokens than JSON.
+
+    Format the LLM can read with zero ambiguity:
+      KEY:value1 value2 ...   (one concept per line, no nesting)
     """
-    compact: dict[str, Any] = {}
-    for key in _KEEP_TOP_LEVEL:
-        if key in payload and key not in _DROP_KEYS:
-            compact[key] = _compact_value(key, payload[key])
+    lines: list[str] = []
 
-    explainability = payload.get("explainability")
-    if isinstance(explainability, dict):
-        compact["explainability"] = {
-            key: _compact_value(key, value)
-            for key, value in explainability.items()
-            if key in _KEEP_EXPLAINABILITY
-            and key not in _DROP_KEYS
-            and not str(key).endswith(_DROP_SUFFIXES)
-        }
+    # Verdict
+    v = payload.get("verdict", {})
+    label = _g(v, "label", "?")
+    score = _g(v, "authenticity_score", "?")
+    conf  = _g(v, "model_confidence", 0.0)
+    lines.append(f"VERDICT:{label}|score={score}|conf={conf:.2f}")
 
-    return compact
+    # Evidence fusion components (Phase A — new signals)
+    ps  = payload.get("processing_summary", {})
+    ef  = _g(ps, "evidence_fusion", {}) or {}
+    comps = _g(ef, "components", {}) or {}
+    if comps:
+        parts = " ".join(
+            f"{k}={float(val):.2f}" for k, val in comps.items()
+            if isinstance(val, (int, float))
+        )
+        lines.append(f"FUSION:{parts}")
+
+    # Flags: video_frame, gating, disagreement, pre-gating drift
+    gating    = _g(ps, "gating_applied")
+    disagree  = _g(ps, "disagreement_reason")
+    is_vid    = _g(ef, "is_video_frame", False)
+    pre_gate  = _g(ef, "pre_gating")
+    flag_parts: list[str] = []
+    if is_vid:       flag_parts.append("video_frame=yes")
+    if gating:       flag_parts.append(f"gated={gating}")
+    if disagree:     flag_parts.append(f"disagree={disagree[:60]}")
+    if pre_gate is not None and comps:
+        final = _g(v, "model_confidence", 0.5)
+        if abs(float(pre_gate) - float(final)) > 0.05:
+            flag_parts.append(f"pre_gate={float(pre_gate):.2f}")
+    if flag_parts:
+        lines.append(f"FLAGS:{' '.join(flag_parts)}")
+
+    expl = payload.get("explainability", {}) or {}
+
+    # Artifact indicators — type(severity_initial, confidence%)
+    arts = _g(expl, "artifact_indicators", []) or []
+    if arts:
+        art_strs = []
+        for a in arts[:6]:
+            t = _g(a, "type", "?")
+            s = (_g(a, "severity", "?") or "?")[0].upper()
+            c = _g(a, "confidence", 0.0)
+            art_strs.append(f"{t}({s},{c:.0%})")
+        lines.append(f"ARTIFACTS:{' '.join(art_strs)}")
+    else:
+        lines.append("ARTIFACTS:none")
+
+    # EXIF — abbreviated
+    exif = _g(expl, "exif")
+    if exif:
+        adj    = _g(exif, "trust_adjustment", 0)
+        make   = _g(exif, "make")
+        model  = _g(exif, "model")
+        sw     = _g(exif, "software")
+        reason = _g(exif, "trust_reason", "")
+        exif_parts = [f"adj={adj}"]
+        if make:   exif_parts.append(f"cam={make} {model or ''}".strip())
+        if sw:     exif_parts.append(f"sw={sw[:30]}")
+        if reason: exif_parts.append(f"note={reason[:60]}")
+        lines.append(f"EXIF:{' '.join(exif_parts)}")
+    else:
+        lines.append("EXIF:none")
+
+    # VLM breakdown — 6 scores in one line
+    vlm = _g(expl, "vlm_breakdown")
+    if vlm:
+        def _s(k: str) -> int:
+            d = _g(vlm, k, {}) or {}
+            return int(_g(d, "score", 75))
+        lines.append(
+            f"VLM:sym={_s('facial_symmetry')} skin={_s('skin_texture')} "
+            f"light={_s('lighting_consistency')} bg={_s('background_coherence')} "
+            f"anat={_s('anatomy_hands_eyes')} ctx={_s('context_objects')}"
+        )
+
+    # Face presence (no_face_analysis is set only when NO face found)
+    face_present = _g(expl, "no_face_analysis") is None
+    lines.append(f"FACE:{'yes' if face_present else 'no'}")
+
+    # Models + method
+    models  = _g(ps, "models_used", []) or []
+    method  = _g(ef, "method", "")
+    face_m  = _g(ef, "face_stack_method", "")
+    if models:
+        short = [str(m).split("/")[-1][:25] for m in models[:4]]
+        lines.append(f"MODELS:{','.join(short)}")
+    if method:
+        lines.append(f"METHOD:{face_m or method}")
+
+    return "\n".join(lines)
+
+
+# ── non-image compact payload (lightweight JSON) ──────────────────────────────
+
+_KEEP_NON_IMAGE = {
+    "media_type", "verdict", "trusted_sources", "contradicting_evidence",
+}
+_KEEP_NON_IMAGE_EXPL = {
+    "original_text", "extracted_text", "transcript", "fake_probability",
+    "top_label", "keywords", "sensationalism", "manipulation_indicators",
+    "suspicious_phrases", "layout_anomalies",
+    "num_frames_sampled", "num_face_frames", "num_suspicious_frames",
+    "mean_suspicious_prob", "suspicious_ratio", "insufficient_faces",
+    "temporal_score", "audio_authenticity_score", "has_audio",
+    "silence_ratio", "spectral_variance", "rms_consistency", "ml_analysis",
+    "ocr_boxes",
+}
+
+
+def _build_non_image_compact(payload: dict[str, Any]) -> str:
+    out: dict[str, Any] = {k: _compact_value(k, payload[k])
+                           for k in _KEEP_NON_IMAGE if k in payload}
+    expl = payload.get("explainability", {})
+    if isinstance(expl, dict):
+        out["e"] = {k: _compact_value(k, v) for k, v in expl.items()
+                    if k in _KEEP_NON_IMAGE_EXPL and k not in _DROP_KEYS}
+    return json.dumps(out, separators=(",", ":"), default=str)
+
+
+def _build_llm_payload(payload: dict[str, Any]) -> str:
+    """Return the token-efficient payload string for the LLM prompt."""
+    media_type = payload.get("media_type", "")
+    if media_type == "image":
+        return _build_image_compact(payload)
+    return _build_non_image_compact(payload)
 
 
 class _LLMProvider(ABC):
@@ -362,24 +458,37 @@ def _get_provider() -> _ProviderChain:
     return _provider_instance
 
 
-def _parse_llm_response(raw: str) -> tuple[str, list[str]]:
-    """Parse the LLM's JSON response into (paragraph, bullets).
+def _parse_llm_response(raw: str) -> tuple[str, list[SignalObservation], list[str]]:
+    """Parse the LLM's JSON response into (paragraph, signals, bullets).
     Handles cases where the LLM wraps output in markdown fences.
     """
     text = raw.strip()
-    # Strip markdown code fences if present
     if text.startswith("```"):
         lines = text.split("\n")
-        # Remove first and last fence lines
         lines = [l for l in lines if not l.strip().startswith("```")]
         text = "\n".join(lines).strip()
 
     parsed = json.loads(text)
     paragraph = parsed.get("paragraph", "")
+
+    raw_signals = parsed.get("signals", [])
+    signals: list[SignalObservation] = []
+    if isinstance(raw_signals, list):
+        for s in raw_signals[:8]:
+            if isinstance(s, dict) and s.get("name") and s.get("observation"):
+                verdict = s.get("verdict", "inconclusive").lower()
+                if verdict not in ("authentic", "suspicious", "inconclusive"):
+                    verdict = "inconclusive"
+                signals.append(SignalObservation(
+                    name=str(s["name"]),
+                    observation=str(s["observation"]),
+                    verdict=verdict,
+                ))
+
     bullets = parsed.get("bullets", [])
     if not isinstance(bullets, list):
         bullets = [str(bullets)]
-    return paragraph, bullets[:5]
+    return paragraph, signals, bullets[:5]
 
 
 def generate_llm_summary(
@@ -413,12 +522,11 @@ def generate_llm_summary(
         logger.warning("LLM_API_KEY not set — using deterministic fallback summary")
         return _fallback_summary(payload, reason="no_api_key")
 
-    slim_payload = _build_llm_payload(payload)
-
-    prompt_body = json.dumps(slim_payload, separators=(",", ":"), default=str, sort_keys=True)
+    # _build_llm_payload already returns a compact string (line-based for images,
+    # stripped JSON for other media). No further json.dumps needed.
+    prompt_body = _build_llm_payload(payload)
     prompt = _PROMPT_TEMPLATE.format(media_kind=media_kind, payload_json=prompt_body)
 
-    # Content-hash cache — dedups "same analysis re-run" across users / record_ids
     content_hash = hashlib.sha256(
         f"{settings.LLM_PROVIDER}|{settings.LLM_MODEL}|{prompt_body}".encode("utf-8")
     ).hexdigest()
@@ -431,12 +539,12 @@ def generate_llm_summary(
 
     try:
         chain = _get_provider()
-        # Chain handles per-provider timeouts + Groq fallback internally
         raw_response = chain.generate(prompt)
-        paragraph, bullets = _parse_llm_response(raw_response)
+        paragraph, signals, bullets = _parse_llm_response(raw_response)
 
         summary = LLMExplainabilitySummary(
             paragraph=paragraph,
+            signals=signals,
             bullets=bullets,
             model_used=chain.last_used.tag,
         )
@@ -454,6 +562,7 @@ def generate_llm_summary(
         chain = _get_provider()
         return LLMExplainabilitySummary(
             paragraph="Analysis complete. See the detailed indicators below for specifics.",
+            signals=[],
             bullets=["LLM explanation could not be parsed"],
             model_used=chain.last_used.tag,
         )
@@ -468,6 +577,41 @@ def generate_llm_summary(
             return _fallback_summary(payload, reason="rate_limited")
         logger.error(f"LLM explainer failed: {e}")
         return _fallback_summary(payload, reason="error")
+
+
+_SIGNAL_ARTIFACT_MAP = {
+    "facial_boundary": ("Face-Neck Boundary", "suspicious"),
+    "lighting":        ("Lighting Consistency", "suspicious"),
+    "skin_texture":    ("Skin Texture", "suspicious"),
+    "face_geometry":   ("Face Geometry", "suspicious"),
+    "compression":     ("Background / Compression", "suspicious"),
+    "gan_artifact":    ("AI Generation Markers", "suspicious"),
+}
+
+
+def _fallback_signals(payload: dict[str, Any]) -> list[SignalObservation]:
+    """Build a signal list from artifact_indicators when the LLM is unavailable."""
+    if payload.get("media_type") not in ("image", None):
+        return []
+    artifacts = (
+        payload.get("explainability", {}).get("artifact_indicators", [])
+        if isinstance(payload.get("explainability"), dict) else []
+    )
+    seen: set[str] = set()
+    signals: list[SignalObservation] = []
+    for art in artifacts:
+        art_type = art.get("type", "") if isinstance(art, dict) else getattr(art, "type", "")
+        art_desc = art.get("description", "") if isinstance(art, dict) else getattr(art, "description", "")
+        art_conf = art.get("confidence", 0.0) if isinstance(art, dict) else getattr(art, "confidence", 0.0)
+        if art_type in _SIGNAL_ARTIFACT_MAP and art_type not in seen:
+            name, verdict = _SIGNAL_ARTIFACT_MAP[art_type]
+            signals.append(SignalObservation(
+                name=name,
+                observation=f"{art_desc} (confidence {art_conf:.0%})",
+                verdict=verdict,
+            ))
+            seen.add(art_type)
+    return signals
 
 
 def _fallback_summary(payload: dict[str, Any], *, reason: str) -> LLMExplainabilitySummary:
@@ -495,6 +639,7 @@ def _fallback_summary(payload: dict[str, Any], *, reason: str) -> LLMExplainabil
             f"The score is derived from deepfake detection models, artifact scanning, metadata integrity checks, and (for text) trusted-source cross-referencing. "
             f"{action}"
         ),
+        signals=_fallback_signals(payload),
         bullets=[
             f"Authenticity score: {score}/100 — {'above' if score >= 50 else 'below'} the suspicion threshold of 50",
             f"Verdict: {label}",

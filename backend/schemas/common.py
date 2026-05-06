@@ -4,7 +4,7 @@ from typing import List, Optional
 
 from pydantic import BaseModel, ConfigDict, Field
 
-ANALYSIS_CACHE_VERSION = "2026-04-26-accuracy-v3"
+ANALYSIS_CACHE_VERSION = "2026-05-06-phase-a-unified-fusion"
 
 
 class Verdict(BaseModel):
@@ -62,11 +62,20 @@ class ExifSummary(BaseModel):
     trust_reason: str = ""
 
 
+class SignalObservation(BaseModel):
+    """One forensic signal with a plain-English observation. Used in image analysis."""
+    name: str
+    observation: str
+    verdict: str = ""  # "authentic" | "suspicious" | "inconclusive"
+
+
 class LLMExplainabilitySummary(BaseModel):
     model_config = ConfigDict(protected_namespaces=())
 
     paragraph: str = ""
     bullets: List[str] = []
+    # Per-signal breakdown for image analysis (empty for non-image media)
+    signals: List[SignalObservation] = []
     model_used: str = ""
     cached: bool = False
 
@@ -98,3 +107,7 @@ class ProcessingSummary(BaseModel):
     models_used: List[str] = []  # all models that contributed (ensemble)
     analysis_version: str = ANALYSIS_CACHE_VERSION
     calibrator_applied: bool = False
+    # Phase A/B: unified evidence fusion details and disagreement clamping
+    evidence_fusion: Optional[dict] = None
+    disagreement_reason: Optional[str] = None
+    gating_applied: Optional[str] = None

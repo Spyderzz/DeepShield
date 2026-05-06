@@ -41,7 +41,7 @@ from services.screenshot_service import (
     run_ocr,
 )
 from services.ela_service import generate_ela_base64
-from services.exif_service import extract_exif
+from services.exif_service import extract_exif, rescore_exif_trust
 from services.image_service import classify_image, load_image_from_bytes
 from services.llm_explainer import generate_llm_summary
 from schemas.common import ProcessingSummary, Verdict
@@ -71,7 +71,7 @@ from services.storage import (
 )
 from services.job_queue import registry as job_registry, run_job
 from utils.file_handler import read_upload_bytes, save_upload_to_tempfile
-from utils.scoring import compute_authenticity_score, compute_video_authenticity_score, get_verdict_label
+from utils.scoring import compute_authenticity_score, compute_video_authenticity_score, get_verdict_label, maybe_clamp_to_uncertain
 
 router = APIRouter(prefix="/analyze", tags=["analyze"])
 
@@ -367,9 +367,16 @@ async def analyze_image(
     clf = classify_image(pil, artifact_indicators=indicators, exif=exif_summary)
     stages.append("classification")
 
+    # Phase B3: re-score EXIF trust now that we have the general model's fake
+    # probability. This suppresses positive EXIF boosts on images the AI-image
+    # detector considers synthetic (general_fake_prob >= 0.60).
+    if exif_summary is not None and clf.evidence_fusion is not None:
+        general_prob = clf.evidence_fusion.get("components", {}).get("general")
+        exif_summary = rescore_exif_trust(exif_summary, general_fake_prob=general_prob)
+
     analysis_id = str(uuid.uuid4())
     vlm_bd = None
-    if user is not None and clf.no_face_analysis is not None:
+    if user is not None:
         try:
             vlm_bd = generate_vlm_breakdown(pil, record_id=analysis_id)
             if vlm_bd:
@@ -379,17 +386,28 @@ async def analyze_image(
                     exif=exif_summary,
                     vlm_breakdown=vlm_bd,
                 )
-                stages.append("vlm_no_face_fusion")
+                stages.append("vlm_evidence_fusion")
         except Exception as e:  # noqa: BLE001
-            logger.warning(f"VLM no-face fusion failed, continuing: {e}")
+            logger.warning(f"VLM evidence fusion failed, continuing: {e}")
 
     score = compute_authenticity_score(clf.confidence, clf.label)
 
-    # Apply EXIF trust adjustment.
-    # trust_adjustment convention: negative = more real → subtract to RAISE authenticity score.
-    # positive = more fake → subtract to LOWER authenticity score.
-    if clf.no_face_analysis is None and exif_summary and exif_summary.trust_adjustment != 0:
+    # Phase A: EXIF is folded into the unified evidence fusion when fusion ran.
+    # Only fall back to the post-hoc EXIF adjustment when fusion was NOT applied
+    # (e.g. ensemble disabled, no-face legacy path skipped). This prevents
+    # double-counting EXIF and prevents EXIF alone from forcing "Very Likely Real".
+    if clf.evidence_fusion is None and exif_summary and exif_summary.trust_adjustment != 0:
         score = int(round(max(0, min(100, score - exif_summary.trust_adjustment))))
+
+    # Phase B2: disagreement clamp — when primary signals diverge significantly
+    # (stdev > 0.25), force score into the Uncertain band rather than emitting
+    # an overconfident verdict.
+    disagreement_reason: str | None = None
+    if clf.evidence_fusion is not None:
+        components = clf.evidence_fusion.get("components", {})
+        score, disagreement_reason = maybe_clamp_to_uncertain(score, components)
+        if disagreement_reason:
+            logger.info(f"Verdict clamped to Uncertain — {disagreement_reason}")
 
     label, severity = get_verdict_label(score)
     duration_ms = int((time.perf_counter() - start) * 1000)
@@ -423,6 +441,9 @@ async def analyze_image(
             model_used=settings.IMAGE_MODEL_ID,
             models_used=clf.models_used,
             calibrator_applied=clf.calibrator_applied,
+            evidence_fusion=clf.evidence_fusion,
+            disagreement_reason=disagreement_reason,
+            gating_applied=clf.gating_applied,
         ),
     )
 

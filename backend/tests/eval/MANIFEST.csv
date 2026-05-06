@@ -1,0 +1,26 @@
+path,label,source,family,notes
+images/real_dslr_001.jpg,real,dslr,camera-real,Canon EOS R5 portrait with EXIF intact
+images/real_dslr_002.jpg,real,dslr,camera-real,Nikon Z9 outdoor shot
+images/real_phone_001.jpg,real,phone,camera-real,iPhone 15 Pro photo
+images/real_phone_002.jpg,real,phone,camera-real,Samsung Galaxy S24 photo
+images/real_stock_001.jpg,real,stock,camera-real,Unsplash editorial portrait
+images/real_stock_002.jpg,real,stock,camera-real,Pexels landscape no face
+images/real_processed_001.jpg,real,processed,camera-real,Lightroom-edited portrait (still real)
+images/real_processed_002.jpg,real,processed,camera-real,VSCO-filtered street photo
+images/fake_faceswap_ffpp_001.jpg,fake,ffpp,face-swap,FaceForensics++ c40 face-swap
+images/fake_faceswap_ffpp_002.jpg,fake,ffpp,face-swap,FaceForensics++ c40 face-swap
+images/fake_faceswap_dfdc_001.jpg,fake,dfdc,face-swap,DFDC competition sample
+images/fake_faceswap_dfdc_002.jpg,fake,dfdc,face-swap,DFDC competition sample
+images/fake_gan_stylegan3_001.jpg,fake,stylegan3,gan-portrait,StyleGAN3 FFHQ portrait
+images/fake_gan_stylegan3_002.jpg,fake,stylegan3,gan-portrait,StyleGAN3 FFHQ portrait
+images/fake_gan_tpdne_001.jpg,fake,tpdne,gan-portrait,ThisPersonDoesNotExist.com
+images/fake_gan_tpdne_002.jpg,fake,tpdne,gan-portrait,ThisPersonDoesNotExist.com
+images/fake_diffusion_sdxl_001.jpg,fake,sdxl,diffusion-portrait,SDXL photorealistic face portrait
+images/fake_diffusion_sdxl_002.jpg,fake,sdxl,diffusion-portrait,SDXL photorealistic face portrait
+images/fake_diffusion_mj_001.jpg,fake,midjourney,diffusion-portrait,MidJourney v6 hyperrealistic portrait
+images/fake_diffusion_mj_002.jpg,fake,midjourney,diffusion-portrait,MidJourney v6 hyperrealistic portrait
+images/fake_diffusion_flux_001.jpg,fake,flux,diffusion-portrait,Flux.1 dev photorealistic portrait
+images/fake_diffusion_flux_002.jpg,fake,flux,diffusion-portrait,Flux.1 dev photorealistic portrait
+images/fake_diffusion_sd15_001.jpg,fake,sd15,diffusion-portrait,Stable Diffusion 1.5 portrait
+images/fake_diffusion_noface_001.jpg,fake,sdxl,diffusion-noface,SDXL generated landscape no face
+images/fake_diffusion_noface_002.jpg,fake,midjourney,diffusion-noface,MidJourney v6 interior scene no face
