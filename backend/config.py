@@ -158,7 +158,7 @@ class Settings(BaseSettings):
     # LLM Explainability (Phase 12)
     LLM_PROVIDER: str = "gemini"  # "gemini" | "openai"
     LLM_API_KEY: str = ""
-    LLM_MODEL: str = "gemini-1.5-flash"  # 1.5-flash: fastest response, no thinking overhead, best for real-time summaries.
+    LLM_MODEL: str = "gemini-2.0-flash"  # 2.0-flash: fastest response, no thinking overhead, best for real-time summaries.
 
     # LLM fallback — Groq (Llama 3.3 70B by default). Used automatically when the
     # primary provider returns 429/quota exceeded. Leave empty to disable fallback.

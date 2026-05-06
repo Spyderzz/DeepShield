@@ -288,7 +288,7 @@ class _ProviderChain:
     The `last_used` attribute tracks which provider produced the response.
     """
 
-    _PRIMARY_TIMEOUT = 7    # gemini-1.5-flash responds in ~2-4s
+    _PRIMARY_TIMEOUT = 7    # gemini-2.0-flash responds in ~2-4s
     _FALLBACK_TIMEOUT = 8   # seconds for Groq
 
     def __init__(self, primary: _LLMProvider, fallback: _LLMProvider | None) -> None:

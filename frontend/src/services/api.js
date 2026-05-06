@@ -23,8 +23,10 @@ export function resolveMediaUrl(url) {
 
   const path = normalized.startsWith('/') ? normalized : `/${normalized}`;
   const apiBase = import.meta.env.VITE_API_BASE_URL || '/api/v1';
-  if (apiBase.startsWith('http') && path.startsWith('/media/')) {
-    return `${apiBase.replace(/\/api\/v1\/?$/, '')}${path}`;
+  if (apiBase.startsWith('http')) {
+    const origin = apiBase.replace(/\/api\/v1\/?$/, '');
+    if (path.startsWith('/media/')) return `${origin}${path}`;
+    if (path.startsWith('/api/v1/')) return `${origin}${path}`;
   }
   return path;
 }

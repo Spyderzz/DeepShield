@@ -17,6 +17,7 @@ backend/reports/
 backend/temp_reports/
 backend/test_outputs/
 backend/deepshield.db
+docs/superpowers/
 
 # Node
 node_modules/

@@ -151,7 +151,7 @@ DATABASE_URL=postgresql://postgres.xxx:password@aws-0-region.pooler.supabase.com
 # AI Models & Explainability
 LLM_PROVIDER=gemini
 LLM_API_KEY=your_gemini_api_key_here
-LLM_MODEL=gemini-1.5-flash
+LLM_MODEL=gemini-2.0-flash
 
 # Auth
 JWT_SECRET_KEY=generate_a_secure_random_key

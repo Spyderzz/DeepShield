@@ -288,8 +288,17 @@ class ModelLoader:
 
     # ---------- Preload ----------
     def preload_phase1(self) -> None:
-        """Preload only what Phase 1 needs (image model)."""
+        """Preload all core models to prevent lazy-loading delays during first analysis."""
         self.load_image_model()
+        self.load_general_image_model()
+        self.load_face_detector()
+        self.load_efficientnet()
+        self.load_ffpp_model()
+        self.load_ocr_engine()
+        self.load_text_model()
+        self.load_multilang_text_model()
+        self.load_spacy_nlp()
+        self.load_sentence_transformer()
 
     def is_ready(self) -> bool:
         """Phase 19.5 — readiness signal for /health/ready.
