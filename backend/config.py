@@ -168,6 +168,9 @@ class Settings(BaseSettings):
     REPORT_DIR: str = "/data/reports"
     REPORT_TTL_SECONDS: int = 3600  # 1h expiry
     PUBLIC_APP_URL: str = ""
+    # Public backend origin or API base URL used for third-party OAuth callbacks.
+    # Examples: http://localhost:8000, https://api.example.com, https://api.example.com/api/v1
+    PUBLIC_API_URL: str = ""
 
     # Phase 19 — dedup cache + object storage
     CACHE_TTL_DAYS: int = 30

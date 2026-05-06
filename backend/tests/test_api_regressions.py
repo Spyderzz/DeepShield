@@ -2,7 +2,9 @@ from __future__ import annotations
 
 import json
 import os
+import asyncio
 from datetime import datetime, timezone
+from urllib.parse import parse_qs, urlparse
 
 import pytest
 from sqlalchemy import create_engine
@@ -11,6 +13,7 @@ from sqlalchemy.orm import sessionmaker
 os.environ["DEBUG"] = "false"
 
 from api.v1.analyze import _find_existing_llm_summary, _persist_response_payload, _store_llm_summary
+from api.v1 import auth as auth_module
 from api.v1.history import get_history_detail, list_history
 from db.models import AnalysisRecord
 from db.database import Base
@@ -181,3 +184,74 @@ def test_store_llm_summary_uses_media_specific_location_without_duplication():
     assert image_payload["explainability"]["llm_summary"] == summary
     assert "llm_summary" not in image_payload
     assert text_payload["llm_summary"] == summary
+
+
+class _FakeRequest:
+    def __init__(self, headers: dict[str, str] | None = None):
+        self.headers = headers or {}
+
+    def url_for(self, _name: str, provider: str) -> str:
+        return f"http://localhost:8000/api/v1/auth/oauth/{provider}/callback"
+
+
+def test_oauth_start_signs_frontend_origin_from_allowed_request_origin(monkeypatch):
+    monkeypatch.setattr(auth_module.settings, "GOOGLE_CLIENT_ID", "client-id")
+    monkeypatch.setattr(auth_module.settings, "GOOGLE_CLIENT_SECRET", "client-secret")
+    monkeypatch.setattr(auth_module.settings, "PUBLIC_APP_URL", "")
+    monkeypatch.setattr(auth_module.settings, "PUBLIC_API_URL", "")
+    monkeypatch.setattr(auth_module.settings, "CORS_ORIGINS", ["http://localhost:5173"])
+
+    result = auth_module.oauth_start(
+        "google",
+        _FakeRequest({"origin": "http://localhost:5173"}),
+        redirect_to="/history",
+        remember=False,
+    )
+
+    params = parse_qs(urlparse(result["authorization_url"]).query)
+    payload = auth_module._state_verify(params["state"][0])
+
+    assert params["redirect_uri"] == ["http://localhost:8000/api/v1/auth/oauth/google/callback"]
+    assert payload["frontend_origin"] == "http://localhost:5173"
+    assert payload["redirect_to"] == "/history"
+    assert payload["remember"] is False
+
+
+def test_oauth_callback_redirects_to_signed_frontend_origin(db_session, monkeypatch):
+    async def fake_fetch_google_profile(_code: str, _redirect_uri: str) -> dict[str, str]:
+        return {"email": "oauth@example.com", "name": "OAuth User"}
+
+    monkeypatch.setattr(auth_module, "_fetch_google_profile", fake_fetch_google_profile)
+    monkeypatch.setattr(auth_module.settings, "PUBLIC_API_URL", "")
+    monkeypatch.setattr(auth_module.settings, "PUBLIC_APP_URL", "")
+    state = auth_module._state_sign({
+        "provider": "google",
+        "redirect_to": "/analyze",
+        "remember": True,
+        "frontend_origin": "http://localhost:5173",
+        "exp": int(datetime.now(timezone.utc).timestamp()) + 60,
+    })
+
+    response = asyncio.run(auth_module.oauth_callback(
+        "google",
+        code="auth-code",
+        state=state,
+        request=_FakeRequest(),
+        db=db_session,
+    ))
+
+    location = response.headers["location"]
+    assert location.startswith("http://localhost:5173/auth/callback?")
+    params = parse_qs(urlparse(location).query)
+    assert params["next"] == ["/analyze"]
+    assert params["remember"] == ["1"]
+    assert params["token"]
+
+
+def test_oauth_callback_url_uses_public_api_url_without_duplicate_api_prefix(monkeypatch):
+    monkeypatch.setattr(auth_module.settings, "PUBLIC_API_URL", "https://api.example.com/api/v1")
+
+    assert (
+        auth_module._oauth_callback_url("google", _FakeRequest())
+        == "https://api.example.com/api/v1/auth/oauth/google/callback"
+    )

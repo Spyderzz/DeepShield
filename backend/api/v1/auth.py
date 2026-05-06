@@ -6,7 +6,7 @@ import hmac
 import json
 import secrets
 from datetime import datetime, timezone
-from urllib.parse import quote
+from urllib.parse import urlencode, urlparse
 
 import httpx
 from fastapi import APIRouter, Depends, HTTPException, Request, status
@@ -33,6 +33,34 @@ def _normalize_redirect_path(value: str | None) -> str:
     if not redirect_to.startswith("/") or redirect_to.startswith("//"):
         return "/analyze"
     return redirect_to
+
+
+def _origin_from_url(value: str | None) -> str | None:
+    if not value:
+        return None
+    parsed = urlparse(value.strip())
+    if parsed.scheme not in {"http", "https"} or not parsed.netloc:
+        return None
+    return f"{parsed.scheme}://{parsed.netloc}".rstrip("/")
+
+
+def _allowed_frontend_origins() -> set[str]:
+    origins = {_origin_from_url(settings.PUBLIC_APP_URL)}
+    origins.update(_origin_from_url(origin) for origin in settings.CORS_ORIGINS)
+    return {origin for origin in origins if origin}
+
+
+def _frontend_origin_from_request(request: Request) -> str | None:
+    """Capture the site that initiated OAuth so callback returns to the same UI."""
+    candidates = [
+        _origin_from_url(request.headers.get("origin")),
+        _origin_from_url(request.headers.get("referer")),
+    ]
+    allowed = _allowed_frontend_origins()
+    for origin in candidates:
+        if origin and origin in allowed:
+            return origin
+    return _origin_from_url(settings.PUBLIC_APP_URL)
 
 
 def _provider_config(provider: str) -> dict[str, str]:
@@ -139,9 +167,19 @@ async def _fetch_github_profile(code: str, redirect_uri: str) -> dict[str, str]:
         return {"email": email, "name": name}
 
 
-def _frontend_callback_url(path: str) -> str:
-    base = settings.PUBLIC_APP_URL.strip().rstrip("/")
+def _frontend_callback_url(path: str, frontend_origin: str | None = None) -> str:
+    base = (frontend_origin or settings.PUBLIC_APP_URL).strip().rstrip("/")
     return f"{base}{path}" if base else path
+
+
+def _oauth_callback_url(provider: str, request: Request) -> str:
+    public_api = settings.PUBLIC_API_URL.strip().rstrip("/")
+    if public_api:
+        suffix = f"/auth/oauth/{provider}/callback"
+        if public_api.endswith("/api/v1"):
+            return f"{public_api}{suffix}"
+        return f"{public_api}/api/v1{suffix}"
+    return str(request.url_for("oauth_callback", provider=provider))
 
 
 def _token_response(user: User) -> TokenResponse:
@@ -191,11 +229,12 @@ def oauth_start(provider: str, request: Request, redirect_to: str = "/analyze", 
     if not cfg.get("client_id") or not cfg.get("client_secret"):
         raise HTTPException(status.HTTP_503_SERVICE_UNAVAILABLE, f"{provider.title()} OAuth is not configured")
 
-    callback_url = str(request.url_for("oauth_callback", provider=provider))
+    callback_url = _oauth_callback_url(provider, request)
     state = _state_sign({
         "provider": provider.lower().strip(),
         "redirect_to": _normalize_redirect_path(redirect_to),
         "remember": bool(remember),
+        "frontend_origin": _frontend_origin_from_request(request),
         "exp": int(datetime.now(timezone.utc).timestamp()) + _OAUTH_TTL_SECONDS,
     })
 
@@ -219,8 +258,6 @@ def oauth_start(provider: str, request: Request, redirect_to: str = "/analyze", 
             "state": state,
         }
 
-    from urllib.parse import urlencode
-
     return {"authorization_url": f"{cfg['authorize_url']}?{urlencode(params)}"}
 
 
@@ -232,7 +269,7 @@ async def oauth_callback(provider: str, code: str, state: str, request: Request,
 
     redirect_to = _normalize_redirect_path(str(state_payload.get("redirect_to") or "/analyze"))
     remember = bool(state_payload.get("remember", True))
-    callback_url = str(request.url_for("oauth_callback", provider=provider))
+    callback_url = _oauth_callback_url(provider, request)
 
     provider_key = provider.lower().strip()
     if provider_key == "google":
@@ -254,8 +291,8 @@ async def oauth_callback(provider: str, code: str, state: str, request: Request,
     db.refresh(user)
 
     token = create_access_token(user.id, user.email)
-    frontend_url = _frontend_callback_url("/auth/callback")
-    from urllib.parse import urlencode
+    frontend_origin = _origin_from_url(str(state_payload.get("frontend_origin") or "")) or None
+    frontend_url = _frontend_callback_url("/auth/callback", frontend_origin)
 
     target = f"{frontend_url}?{urlencode({'token': token, 'next': redirect_to, 'remember': '1' if remember else '0'})}"
     return RedirectResponse(target, status_code=status.HTTP_302_FOUND)

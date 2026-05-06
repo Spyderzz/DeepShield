@@ -201,7 +201,9 @@ Create a `.env` file in the `backend/` directory:
 | `APP_HOST` | `0.0.0.0` | Server bind address |
 | `APP_PORT` | `8000` | Server port |
 | `DEBUG` | `false` | Enable debug mode |
-| `CORS_ORIGINS` | `["http://localhost:5173"]` | Allowed CORS origins |
+| `CORS_ORIGINS` | `["http://localhost:5173", "https://deepshield.ar07xd.com"]` | Allowed CORS origins |
+| `PUBLIC_APP_URL` | `https://deepshield.ar07xd.com` | Public frontend origin for OAuth redirects |
+| `PUBLIC_API_URL` | `https://ar07xd-deepshield.hf.space` | Public backend origin/API base for OAuth callbacks |
 | `DATABASE_URL` | `sqlite:///./deepshield.db` | Database connection string |
 | `MAX_UPLOAD_SIZE_MB` | `100` | Maximum file upload size |
 | `UPLOAD_DIR` | `./temp_uploads` | Temporary upload directory |
@@ -217,6 +219,20 @@ Create a `.env` file in the `backend/` directory:
 | `JWT_SECRET_KEY` | `change-me-in-production` | **Change this!** JWT signing secret |
 | `JWT_ALGORITHM` | `HS256` | JWT algorithm |
 | `JWT_EXPIRATION_MINUTES` | `1440` | Token expiry (24 hours) |
+| `GOOGLE_CLIENT_ID` | *(empty)* | Google OAuth client ID |
+| `GOOGLE_CLIENT_SECRET` | *(empty)* | Google OAuth client secret |
+
+For Google OAuth in production, add this authorized redirect URI in Google Cloud Console:
+
+```text
+https://ar07xd-deepshield.hf.space/api/v1/auth/oauth/google/callback
+```
+
+For local development, also keep:
+
+```text
+http://localhost:8000/api/v1/auth/oauth/google/callback
+```
 
 ---
 
