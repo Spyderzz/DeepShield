@@ -10,7 +10,7 @@ from PIL import Image
 
 from config import settings
 from models.model_loader import get_model_loader
-from services.image_service import _classify_vit
+from services.image_service import _classify_ffpp, _classify_vit
 from services.video_temporal import TemporalAnalysis, compute_temporal_score
 
 
@@ -107,6 +107,26 @@ def _score_efficientnet_face(eff, face) -> float:
     return float(eff._calibrate(raw_prob))
 
 
+def _blend_video_frame_scores(
+    *,
+    efficientnet_prob: Optional[float],
+    ffpp_prob: Optional[float],
+) -> float:
+    if ffpp_prob is not None and efficientnet_prob is not None:
+        total = settings.VIDEO_FFPP_WEIGHT + settings.VIDEO_EFFNET_WEIGHT
+        if total <= 0:
+            return float(ffpp_prob)
+        return float(
+            (settings.VIDEO_FFPP_WEIGHT * ffpp_prob + settings.VIDEO_EFFNET_WEIGHT * efficientnet_prob)
+            / total
+        )
+    if ffpp_prob is not None:
+        return float(ffpp_prob)
+    if efficientnet_prob is not None:
+        return float(efficientnet_prob)
+    return 0.0
+
+
 def _analyze_with_efficientnet(
     frames: List[Tuple[int, float, np.ndarray, Image.Image]],
 ) -> Tuple[List[FrameAnalysis], str, List[str], bool]:
@@ -137,13 +157,28 @@ def _analyze_with_efficientnet(
                 has_face = True
                 face_detector_used = "blazeface+crop_fallback"
 
-        fake_prob = 0.0
+        eff_prob: Optional[float] = None
+        ffpp_prob: Optional[float] = None
         label = "unknown"
         if has_face and faces:
             # Run EfficientNet on the best face/crop and apply the same calibration as image inference.
-            fake_prob = _score_efficientnet_face(eff, faces[0])
+            eff_prob = _score_efficientnet_face(eff, faces[0])
+            if settings.FFPP_ENABLED:
+                try:
+                    ffpp_res = _classify_ffpp(pil)
+                    if ffpp_res is not None:
+                        ffpp_prob = float(ffpp_res[0])
+                        if "ffpp-vit-local" not in models_used:
+                            models_used.append("ffpp-vit-local")
+                except Exception as exc:  # noqa: BLE001
+                    logger.debug(f"FFPP video frame scoring failed, using EfficientNet only: {exc}")
+            fake_prob = _blend_video_frame_scores(
+                efficientnet_prob=eff_prob,
+                ffpp_prob=ffpp_prob,
+            )
             label = "Fake" if fake_prob > 0.5 else "Real"
         elif not has_face:
+            fake_prob = 0.0
             label = "no_face"
 
         results.append(
@@ -155,7 +190,7 @@ def _analyze_with_efficientnet(
                 suspicious_prob=fake_prob,
                 is_suspicious=(fake_prob >= 0.5) and has_face,
                 has_face=has_face,
-                scored=has_face and faces,
+                scored=bool(has_face and faces),
             )
         )
 

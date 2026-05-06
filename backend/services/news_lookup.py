@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from datetime import datetime, timedelta, timezone
 from typing import List, Optional
 from urllib.parse import urlparse
 
@@ -17,6 +18,9 @@ TRUSTED_DOMAINS = {
     "cnn.com": 0.9, "npr.org": 0.95, "aljazeera.com": 0.9,
     "thehindu.com": 0.9, "indianexpress.com": 0.9, "ndtv.com": 0.85,
     "hindustantimes.com": 0.85, "pti.news": 0.95,
+    "timesofindia.indiatimes.com": 0.85, "livemint.com": 0.85,
+    "deccanherald.com": 0.85, "scroll.in": 0.8, "theprint.in": 0.8,
+    "news18.com": 0.8, "business-standard.com": 0.85, "thewire.in": 0.8,
 }
 
 # Fact-check / contradiction sources
@@ -44,6 +48,78 @@ class NewsLookupResult:
     # Fake-probability nudge when API key is set but returned 0 results.
     # Range [0, 1] — added to effective_fake_prob in the caller.
     no_source_penalty: float = 0.0
+
+
+def _clean_param(value: object) -> str:
+    return str(value).strip()
+
+
+def _configured_languages() -> str:
+    return ",".join(
+        part.strip()
+        for part in _clean_param(settings.NEWS_API_LANGUAGES).split(",")
+        if part.strip()
+    ) or "en"
+
+
+def _page_size() -> int:
+    return max(1, min(int(settings.NEWS_API_PAGE_SIZE or 10), 50))
+
+
+def _archive_window() -> tuple[str, str]:
+    days = max(1, int(settings.NEWS_API_OLDER_DAYS or 7))
+    today = datetime.now(timezone.utc).date()
+    from_day = today - timedelta(days=days)
+    return from_day.isoformat(), today.isoformat()
+
+
+def _query_attempts(q: str, country: Optional[str]) -> list[dict]:
+    """Build a recency/country fallback ladder for NewsData lookups."""
+    primary_country = _clean_param(country or settings.NEWS_API_PRIMARY_COUNTRY or "in").lower()
+    recent_window = _clean_param(settings.NEWS_API_RECENT_TIMEFRAME or "1")
+    archive_from, archive_to = _archive_window()
+    base = {
+        "apikey": settings.NEWS_API_KEY,
+        "q": q,
+        "language": _configured_languages(),
+        "size": _page_size(),
+    }
+
+    attempts: list[dict] = []
+    countries: list[str | None] = [primary_country]
+    if country is None:
+        countries.append(None)
+    elif primary_country != _clean_param(settings.NEWS_API_PRIMARY_COUNTRY or "in").lower():
+        countries.append(_clean_param(settings.NEWS_API_PRIMARY_COUNTRY or "in").lower())
+        countries.append(None)
+
+    seen: set[tuple[str | None, str]] = set()
+    for country_code in countries:
+        latest_key = (country_code, "latest")
+        if latest_key not in seen:
+            seen.add(latest_key)
+            latest_params = dict(base)
+            latest_params["_endpoint"] = "latest"
+            latest_params["_url"] = settings.NEWS_API_BASE_URL
+            if country_code:
+                latest_params["country"] = country_code
+            if recent_window:
+                latest_params["timeframe"] = recent_window
+            attempts.append(latest_params)
+
+        archive_key = (country_code, "archive")
+        if archive_key not in seen:
+            seen.add(archive_key)
+            archive_params = dict(base)
+            archive_params["_endpoint"] = "archive"
+            archive_params["_url"] = settings.NEWS_API_ARCHIVE_BASE_URL
+            archive_params["from_date"] = archive_from
+            archive_params["to_date"] = archive_to
+            if country_code:
+                archive_params["country"] = country_code
+            attempts.append(archive_params)
+
+    return attempts
 
 
 def _domain_of(url: str) -> str:
@@ -173,20 +249,54 @@ def _compute_truth_override(
         return None
 
 
-async def _fetch(q: str, country: Optional[str]) -> list[dict]:
-    params = {"apikey": settings.NEWS_API_KEY, "q": q, "language": "en", "size": 10, "country": country or "in"}
-    logger.info(f"News lookup query: {q!r} country={country or 'in'}")
-
+async def _fetch(params: dict) -> list[dict]:
+    url = params.get("_url") or settings.NEWS_API_BASE_URL
+    request_params = {k: v for k, v in params.items() if not k.startswith("_")}
+    redacted = {k: v for k, v in request_params.items() if k != "apikey"}
+    logger.info(f"News lookup query params: {redacted}")
     try:
         async with httpx.AsyncClient(timeout=httpx.Timeout(8.0, connect=3.0)) as c:
-            r = await c.get(settings.NEWS_API_BASE_URL, params=params)
+            r = await c.get(url, params=request_params)
             r.raise_for_status()
             results = (r.json() or {}).get("results") or []
-            logger.info(f"News lookup returned {len(results)} articles for query: {q!r}")
+            logger.info(f"News lookup returned {len(results)} articles for query: {request_params.get('q')!r}")
             return results
     except Exception as e:
-        logger.warning(f"News lookup failed (query={q!r}): {e}")
+        logger.warning(f"News lookup failed (query={params.get('q')!r}): {e}")
         return []
+
+
+def _collect_news_evidence(
+    articles: list[dict],
+    *,
+    seen: set[str],
+    trusted: List[TrustedSource],
+    contradictions: List[ContradictingEvidence],
+) -> None:
+    for art in articles:
+        url = art.get("link") or ""
+        if not url or url in seen:
+            continue
+        seen.add(url)
+
+        title = art.get("title") or ""
+        dom = _domain_of(url)
+        src_name = art.get("source_id") or dom or "news"
+
+        if _is_factcheck(url, title):
+            contradictions.append(ContradictingEvidence(
+                source_name=src_name, title=title, url=url, type="fact_check",
+            ))
+            continue
+
+        trusted.append(TrustedSource(
+            source_name=src_name,
+            title=title,
+            url=url,
+            description=art.get("description") or art.get("content"),
+            published_at=art.get("pubDate"),
+            relevance_score=_relevance(url),
+        ))
 
 
 async def search_news(
@@ -219,36 +329,17 @@ async def search_news_full(
         return NewsLookupResult([], [], 0)
 
     q = " ".join(keywords[:4])
-    articles = await _fetch(q, country)
-
+    total_articles = 0
     seen: set[str] = set()
     trusted: List[TrustedSource] = []
     contradictions: List[ContradictingEvidence] = []
 
-    for art in articles:
-        url = art.get("link") or ""
-        if not url or url in seen:
-            continue
-        seen.add(url)
-
-        title = art.get("title") or ""
-        dom = _domain_of(url)
-        src_name = art.get("source_id") or dom or "news"
-
-        if _is_factcheck(url, title):
-            contradictions.append(ContradictingEvidence(
-                source_name=src_name, title=title, url=url, type="fact_check",
-            ))
-            continue
-
-        trusted.append(TrustedSource(
-            source_name=src_name,
-            title=title,
-            url=url,
-            description=art.get("description") or art.get("content"),
-            published_at=art.get("pubDate"),
-            relevance_score=_relevance(url),
-        ))
+    for params in _query_attempts(q, country):
+        articles = await _fetch(params)
+        total_articles += len(articles)
+        _collect_news_evidence(articles, seen=seen, trusted=trusted, contradictions=contradictions)
+        if trusted or contradictions:
+            break
 
     trusted.sort(key=lambda s: -s.relevance_score)
     trusted = trusted[:limit]
@@ -270,7 +361,7 @@ async def search_news_full(
     return NewsLookupResult(
         trusted_sources=trusted,
         contradicting_evidence=contradictions[:limit],
-        total_articles=len(articles),
+        total_articles=total_articles,
         truth_override=truth_override,
         no_source_penalty=no_source_penalty,
     )

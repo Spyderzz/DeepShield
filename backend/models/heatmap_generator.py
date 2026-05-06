@@ -10,7 +10,6 @@ import torch
 from loguru import logger
 from PIL import Image
 from pytorch_grad_cam import GradCAMPlusPlus
-from pytorch_grad_cam.utils.image import show_cam_on_image
 from pytorch_grad_cam.utils.model_targets import ClassifierOutputTarget
 
 from config import settings
@@ -41,6 +40,16 @@ def _vit_reshape_transform(tensor: torch.Tensor, height: int = 14, width: int = 
     return result
 
 
+def _find_class_index(model: torch.nn.Module, label_tokens: tuple[str, ...]) -> Optional[int]:
+    """Find the first class index whose label contains one of `label_tokens`."""
+    id2label: dict[int, str] = getattr(getattr(model, "config", None), "id2label", {}) or {}
+    for idx, label in id2label.items():
+        lowered = str(label).lower()
+        if any(token in lowered for token in label_tokens):
+            return int(idx)
+    return None
+
+
 def _preprocess_for_cam(pil_img: Image.Image, processor) -> tuple[torch.Tensor, np.ndarray]:
     """Return (input_tensor, rgb_float_224) where rgb_float_224 is a (H,W,3) float
     array in [0,1] matching the model input geometry — needed for overlaying.
@@ -58,7 +67,7 @@ def _preprocess_for_cam(pil_img: Image.Image, processor) -> tuple[torch.Tensor, 
 
 
 def _encode_overlay_to_base64(overlay: np.ndarray) -> str:
-    """Encode a uint8 (H,W,3) RGB overlay to a base64 data-URL PNG."""
+    """Encode a uint8 RGB/RGBA overlay to a base64 data-URL PNG."""
     buf = io.BytesIO()
     Image.fromarray(overlay).save(buf, format="PNG")
     b64 = base64.b64encode(buf.getvalue()).decode("ascii")
@@ -93,9 +102,13 @@ def _compute_gradcam_pp(
 
     wrapped = _HFLogitsWrapper(model)
 
-    targets = None
-    if target_class_idx is not None:
-        targets = [ClassifierOutputTarget(int(target_class_idx))]
+    if target_class_idx is None:
+        target_class_idx = _find_class_index(
+            model,
+            ("fake", "deepfake", "manipulated", "ai", "generated", "synthetic"),
+        )
+
+    targets = [ClassifierOutputTarget(int(target_class_idx))] if target_class_idx is not None else None
 
     with GradCAMPlusPlus(
         model=wrapped,

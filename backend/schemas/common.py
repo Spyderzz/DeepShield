@@ -4,7 +4,7 @@ from typing import List, Optional
 
 from pydantic import BaseModel, ConfigDict, Field
 
-ANALYSIS_CACHE_VERSION = "2026-05-06-phase-a-unified-fusion"
+ANALYSIS_CACHE_VERSION = "2026-05-07-archive-7d-news-fallback"
 
 
 class Verdict(BaseModel):

@@ -176,13 +176,17 @@ backend/
 │   ├── test_image_classify.py
 │   ├── test_news_api.py
 │   ├── test_phase5.py
-│   └── test_text_analysis.py
+│   ├── test_text_analysis.py
+│   ├── run_image_eval.py           # Full eval harness: per-image scoring, per-family F1, signal breakdown, gating log
+│   └── calibrate_temperatures.py  # Grid-search for GENERAL_MODEL_TEMPERATURE × DIFFUSION_MODEL_TEMPERATURE
 │
 ├── tests/
 │   ├── test_accuracy_regressions.py
 │   ├── test_api_regressions.py
 │   ├── test_efficientnet_regression.py
-│   └── test_report_service.py      # Regression: active hyperlinks, required sections, pipeline context
+│   ├── test_report_service.py      # Regression: active hyperlinks, required sections, pipeline context
+│   └── eval/
+│       └── MANIFEST.csv            # 25-row manifest covering 5 image families (camera-real, face-swap, gan-portrait, diffusion-portrait, diffusion-noface)
 │
 ├── docs/                     # Documentation and architecture guides
 ├── design_ref/               # Reference UI designs and brand assets
@@ -191,6 +195,15 @@ backend/
 ├── static/                     # Report logo and CSS
 ├── serve_media.py              # Config-driven media FileResponse helper (reads MEDIA_DIR from settings)
 ├── training/                   # Model training and fine-tuning scripts
+│   ├── datasets/               # Dataset procurement helpers
+│   │   ├── build_manifest.py       # Reads downloaded frames and writes CSV manifest (path, label)
+│   │   ├── download_dfdc_sample.py # Downloads DFDC sample subset from Kaggle/HF
+│   │   ├── download_ffhq.py        # Downloads FFHQ real faces for negative examples
+│   │   ├── extract_frames.py       # Extracts key frames from video files into labeled subdirs
+│   │   ├── procure_all.sh          # Shell orchestrator: runs all download + extract steps
+│   │   └── procure_all.ps1         # PowerShell equivalent for Windows
+│   ├── generate_colab_nb.py    # Generates a Colab-ready .ipynb notebook from the training pipeline
+│   └── README.md               # Training pipeline overview and step-by-step instructions
 ├── media/                      # Content-addressed storage (runtime)
 │   ├── {sha[:2]}/{sha}.{ext}
 │   ├── thumbs/{sha}_400.jpg
@@ -229,7 +242,7 @@ frontend/
     │   │   ├── FrameTimeline.jsx         # Recharts AreaChart: timestamp vs score
     │   │   ├── HeatmapOverlay.jsx        # 3-state toggle (Heatmap/ELA/Boxes) + alpha slider
     │   │   ├── IndicatorCards.jsx        # ArtifactIndicator grid with severity pills
-    │   │   ├── LLMExplainCard.jsx        # LLM paragraph + 3 bullet signals
+    │   │   ├── LLMExplainCard.jsx        # LLM paragraph + 4 key bullets + expandable 6-signal forensic breakdown (SignalObservation[])
     │   │   ├── LanguageBadge.jsx         # Detected language display
     │   │   ├── ProcessingSummary.jsx     # Collapsible stages_completed list
     │   │   ├── ReportDownload.jsx        # PDF button (5 states), tooltip when unauthed
@@ -280,7 +293,7 @@ frontend/
     │   └── ToastContext.jsx      # addToast(), removeToast(), 4s auto-dismiss
     │
     └── utils/
-        ├── constants.js          # Score ranges, severity colors, TRUST_SCALE labels
+        ├── constants.js          # Score ranges, severity colors, 6-band TRUST_SCALE labels (incl. Uncertain 56–69)
         ├── dateTime.js           # Date and time formatting helpers
         └── sanitize-text.js      # 4 functions: sanitizeText, sanitizeHtml (allowlist), sanitizeUrl (blocks javascript:/data:), escapeAttr
 ```
@@ -289,13 +302,15 @@ frontend/
 
 **`main.py`** — FastAPI app factory. Registers middleware stack in bottom-to-top order. Defines the `lifespan` async context manager: runs `init_db()`, conditionally calls `model_loader.preload_phase1()` on startup when `PRELOAD_MODELS=true`, spawns the `_report_cleanup_loop()` background coroutine (10-minute cadence), and tears down cleanly on shutdown. Mounts the versioned API router at `/api/v1`. The previously present `app.mount("/media", StaticFiles(directory=MEDIA_ROOT))` static file mount has been **removed** — raw media files are no longer publicly accessible via any static route. All asset delivery is exclusively through the signed asset endpoint.
 
-**`config.py`** — Pydantic `BaseSettings` with a `model_validator` that refuses to start in production (`DEBUG=false`) if `JWT_SECRET_KEY` is still the auto-generated default. Covers 38 configuration keys across 8 domains: server, database, upload limits, AI models, ensemble, report, LLM, news API. Includes `MEDIA_SIGNED_URL_TTL_SECONDS` (default 3600) for HMAC-signed asset URL TTL. Storage locations (`UPLOAD_DIR`, `MEDIA_DIR`, `REPORT_DIR`) are now read exclusively from config rather than being hardcoded in individual modules — `storage.py`, `serve_media.py`, and `file_handler.py` all read the canonical path from `settings` at runtime, ensuring consistent paths across all deployment environments. The signing key is `settings.JWT_SECRET_KEY`.
+**`config.py`** — Pydantic `BaseSettings` with two validators. `drop_blank_values` (before-mode) strips blank env vars so defaults apply rather than causing parse errors. `ensure_jwt_secret` (after-mode) auto-generates a `secrets.token_urlsafe(48)` key when `JWT_SECRET_KEY` is not set and marks `JWT_SECRET_KEY_GENERATED=True` — this applies in both development and production, so callers can detect an ephemeral key via that flag. Covers approximately 60 configuration keys across 11 domains: server, database, upload limits, AI models (ViT, general, diffusion dual-head, OCR, audio, text), ensemble face-stack weights, face-present unified-fusion weights (`FACE_STACK_WEIGHT_FACE`, `GENERAL_WEIGHT_FACE`, `FORENSICS_WEIGHT_FACE`, `EXIF_WEIGHT_FACE`, `VLM_WEIGHT_FACE`) and no-face weights, hard gating thresholds (`GENERAL_FAKE_GATING_THRESHOLD=0.80`, `GAN_ARTIFACT_GATING_THRESHOLD=0.70`, `GATING_FAKE_FLOOR=0.50`), video-frame weight overrides (`VIDEO_FRAME_FACE_STACK_WEIGHT=0.70`, `VIDEO_FRAME_GENERAL_WEIGHT=0.15`), report, LLM/Groq, news API. Includes `MEDIA_SIGNED_URL_TTL_SECONDS` (default 3600) for HMAC-signed asset URL TTL. Storage locations (`UPLOAD_DIR`, `MEDIA_DIR`, `REPORT_DIR`) are read exclusively from config rather than being hardcoded in individual modules — `storage.py`, `serve_media.py`, and `file_handler.py` all read the canonical path from `settings` at runtime. The signing key is `settings.JWT_SECRET_KEY`.
 
 **`api/router.py`** — Aggregates all v1 sub-routers under `/api/v1`: analyze, auth, history, report, health, stats, jobs.
 
 **`api/deps.py`** — Two dependency functions. `get_current_user()`: extracts Bearer token, decodes with `python-jose`, validates `exp`, fetches `User` from DB, raises HTTP 401 on any failure. `optional_current_user()`: returns `None` for unauthenticated requests instead of raising, enabling guest analysis with optional ownership linking when a valid token is present.
 
 **`api/v1/analyze.py`** — Central inference gateway and routing coordinator. Handles all six analysis routes. Per request: parse multipart/JSON, validate via `file_handler.py`, compute SHA-256 hash, query dedup cache, dispatch to the appropriate service, compose typed response, trigger `AnalysisRecord` persistence. Acts as a thin coordinator — all heavy computation delegated to `services/`. All `make_image_thumbnail` and `make_video_thumbnail` call sites unpack the returned `(url_path, data_url)` tuple and set both `thumbnail_url` (the signed path, stored on the DB record) and `resp.thumbnail_b64` (the inline data URL, included in the response body and persisted in `result_json`).
+
+After image classification, two post-processing steps run before the final score is committed: `rescore_exif_trust(exif_summary, general_fake_prob=...)` re-evaluates the EXIF trust adjustment with awareness of the model's synthetic-signal strength (see `exif_service.py`), but only when unified evidence fusion did not already incorporate EXIF as a weighted component — preventing double-counting. Then `maybe_clamp_to_uncertain(score, components)` checks whether the primary evidence signals (face_stack, general, forensics) disagree significantly; if their standard deviation exceeds 0.25 and the raw score would otherwise land in a confident verdict band, the score is clamped into the Uncertain band (56–69) and a `disagreement_reason` string is logged and surfaced in `ProcessingSummary`. Very Likely Fake scores (≤20) are never clamped upward. The VLM rerun-fusion path applies to face-present analyses in addition to no-face paths.
 
 Three performance systems are implemented directly in this module for the image pipeline:
 
@@ -329,11 +344,11 @@ All `thumbnail_url`, `media_path`, and overlay URLs returned by `GET /history` a
 
 **`api/v1/stats.py`** — `GET /stats/recent` returns 24h analysis count. Feeds Landing Page live counter.
 
-**`db/database.py`** — SQLAlchemy engine, `SessionLocal` factory, `get_db()` dependency. In-place lightweight migrations on startup: ALTER TABLE statements wrapped in try/except for `media_hash`, `media_path`, `thumbnail_url`, `debug_metadata` columns (Phase 19 additions). Creates indexes `ix_record_hash` and `ix_record_user_created`.
+**`db/database.py`** — SQLAlchemy engine, `SessionLocal` factory, `get_db()` dependency. On startup, runs in-place lightweight migrations: `ALTER TABLE` statements wrapped in `try/except` that add `media_hash`, `media_path`, `thumbnail_url`, and `debug_metadata` columns to the `analysis_records` table if they do not already exist — allowing the app to start cleanly against both fresh and existing databases without a separate migration tool. Creates composite index `ix_record_user_created` on `(user_id, created_at)` and hash index `ix_record_hash` on `media_hash`.
 
 **`db/models.py`** — Three ORM models: `User` (id Integer PK, email unique+indexed, password_hash, name, created_at), `AnalysisRecord` (id int PK, user_id nullable FK, media_type, verdict fields, result_json, media_hash indexed, media_path, thumbnail_url, created_at), `Report` (id int PK, analysis_id FK, file_path, created_at, expires_at).
 
-**`models/model_loader.py`** — Thread-safe double-checked locking singleton (`_instance`, `threading.Lock()`). Lazy initialization methods: `load_image_model()` (HuggingFace ViT), `load_efficientnet()` (ICPR2020 EfficientNetDetector, graceful fallback if BlazeFace assets missing), `load_text_model()` (BERT pipeline), `load_ocr_engine()` (EasyOCR), `load_audio_classifier()` (WavLM/wav2vec2). `preload_phase1()` calls image model load at startup. Models set to `eval()` mode and moved to `settings.DEVICE`.
+**`models/model_loader.py`** — Thread-safe double-checked locking singleton (`_instance`, `threading.Lock()`). Lazy initialization methods: `load_image_model()` (HuggingFace ViT), `load_general_image_model()` (general AI-image detector, graceful fallback), `load_diffusion_image_model()` (diffusion-specialized second detector head — same lazy-load and graceful-fallback pattern as the general model; added to `preload_phase1()`), `load_efficientnet()` (ICPR2020 EfficientNetDetector, graceful fallback if BlazeFace assets missing), `load_text_model()` (BERT pipeline), `load_ocr_engine()` (EasyOCR), `load_audio_classifier()` (WavLM/wav2vec2). `preload_phase1()` loads image, general, and diffusion models at startup. Models set to `eval()` mode and moved to `settings.DEVICE`.
 
 **`models/heatmap_generator.py`** — Grad-CAM++ visualization engine with architecture-aware dispatch keyed on `model_family: Literal["vit", "efficientnet"]`. ViT path: `_HFLogitsWrapper` extracts raw logits from `ImageClassifierOutput`; `_vit_reshape_transform` drops CLS token and reshapes 196 patch tokens to 14×14 spatial grid; target layer `model.vit.encoder.layer[-1].layernorm_before`. EfficientNet path: AutoAttB4's built-in attention map is primary (cheaper, more semantically grounded); `GradCAMPlusPlus` on `model.efficientnet._blocks[-1]` as fallback. Returns `heatmap_source: "attention" | "gradcam++" | "fallback" | "failed"` in response. Saves PNG to `media/overlays/{sha}_heatmap.png`.
 
@@ -343,11 +358,34 @@ All `thumbnail_url`, `media_path`, and overlay URLs returned by `GET /history` a
 
 **`models/calibrator.pkl`** — Pickled `sklearn.isotonic.IsotonicRegression(out_of_bounds='clip')`. Fitted offline by `scripts/fit_calibrator.py` on FFPP C40 validation split using raw sigmoid outputs from EfficientNetAutoAttB4 as X and ground-truth labels as y. Applied inside `efficientnet_service._calibrate()`.
 
-**`services/general_image_service.py`** — Supports `image_service.py` when no face is detected. Uses the `umm-maybe/AI-image-detector` model to classify generic scenes/objects as AI-generated or real, bridging the gap for non-facial content where EfficientNet falls back.
+**`services/general_image_service.py`** — Dual-head AI-image detector used by `image_service.py` on every image regardless of face detection outcome. Runs two classifier heads in parallel: the general detector (`umm-maybe/AI-image-detector`, `GENERAL_AI_WEIGHT=0.45`) and a diffusion-specialized second head (`haywoodsloan/ai-image-detector-deploy`, `DIFFUSION_AI_WEIGHT=0.55`). When both heads are available, blends their outputs as `general * 0.45 + diffusion * 0.55` into a single `fake_probability`. Falls back gracefully to whichever head is loaded when one is unavailable.
 
-**`services/image_service.py`** — Primary image inference orchestrator. Loads PIL image, converts to RGB, runs ViT forward pass. It uses a weighted ensemble of up to three models when a face is detected (`ffpp-vit-local`, generic ViT, and `EfficientNetAutoAttB4`), applying config weights (`FFPP_WEIGHT_FACE`, `VIT_WEIGHT_FACE`, `EFFNET_WEIGHT_FACE`). Applies isotonic calibration, triggers heatmap generation, ELA generation, artifact detection, EXIF extraction, and source verification. No-face fallback: ViT combined with `general_image_service.py`.
+`_temperature_scale(logits, T)` applies logit-space temperature scaling before the softmax — a no-op at `T=1.0`, softening probabilities for `T>1.0` and sharpening them for `T<1.0`. Tunable per head via `GENERAL_MODEL_TEMPERATURE` and `DIFFUSION_MODEL_TEMPERATURE` after running `scripts/calibrate_temperatures.py`. `_run_image_classifier()` is a shared inference helper used by both heads to avoid code duplication.
 
-**`services/video_service.py`** — Video pipeline orchestrator. OpenCV frame extraction at uniform `VIDEO_SAMPLE_FRAMES=16` intervals. Per frame: BlazeFace (primary) → MediaPipe FaceMesh (fallback). Face-bearing frames: EfficientNet + ViT ensemble. `MIN_FACE_FRAMES=3` gate: returns "Insufficient face content" verdict at severity=warning if fewer than 3 face frames. Aggregates `mean_suspicious_prob`, `suspicious_ratio`, `suspicious_timestamps`. Delegates temporal analysis to `video_temporal.py` and audio to `audio_service.py`. Final score: `0.5 × visual + 0.3 × temporal + 0.2 × audio` (or `0.7/0.3` without audio). Supports both sync and async execution paths.
+`_forensic_fake_probability()` gains an `is_video_frame` flag: when True, the compression artifact weight is cut from 0.85 → 0.40 — compressed video-frame crops naturally have high-frequency JPEG artifacts that are not discriminative in the video-frame context, and inflating their weight would produce false positives. `_looks_like_video_frame(pil)` detects video-frame crops: returns True when the image's longest side is ≤ 1080px and its aspect ratio matches a standard video ratio (16:9, 4:3, 9:16, 3:4, or 1:1) within ±0.10 tolerance.
+
+**`services/image_service.py`** — Primary image inference orchestrator implementing a unified five-signal evidence fusion pipeline.
+
+**Unconditional general classification:** `classify_general_image()` runs on every image before face detection, so the result is available to both pipeline paths without a second forward pass.
+
+**Face-present path (unified evidence fusion):** When BlazeFace detects at least one face, the pipeline fuses five independently-weighted evidence streams:
+- `face_stack` — composite of FFPP-ViT + generic ViT + EfficientNetAutoAttB4, using `FFPP_WEIGHT_FACE`, `VIT_WEIGHT_FACE`, `EFFNET_WEIGHT_FACE` internal weights. Weighted into fusion at `FACE_STACK_WEIGHT_FACE=0.40`.
+- `general` — dual-head AI-image detector output from `general_image_service`, `GENERAL_WEIGHT_FACE=0.40`.
+- `forensics` — artifact detector output (FFT, Q-table, FaceMesh, luminance), `FORENSICS_WEIGHT_FACE=0.10`.
+- `exif` — EXIF trust signal converted to a fake-probability contribution, `EXIF_WEIGHT_FACE=0.05`.
+- `vlm` — VLM consistency score if available, `VLM_WEIGHT_FACE=0.05`.
+
+**Video-frame weight override:** `_looks_like_video_frame(pil)` returns True when the image's longest side is ≤ 1080px and the aspect ratio matches a standard video ratio (16:9, 4:3, 9:16, 3:4, or 1:1 within ±0.10). When detected, the fusion weight set is overridden: `VIDEO_FRAME_FACE_STACK_WEIGHT=0.70` / `VIDEO_FRAME_GENERAL_WEIGHT=0.15` / `VIDEO_FRAME_FORENSICS_WEIGHT=0.10` / `VIDEO_FRAME_EXIF_WEIGHT=0.05`; VLM retains `VLM_WEIGHT_FACE=0.05`. The general AI detector weight drops 0.40 → 0.15 because it is trained on synthesized stills rather than video-frame crops and is unreliable on that input distribution. `is_video_frame` is surfaced in the `evidence_fusion` response field.
+
+**Hard gating (`_apply_hard_gating()`):** After fusion, if the general AI detector score is ≥ `GENERAL_FAKE_GATING_THRESHOLD=0.80`, or any GAN artifact indicator has confidence ≥ `GAN_ARTIFACT_GATING_THRESHOLD=0.70`, `fake_prob` is floored to `GATING_FAKE_FLOOR=0.50` (authenticity score cannot exceed 50 — the "Possibly Manipulated" range). This prevents the face-swap model stack from pulling a verdict into "Likely Real" when a strong synthetic signal is present. Applied to both face-present and no-face paths. `gating_applied` (bool + reason) is surfaced in the response.
+
+**No-face path:** Uses the pre-computed `general` score with the no-face weight set: `NOFACE_GENERAL_WEIGHT=0.60`, `NOFACE_FORENSICS_WEIGHT=0.20`, `NOFACE_EXIF_WEIGHT=0.10`, `NOFACE_VLM_WEIGHT=0.10`. Hard gating applies here too.
+
+**New response fields:** `evidence_fusion` (dict of all component probabilities and their applied weights) and `gating_applied` on `ImageClassification` for complete transparency into the scoring decision.
+
+**`services/video_service.py`** — Video pipeline orchestrator. OpenCV frame extraction at uniform `VIDEO_SAMPLE_FRAMES=16` intervals. Per frame: BlazeFace (primary) → MediaPipe FaceMesh (fallback). Face-bearing frames: EfficientNet + ViT ensemble. `MIN_FACE_FRAMES=3` gate: returns "Insufficient face content" verdict at severity=warning if fewer than 3 face frames. Aggregates `mean_suspicious_prob`, `suspicious_ratio`, `suspicious_timestamps`. Delegates temporal analysis to `video_temporal.py` and audio to `audio_service.py`. Final score: `0.5 × visual + 0.3 × temporal + 0.2 × audio` (or `0.7/0.3` without audio). Supports both sync (blocking `POST /analyze/video`) and async (`POST /analyze/video/async` → `JobRegistry`) execution paths.
+
+**`services/video_temporal.py`** — Temporal consistency analyser called by `video_service.py`. Three signals: (1) `cv2.calcOpticalFlowFarneback()` between consecutive frames — abnormally low optical flow variance indicates a static GAN-portrait loop or frame duplication. (2) Eye-aspect-ratio (EAR) time series from MediaPipe FaceMesh landmarks — blink rate and EAR trajectory anomalies detect AI-generated faces that blink unnaturally or not at all. (3) Lip-sync mismatch — correlation of landmark-area velocity (mouth region) against audio energy envelope; low correlation indicates dubbed or synthetically generated speech. Returns `{temporal_score, optical_flow_variance, blink_anomaly_score, lip_sync_score}`.
 
 **`services/text_service.py`** — Fake-news detection orchestrator. Detects language via `langdetect`, routes to BERT (English) or XLM-RoBERTa (multilingual). Scores sensationalism via regex (ALL CAPS ratio, exclamation count, clickbait phrases). Detects 15 manipulation indicator patterns across three categories — `unverified_claim`, `emotional_manipulation`, `false_authority` — each with `start_pos`/`end_pos` for frontend inline highlighting. Extracts named entities via spaCy `en_core_web_sm` prioritizing `PERSON`, `ORG`, `GPE`, `EVENT`. Queries `news_lookup.py`, applies truth-override. Weighted score: 90% classifier + 10% heuristics.
 
@@ -361,7 +399,13 @@ All `thumbnail_url`, `media_path`, and overlay URLs returned by `GET /history` a
 
 **`services/ela_service.py`** — Error Level Analysis generator. Re-saves input image at JPEG quality 90, computes per-pixel absolute difference against original, normalizes the residual map. High-ELA regions indicate compression-level inconsistency — a forensic signal for spliced or composited content. Saves to `media/overlays/{sha}_ela.png`. Returns base64 PNG.
 
-**`services/exif_service.py`** — EXIF metadata extractor using Pillow `_getexif()` with `exifread` fallback. Extracts: Make, Model, DateTimeOriginal, GPSInfo, Software, LensModel, ExposureTime, FNumber, ICC Profile, MakerNote. The `Resolution` and `FocalLength` fields were removed as low-signal for authenticity scoring. `ICC Profile` presence indicates an unmodified color space from a camera sensor pipeline. `MakerNote` is a manufacturer-proprietary binary block written by the camera firmware at capture time — it is never present in AI-generated images and extremely difficult to fabricate. When `MakerNote` is successfully detected, a `-10` trust adjustment is applied (reducing `fake_prob` by 0.10), making the pipeline notably more confident when handling authentic, unaltered camera photos. Presence of `Software: Adobe Photoshop` or `Software: GIMP` applies a `+10` adjustment (increases `fake_prob` by 0.10). Valid camera metadata with consistent internal timestamps reduces `fake_prob` by up to 0.15. Returns `ExifSummary` with per-field trust badges. `EXIFCard.jsx` explicitly surfaces the ICC Profile and MakerNote fields in the results view.
+**`services/exif_service.py`** — EXIF metadata extractor using Pillow `_getexif()` with `exifread` fallback. Extracts: Make, Model, DateTimeOriginal, GPSInfo, Software, LensModel, ExposureTime, FNumber, ICC Profile, MakerNote. `Resolution` and `FocalLength` were removed as low-signal for authenticity scoring. `ICC Profile` indicates an unmodified color space from a camera sensor pipeline. `MakerNote` is a manufacturer-proprietary binary block written by camera firmware at capture time — it is never present in AI-generated images and is extremely difficult to fabricate.
+
+Trust adjustments are capped at **±6** (not a larger range): generative/editing software detected `+6`; camera firmware in Software field `−1`; valid camera make + model + datetime (when not suppressed) `−5`; MakerNote present (when not suppressed) `−4`; GPS coordinates present (when not suppressed) `−2`.
+
+The `_SUSPICIOUS_SOFTWARE` set covers both traditional editing tools (Adobe Photoshop, GIMP, Affinity Photo) and modern AI image generators: Stable Diffusion, MidJourney, DALL-E, ComfyUI, Automatic1111, InvokeAI, Firefly, Runway, Sora, Flux, Ideogram, Leonardo, NightCafe, DreamStudio, Canva, Fotor, Adobe Firefly.
+
+**`rescore_exif_trust(summary, *, general_fake_prob)`** — post-classification rescorer that re-evaluates trust adjustments on an already-extracted `ExifSummary` using model output. Positive (real-leaning) adjustments are suppressed when `general_fake_prob ≥ 0.60` or generative software is detected — preventing EXIF from providing a false "real" boost when visual evidence already indicates synthetic content. This is called from `analyze.py` after classification, but only when unified evidence fusion did not already incorporate EXIF as a weighted component. Returns the same summary object mutated in-place. `EXIFCard.jsx` explicitly surfaces the ICC Profile and MakerNote fields in the results view.
 
 **`services/artifact_detector.py`** — Four deterministic, model-free forensic signal extractors. (1) GAN/diffusion high-frequency artifact: FFT of grayscale image, ratio of high-frequency energy to total. (2) JPEG Q-table anomaly: `PIL.Image.quantization` inspection for non-standard quantization matrices. (3) FaceMesh jaw-contour jitter: MediaPipe landmark coordinate variance. (4) Per-quadrant luminance imbalance: splits image into 4 quadrants, computes per-channel mean luminance variance. Returns `List[ArtifactIndicator]` with type, severity, description, confidence.
 
@@ -403,23 +447,31 @@ Idempotency check → generate → save to `temp_reports/deepshield_report_{id}.
 
 **`services/metadata_writer.py`** — Optional ExifTool CLI integration. When `EXIFTOOL_PATH` is configured, embeds analysis verdict, score, and `analysis_id` into the analyzed file's EXIF `ImageDescription` and `UserComment` fields. Silent skip when ExifTool binary not found.
 
-**`schemas/common.py`** — Shared Pydantic v2 models. `Verdict`: label, severity, authenticity_score, model_confidence, model_label, cached. `ArtifactIndicator`: type, severity, description, confidence. `ExifSummary`: per-field trust badges, trust_adjustment float. `VLMBreakdown`: 6 component scores with notes. `SignalObservation`: name, observation, verdict (authentic/suspicious/inconclusive). `LLMExplainabilitySummary` includes `signals: List[SignalObservation]` (backward compatible, empty for non-image media). `ProcessingSummary`: stages_completed list, total_duration_ms, models_used, calibrator_applied, heatmap_source, face_detector_used, evidence_fusion, disagreement_reason, gating_applied. All use `model_config = ConfigDict(protected_namespaces=())` to suppress `model_*` field name warnings.
+**`schemas/common.py`** — Shared Pydantic v2 models. `Verdict`: label, severity, authenticity_score, model_confidence, model_label, cached. `ArtifactIndicator`: type, severity, description, confidence. `ExifSummary`: per-field trust badges, trust_adjustment float. `VLMBreakdown`: 6 component scores with notes. `SignalObservation`: name, observation, verdict (authentic / suspicious / inconclusive) — carries the LLM's per-signal forensic assessment. `LLMExplainabilitySummary` includes `signals: List[SignalObservation]` (backward-compatible default `[]` for non-image media). `ProcessingSummary`: stages_completed list, total_duration_ms, models_used, calibrator_applied, heatmap_source, face_detector_used, `evidence_fusion` (dict of all five component probabilities and applied weights), `disagreement_reason` (string explaining why a score was clamped to the Uncertain band, or null), `gating_applied` (string identifying which hard-gate condition fired, or null). These three fields allow clients to see exactly why a result was clamped or gated — the full decision audit trail is visible in the API response. `ANALYSIS_CACHE_VERSION` is bumped when the scoring pipeline changes materially, so cached results from prior pipeline versions are automatically invalidated on lookup. All use `model_config = ConfigDict(protected_namespaces=())` to suppress `model_*` field name warnings.
 
 **`schemas/analyze.py`** — Per-modality response models. `ImageAnalysisResponse`, `VideoAnalysisResponse`, `ScreenshotAnalysisResponse`, and `AudioAnalysisResponse` each include a `thumbnail_b64: str | None` field. This field carries the base64 JPEG data URL generated by `storage.make_image_thumbnail` / `make_video_thumbnail` and is persisted inside `result_json`. It ensures the thumbnail is available from the API response even when `thumbnail_url` is null in the DB or the media directory is not mounted.
 
-**`utils/file_handler.py`** — `read_upload_bytes()`: streams in 1 MB chunks, enforces `MAX_UPLOAD_SIZE_MB`. Magic-byte validation on first 16 bytes (JPEG `FF D8 FF`, PNG `89 50 4E 47`, MP4 `66 74 79 70`, WebP `52 49 46 46`). `save_upload_to_tempfile()`: UUID filename to prevent path traversal. `cleanup_tempfile()`: immediate deletion after processing.
+**`utils/scoring.py`** — `TRUST_SCALE` defines six verdict bands: 0–20 "Very Likely Fake" (critical), 21–40 "Likely Fake" (danger), 41–55 "Possibly Manipulated" (warning), 56–69 "Uncertain — Needs Verification" (warning), 70–88 "Likely Real" (positive), 89–100 "Very Likely Real" (safe). The dedicated 56–69 Uncertain band captures analyses where model signals disagree — these are neither confidently fake nor confidently real and require human review.
 
-**`utils/scoring.py`** — `TRUST_SCALE`: 0–20 = "Very Likely Fake" (critical), 21–40 = "Likely Fake" (danger), 41–60 = "Possibly Manipulated" (warning), 61–80 = "Likely Real" (positive), 81–100 = "Very Likely Real" (safe). `compute_authenticity_score(fake_prob, label)`: if label=="Fake", `score = round((1 - fake_prob) × 100)`. `get_score_color(score)`: interpolates `#E53935 → #FFA726 → #43A047`.
+`compute_authenticity_score(fake_prob)`: `round((1 − fake_prob) × 100)`, clamped to [0, 100]. The `label` parameter is accepted for backward compatibility but is not used. `get_verdict_label(score)` maps a score to its `(label, severity)` tuple via the TRUST_SCALE table.
+
+`compute_signal_disagreement(components)` — computes the population standard deviation of the primary evidence signals (`face_stack`, `general`, `forensics`). Returns `None` when fewer than two primary signals are present (no meaningful disagreement to measure).
+
+`maybe_clamp_to_uncertain(score, components)` — if `compute_signal_disagreement` returns a stdev ≥ `DISAGREEMENT_THRESHOLD=0.25` and the raw score would otherwise land in a confident verdict band, the score is clamped into the 56–69 Uncertain band. Specifically: scores above 69 are clamped down to 69; scores in 21–55 are clamped up to 56. Very Likely Fake scores (≤20) are **never** clamped upward — a result where nearly all signals agree on synthetic is kept regardless of one outlier signal. Returns `(final_score, disagreement_reason)` where `reason` is None when no clamping occurred. `get_score_color(score)`: interpolates `#E53935 → #FFA726 → #43A047`.
 
 **`scripts/fit_calibrator.py`** — Fits `IsotonicRegression(out_of_bounds='clip')` on FFPP C40 val split. Raw sigmoid outputs as X, ground-truth binary labels as y. Pickles to `models/calibrator.pkl`. One-time offline job.
 
 **`scripts/export_onnx.py`** — Exports ViT to ONNX for future CPU-optimized deployment and INT8 quantization.
 
-**`scripts/benchmark_ff.py` / `benchmark_dff.py`** — Evaluation runners against FaceForensics++ C23 and DeepFakeFace (Stable Diffusion v1.5, InsightFace) datasets. Output: accuracy, AUC, false-positive rate on camera-photo anchor set.
+**`scripts/benchmark_ff.py` / `benchmark_dff.py`** — Offline evaluation runners. `benchmark_ff.py` runs against FaceForensics++ C23; `benchmark_dff.py` against DeepFakeFace (Stable Diffusion v1.5, InsightFace). Output: per-class accuracy, AUC, and false-positive rate on the camera-photo anchor set.
 
-**`services/video_temporal.py`** — Temporal consistency analysis module called by `video_service.py`. Computes `cv2.calcOpticalFlowFarneback()` between consecutive frames to detect micro-flicker (per-frame luminance variance). Tracks eye-aspect-ratio time series from MediaPipe FaceMesh landmarks to detect blink rate anomalies (AI-generated faces tend to blink at unnatural intervals). Measures lip-sync mismatch via correlation of landmark-area velocity against audio energy envelope. Returns `{temporal_score, optical_flow_variance, blink_anomaly_score, lip_sync_score}`.
+**`scripts/run_image_eval.py`** — Full end-to-end evaluation harness for the image pipeline. Reads images listed in `tests/eval/MANIFEST.csv`, runs each through the full `classify_image()` pipeline, and produces: per-image score + verdict, per-family confusion matrix and F1 score (one table per image family: camera-real, face-swap, gan-portrait, diffusion-portrait, diffusion-noface), a component signal breakdown table showing how each of the five fusion signals contributed per image, and a gating event log listing every image where `_apply_hard_gating()` fired and why. Exits with code 0 (all families pass F1 ≥ threshold) or 1 (at least one family fails), making it suitable as a CI gate.
 
-**`utils/file_handler.py`** — `read_upload_bytes()`: streams multipart file in 1 MB chunks, enforces `MAX_UPLOAD_SIZE_MB`, returns raw bytes + MIME type. Magic-byte validation on first 16 bytes. `save_upload_to_tempfile()`: writes to `{settings.UPLOAD_DIR}/{uuid4().hex}.{ext}` — path resolved from `settings.UPLOAD_DIR` rather than a hardcoded local string, ensuring portability across deployment environments. UUID filename prevents path traversal. `cleanup_tempfile()`: immediate deletion after processing.
+**`scripts/calibrate_temperatures.py`** — Grid-search calibration script for the two detector temperature parameters. Iterates over a `GENERAL_MODEL_TEMPERATURE × DIFFUSION_MODEL_TEMPERATURE` grid on the evaluation set from `tests/eval/MANIFEST.csv`, scores each combination using `run_image_eval.py`'s F1 metric, and prints the configuration that maximises macro-F1. The recommended workflow is to run this after populating the eval set with real images, then write the winning temperature values to `.env`. Temperature scaling is a no-op at 1.0 — this script is only needed when the raw detector outputs are over- or under-confident for the target distribution.
+
+**`tests/eval/MANIFEST.csv`** — Ground-truth manifest for the image evaluation harness. 25 rows covering 5 image families (camera-real, face-swap, gan-portrait, diffusion-portrait, diffusion-noface), with columns: `filename`, `family`, `label` (real/fake). Populated with representative samples; `run_image_eval.py` reads it to drive both calibration and CI evaluation.
+
+**`utils/file_handler.py`** — `read_upload_bytes()`: streams multipart file in 1 MB chunks, enforces `MAX_UPLOAD_SIZE_MB`, returns raw bytes + MIME type. Magic-byte validation on the first 16 bytes verifies the actual file format regardless of the declared `Content-Type` header: JPEG `FF D8 FF`, PNG `89 50 4E 47`, MP4 `66 74 79 70`, WebP `52 49 46 46`. This prevents MIME-type spoofing where a malicious user renames a non-image to `.jpg`. `save_upload_to_tempfile()`: writes to `{settings.UPLOAD_DIR}/{uuid4().hex}.{ext}` — path resolved from `settings.UPLOAD_DIR` rather than a hardcoded local path, ensuring portability across deployment environments. UUID filename prevents path traversal attacks. `cleanup_tempfile()`: immediate deletion after processing; background cleanup handles any files the normal path misses.
 
 **`serve_media.py`** — Dedicated media-serving module that reads the `MEDIA_DIR` path from `settings` (config-driven) and provides the `FileResponse` logic consumed by the signed asset endpoint in `history.py`. Previously the asset path was constructed inline; extracting it to `serve_media.py` centralises path resolution and makes the `MEDIA_DIR` override point explicit across all consumers (`storage.py`, `serve_media.py`, `file_handler.py`, `report_service.py` all read from `settings` rather than computing their own paths).
 
@@ -434,13 +486,17 @@ Idempotency check → generate → save to `temp_reports/deepshield_report_{id}.
 **Input:** JPEG/PNG/WebP, max 20 MB. MIME + magic-byte validated.
 
 **Inference stages:**
-1. Stream file → SHA-256 hash → dedup cache lookup.
+1. Stream file → SHA-256 hash → dedup cache lookup (50 ms on hit).
 2. PIL.Image → RGB conversion.
-3. ViT: AutoImageProcessor → 224×224 normalized tensor → forward → softmax → `fake_prob_vit`.
-4. EfficientNet (when `ENSEMBLE_MODE=true`): BlazeFace face crop → `isplutils.get_transformer()` → 224×224 → forward → `sigmoid(logit)` → `_calibrate()` → `fake_prob_eff`.
-5. No-face fallback: ViT-only with `ensemble_method="vit_only_no_face"`.
-6. Ensemble: `fake_prob_final = mean(fake_prob_vit, fake_prob_eff)`.
-7. `authenticity_score = round((1 - fake_prob_final) × 100)`.
+3. **General AI detection (unconditional):** `classify_general_image()` runs the dual-head ensemble (general + diffusion detectors, blended `0.45/0.55`) → `fake_prob_general`.
+4. **Face detection:** BlazeFace → if 0 faces, MediaPipe FaceMesh fallback.
+5. **Face-present path (unified evidence fusion):**
+   - Face-stack: FFPP-ViT + generic ViT + EfficientNet → `fake_prob_face_stack`.
+   - Fuse five signals: `face_stack × 0.40 + general × 0.40 + forensics × 0.10 + exif × 0.05 + vlm × 0.05` (video-frame weights if detected: face_stack × 0.70, general × 0.15).
+   - Hard gating: if `general ≥ 0.80` or GAN artifact `≥ 0.70`, floor `fake_prob` to 0.50.
+6. **No-face path:** `general × 0.60 + forensics × 0.20 + exif × 0.10 + vlm × 0.10`, then hard gating.
+7. Post-classification: `rescore_exif_trust()` (suppresses positive EXIF boosts when synthetic signal is present) → `maybe_clamp_to_uncertain()` (clamps to 56–69 band if primary signals disagree).
+8. `authenticity_score = round((1 − fake_prob_final) × 100)` → verdict via `TRUST_SCALE`.
 
 **Explainability generated:** Before overlay generation, the image is downscaled to 1024px on its longest side via `_resize_for_vis()`. Grad-CAM++ / attention heatmap, ELA overlay, bounding box overlay, and EXIF trust scoring then run concurrently via `asyncio.gather` — total wall time equals the slowest single stage. Artifact indicators and LLM narrative (authenticated users) run after the gather completes. VLM 6-component breakdown runs as a `BackgroundTask` after the HTTP response is returned and persists the result back to the DB asynchronously. Each layer is independently optional and gracefully degrades.
 
@@ -680,21 +736,24 @@ The full versioned route tree as mounted in `api/router.py`:
 | `analyze.py` | POST | `/api/v1/analyze/text` | Optional |
 | `analyze.py` | POST | `/api/v1/analyze/screenshot` | Optional |
 | `analyze.py` | POST | `/api/v1/analyze/audio` | Optional |
+| `analyze.py` | POST | `/api/v1/analyze/{record_id}/llm` | Optional |
 | `analyze.py` | GET | `/api/v1/jobs/{job_id}` | No |
 | `auth.py` | POST | `/api/v1/auth/register` | No |
 | `auth.py` | POST | `/api/v1/auth/login` | No |
 | `auth.py` | GET | `/api/v1/auth/me` | Yes |
+| `auth.py` | GET | `/api/v1/auth/oauth/{provider}/start` | No |
+| `auth.py` | GET | `/api/v1/auth/oauth/{provider}/callback` | No |
 | `history.py` | GET | `/api/v1/history` | Yes |
-| `history.py` | GET | `/api/v1/history/{id}` | Yes |
-| `history.py` | DELETE | `/api/v1/history/{id}` | Yes |
+| `history.py` | GET | `/api/v1/history/{record_id}` | Yes |
+| `history.py` | DELETE | `/api/v1/history/{record_id}` | Yes |
 | `history.py` | DELETE | `/api/v1/history` | Yes |
-| `history.py` | GET | `/api/v1/history/{record_id}/asset/{kind}` | Signature-based |
+| `history.py` | GET | `/api/v1/history/{record_id}/asset/{kind}` | HMAC signature |
 | `report.py` | POST | `/api/v1/report/{analysis_id}` | Yes |
 | `report.py` | GET | `/api/v1/report/{analysis_id}/download` | Yes |
 | `report.py` | POST | `/api/v1/report/cleanup` | Internal |
 | `stats.py` | GET | `/api/v1/stats/recent` | Yes |
 
-All analysis routes use `optional_current_user` so guests can submit without a token. History, report, and stats routes use `get_current_user` and enforce ownership-scoped queries. The `report/cleanup` route is called only by the internal background scheduler and is not exposed in the OpenAPI docs.
+All analysis routes use `optional_current_user` so guests can submit without a token. History, report, and stats routes use `get_current_user` and enforce ownership-scoped queries. The `/{record_id}/llm` route re-runs LLM explanation on an existing analysis record without re-running inference. The OAuth start/callback routes redirect through Google/GitHub and exchange the authorization code for a JWT. The `history/{record_id}/asset/{kind}` route is protected by a short-lived HMAC-SHA256 signature (`sig` + `exp` query params) generated server-side; it does not require a JWT, allowing time-limited asset URLs for anonymous analyses. The `report/cleanup` route is called only by the internal background scheduler and is not exposed in the OpenAPI docs.
 
 `lifespan` context manager sequence:
 - `init_db()` → creates tables + applies in-place migrations.
@@ -766,6 +825,56 @@ All schemas use `model_config = ConfigDict(protected_namespaces=())` to suppress
 
 **`DetailedBreakdownCards.jsx`:** 6-up responsive grid. Each card: `ProgressRing` SVG, percentage label, expand-on-click notes drawer. Scores from `VLMBreakdown`.
 
+**`VerdictCard.jsx`** — Top-of-results primary verdict display. Renders the `ScoreMeter` 270° SVG arc alongside the `verdict.label` text, severity pill, and the LLM paragraph (if available). The card's header colour tracks the severity tier via `--ds-safe` / `--ds-warn` / `--ds-danger` tokens. Acts as the visual anchor the user sees first — the LLM paragraph is inlined here so the plain-English narrative appears immediately below the numeric score rather than in a separate section.
+
+**`LLMExplainCard.jsx`** — Expandable card for the full LLM explainability output. Displays the 4-sentence narrative paragraph, 4 key bullets, and an expandable section containing the `signals` array — exactly 6 `SignalObservation` entries (Face-Neck Boundary, Lighting Consistency, Skin Texture, Face Geometry, Background/Compression, AI Generation Markers). Each signal shows the observation text and a coloured verdict badge (authentic/suspicious/inconclusive). When the LLM is still generating, renders the `"◎ Generating LLM Summary..."` placeholder with `llm-generating` CSS spin animation.
+
+**`EXIFCard.jsx`** — Two-column EXIF metadata table. Each field is rendered with a trust badge: green checkmark (positive, lowers fake probability), amber warning (neutral), or red alert (suspicious, raises fake probability). Explicitly surfaces `ICC Profile` and `MakerNote` — the two highest-signal fields for camera authenticity — even when their values are just presence/absence booleans. `trust_adjustment` summary is shown at the card footer.
+
+**`IndicatorCards.jsx`** — Grid of `ArtifactIndicator` severity pills. Each indicator shows its `type` (gan_artifact, compression, facial_boundary, lighting, q_table), `severity` (HIGH/MEDIUM/LOW), `confidence` percentage, and a one-line `description`. Cards are sorted by severity descending so the most alarming signals appear first.
+
+**`SourcePanel.jsx`** — Renders the `trusted_sources` array as evidence cards sorted by `similarity_score` descending. Each `SourceCard.jsx` shows the aggregator name (e.g., REUTERS), article headline, `published_at` date, and `domain_weight` badge. Present only when the news lookup returned results matching the analyzed content.
+
+**`ContradictionPanel.jsx`** — Red-tinted warning panel that renders `contradicting_evidence` — fact-check articles from known fact-checking domains (AltNews, Boom Live, Snopes, etc.) that contradict the analyzed content. Displayed above the trusted sources panel when `contradicting_evidence` is non-empty. The red tint and warning icon visually signal to the user that professional fact-checkers have flagged related content as false.
+
+**`AudioCard.jsx`** — Audio analysis results component. Renders an interactive waveform visualization via `wavesurfer.js` (play/pause/scrub). Displays `audio_authenticity_score` as a ring chart, plus the heuristic breakdown: `silence_ratio`, `spectral_variance`, `rms_consistency`. `ml_analysis.model_used` label shows which audio classifier ran. Verdict badge uses the same severity colour system as image/video cards.
+
+**`ConsentModal.jsx`** — First-upload privacy consent dialog. Rendered when `localStorage.getItem('ds_consent_v1')` is absent. Focus-trapped (Tab cycles within the modal) and Escape-dismissable. Explains three data uses: media processed locally, keywords sent to NewsData.io, authenticated analyses stored for history. On acceptance, sets `localStorage.setItem('ds_consent_v1', 'true')` and continues the upload. Links to `/privacy` for full detail.
+
+**`LayerStack.jsx`** — 3D CSS layer stack used on the landing page `Hero` section as a visual demonstration of the multi-layer analysis pipeline. Six translucent layers stacked in 3D using `transform-style: preserve-3d` and `translateZ` offsets, each representing a forensic layer (heatmap, ELA, EXIF, artifacts, VLM, LLM). Framer-motion entrance animation staggers the layers' appearance on page load.
+
+**`PipelineVisualizer.jsx`** — Stage stepper rendered during and after analysis. Shows a numbered list of pipeline stages with checkmarks (`stages_completed` from `ProcessingSummary`) and a pulsing indicator on the active stage. Used in `AnalyzePage` during processing and rendered collapsed in the results view under `ProcessingSummary`.
+
+**`ScreenshotOverlay.jsx`** — SVG bounding-box overlay for screenshot analysis results. Renders coloured rectangles over the original screenshot image at the positions of detected manipulation indicators, linked from `highlighted_phrases[].bbox`. Coordinates are scaled from original image pixel space to displayed image dimensions using `scale_x = display_width / original_width` and `scale_y = display_height / original_height`.
+
+**`TextHighlighter.jsx`** — Inline text highlighter for manipulation indicators. Renders the original text with `start_pos`/`end_pos` spans highlighted in severity-appropriate colours — red for `false_authority`, amber for `emotional_manipulation`, yellow for `unverified_claim`. Implemented by splitting the text string at indicator boundaries and wrapping matched segments in styled `<mark>` elements.
+
+### 6.2.1 Frontend Service Layer
+
+**`api.js`** — Base Axios instance. `baseURL: '/api'` (Vite proxy to `:8000` in dev; direct path in production). `timeout: 25000 ms` — sized to cover the full Gemini→Groq failover (7s + 8s) plus network overhead. Request interceptor reads `localStorage.getItem('deepshield_token')`, checks `isJwtExpired(token)`, and injects `Authorization: Bearer` if valid. Response interceptor clears stored auth on HTTP 401.
+
+**`analyzeApi.js`** — All five analysis dispatch functions: `analyzeImage`, `analyzeVideo`, `analyzeText`, `analyzeScreenshot`, `analyzeAudio`. Constructs `FormData` for file-based endpoints; sends JSON for text. Also exports `submitVideoJob` and `pollVideoJob` — the latter calls `GET /jobs/{job_id}` on a 800ms `setTimeout` loop until `status === "done"` or `"error"`.
+
+**`authApi.js`** — `login(email, password)`, `register({email, password, name})`, `fetchMe()`, `setAuth(token)`, `clearAuth()`, `oauthStart(provider)`. `oauthStart` triggers a full-page redirect to `GET /api/v1/auth/oauth/{provider}/start`.
+
+**`historyApi.js`** — `listHistory({limit, offset, media_type})`, `getHistoryDetail(id)`, `deleteHistory(id)`, `clearHistory()`. All require an active auth token; the request interceptor injects it automatically.
+
+**`reportApi.js`** — `generateReport(record_id)` → `POST /report/{id}` (idempotent). `downloadReportBlob(record_id)` → `GET /report/{id}/download` with `responseType: 'blob'`; the blob is converted via `URL.createObjectURL()` and triggered via a programmatic `<a>.click()`.
+
+### 6.2.2 Context Providers and Utilities
+
+**`AuthContext.jsx`** — Provides `user`, `token`, `authReady`, `isAuthed`, `login()`, `logout()`, `register()`, `fetchMe()` to the entire component tree. `authReady` starts `false` and becomes `true` only after the stored token is validated against `GET /auth/me` on page load — this prevents `ProtectedRoute` from flashing a redirect before rehydration completes.
+
+**`ToastContext.jsx`** — Global notification queue. `addToast(message, type)` enqueues a notification; each toast auto-dismisses after 4 seconds. `type` maps to `info` / `success` / `warning` / `error` visual styles. Rendered by a fixed-position overlay outside the main layout.
+
+**`useDottedSurface.js`** — Canvas animation hook for the landing page background. Renders a grid of animated dots on a `<canvas>` element using `requestAnimationFrame`. Exported as a custom hook so components can attach it to any ref without duplicating the animation logic.
+
+**`sanitize-text.js`** — Four pure XSS-defence utility functions with no third-party dependencies: `sanitizeText` (strips control chars, normalises whitespace, 10K char cap), `sanitizeHtml` (allowlist-based: permits `b`, `i`, `em`, `strong`, `br`, `p`, `a[href]` only), `sanitizeUrl` (blocks `javascript:` and `data:` schemes, returns `#` as fallback), `escapeAttr` (escapes `"`, `'`, `<`, `>`, `&` for HTML attribute injection). Applied at every point API-derived content reaches the DOM.
+
+**`constants.js`** — Centralised frontend constants: 6-band `TRUST_SCALE` score ranges with labels and severity colours (mirrors the backend `scoring.py` table), severity colour hex values, MIME type lists.
+
+**`dateTime.js`** — Date/time formatting helpers used across history cards, report timestamps, and source article dates. Formats ISO-8601 strings into human-readable IST-adjusted labels.
+
 ### 6.5 Page-Level Descriptions
 
 **`HomePage.jsx`** — Landing page orchestrator rendering seven sections in order: `Hero` (headline + LayerStack 3D demo), `TrustStrip` (live 24h counter + trust badge row), `PipelineGrid` (4 modality cards with micro-lottie animations), `ImpactMarquee` (infinite marquee of real-world deepfake incidents), `ComparisonGrid` (DeepShield vs Reality Defender vs Deepware vs Manual fact-checking), `FAQAccordion` (8 Q&A with height-animated expansion), bottom CTA section.
@@ -789,6 +898,12 @@ The toolbar additionally exposes a **"Clear history"** button that calls `clearH
 **`LoginPage.jsx` / `RegisterPage.jsx`** — Thin wrappers around `AuthForm.jsx` with `MeshBackdrop.jsx` animated background. On success: `AuthContext.login()` stores token + user → redirects to the route stored in `location.state.from` (ProtectedRoute saves it) or falls back to `/analyze`.
 
 **`AboutPage.jsx`** — Static. Manifesto section, 8-signal explainability methodology grid, tech stack badges, responsible AI statement.
+
+**`ContactPage.jsx`** — Static contact form page with a brief project description, links to the GitHub repository, and a mailto CTA.
+
+**`ModelsPage.jsx`** — Documentation page describing the AI models powering DeepShield. Rendered as a structured article with sections for each model (ViT, EfficientNet, FFPP, general/diffusion AI-image detectors, BERT, WavLM) covering architecture, training dataset, and role in the pipeline. Styled with `models-page.css`. Linked from the About page and the results `ProcessingSummary` `models_used` list.
+
+**`OAuthCallbackPage.jsx`** — Receives `?token=<jwt>` from the backend OAuth redirect (after `GET /auth/oauth/{provider}/callback` issues the JWT). Extracts the token from `window.location.search`, calls `AuthContext.login(token)` to store it and fetch the user profile from `GET /auth/me`, then navigates to `/analyze`. If the token parameter is absent, redirects to `/login` with an error toast.
 
 **`NotFoundPage.jsx`** — CSS glitch effect on "404", scan-line background, terminal-style readout, back-home CTA.
 
@@ -1037,7 +1152,7 @@ Progress stages: queued(0%) → frame_extraction(15%) → classification(40%) �
 
 ### 9.1 Authentication
 
-JWT HS256 signed with `JWT_SECRET_KEY`. Payload: `{sub, email, iat, exp}`. Expiry: 1440 minutes. `config.py` model_validator: auto-generates key in development, **refuses to start** in production if key is still the default — explicit error with `secrets.token_urlsafe(48)` example printed. No token revocation (logout is client-side localStorage clear; acceptable for this risk profile).
+JWT HS256 signed with `JWT_SECRET_KEY`. Payload: `{sub, email, iat, exp}`. Expiry: 1440 minutes. `config.py` `ensure_jwt_secret` model-validator: auto-generates a `secrets.token_urlsafe(48)` key whenever `JWT_SECRET_KEY` is not explicitly set and marks `JWT_SECRET_KEY_GENERATED=True` — callers can inspect this flag to detect an ephemeral key. In production the recommended practice is to set `JWT_SECRET_KEY` explicitly in environment variables so the signing key is stable across restarts. No token revocation (logout is client-side localStorage clear; acceptable for this risk profile).
 
 ### 9.2 Password Security
 
@@ -1070,7 +1185,7 @@ Raw media files are not publicly accessible. The `StaticFiles` mount that previo
 
 **URL signing — not encryption:** The record ID, asset kind, and expiry timestamp are visible in the signed URL. The HMAC-SHA256 signature does not hide these values — it prevents the URL from being guessed or modified without the signing key, and it makes the URL expire after the configured TTL. This is a standard anti-enumeration and anti-hotlinking control, not a data confidentiality mechanism.
 
-**Signing key:** The signing key is `settings.ASSET_SIGNING_SECRET` when configured — a dedicated secret for media signing that is isolated from `JWT_SECRET_KEY`. When `ASSET_SIGNING_SECRET` is not set, the system falls back to `JWT_SECRET_KEY`. Using a dedicated secret is recommended in production so that a compromised media signing key does not affect authentication token integrity.
+**Signing key:** The signing key is `settings.JWT_SECRET_KEY`. Using this key for both JWT issuance and media URL signing is acceptable for the current deployment scale; separating them into distinct secrets (`ASSET_SIGNING_SECRET`) is a planned production hardening step so that a compromised media URL signing key cannot be used to forge authentication tokens.
 
 **Signature construction:** `HMAC-SHA256(key, f"{record_id}:{kind}:{exp}")`. Expiry encoded as a Unix timestamp. Verification uses `hmac.compare_digest()` — constant-time comparison preventing timing attacks. Expired signatures return HTTP 403 with no path or file content disclosed.
 
@@ -1111,8 +1226,11 @@ Raw media files are not publicly accessible. The `StaticFiles` mount that previo
 
 | Model | Architecture | Training Data | Source | RAM | Role |
 |---|---|---|---|---|---|
-| FFPP C40 fine-tuned ViT | ViT-base-patch16-224 | FaceForensics++ C40 | `trained_models/` | ~350 MB | Image classifier (secondary) |
-| `EfficientNetAutoAttB4_DFDC` | EfficientNet-B4 + Auto-Attention | DFDC | ICPR2020 weight URL | ~75 MB | Image classifier (primary) |
+| FFPP C40 fine-tuned ViT | ViT-base-patch16-224 | FaceForensics++ C40 | `trained_models/` | ~350 MB | Face-stack classifier (FFPP component) |
+| `EfficientNetAutoAttB4_DFDC` | EfficientNet-B4 + Auto-Attention | DFDC | ICPR2020 weight URL | ~75 MB | Face-stack classifier (EfficientNet component) |
+| `prithivMLmods/Deep-Fake-Detector-v2-Model` | ViT-base | Mixed deepfakes | HuggingFace Hub | ~350 MB | Generic ViT (face-stack component) |
+| `umm-maybe/AI-image-detector` | ViT-based | AI-generated images | HuggingFace Hub | ~350 MB | General AI-image head (weight 0.45 in dual-head blend) |
+| `haywoodsloan/ai-image-detector-deploy` | ViT-based | Diffusion/GAN outputs | HuggingFace Hub | ~350 MB | Diffusion-specialized AI-image head (weight 0.55 in dual-head blend) |
 | `jy46604790/Fake-News-Bert-Detect` | BERT-base | Mixed news | HuggingFace Hub | ~250 MB | Text classifier (English) |
 | XLM-RoBERTa multilingual | XLM-R-base | Multilingual | HuggingFace Hub | ~500 MB | Text classifier (multilingual) |
 | `all-MiniLM-L6-v2` | MiniLM | MS MARCO | HuggingFace Hub | ~90 MB | Cosine similarity (truth-override) |
@@ -1122,7 +1240,7 @@ Raw media files are not publicly accessible. The `StaticFiles` mount that previo
 | WavLM / wav2vec2 | Transformer audio | ASVspoof 2019 | HuggingFace Hub | ~300 MB | Audio deepfake classifier |
 | `IsotonicRegression` | Non-parametric | FFPP C40 val split | `calibrator.pkl` | <1 MB | EfficientNet confidence calibration |
 
-**Total preloaded RAM:** ~1.5–2 GB. Minimum recommended deployment: 4 GB.
+**Total preloaded RAM:** ~2–3 GB (two AI-image heads added). Minimum recommended deployment: 4 GB.
 
 ### 10.2 Training vs. Inference Separation
 
@@ -1130,11 +1248,28 @@ DeepShield is inference-only in production. No training occurs at request time. 
 
 ### 10.3 Ensemble Inference — Image
 
-1. ViT: `AutoImageProcessor` → 224×224 normalized tensor → forward → `softmax(logits)` → `fake_prob_vit`.
-2. EfficientNet: BlazeFace face crop → `isplutils.get_transformer("scale", 224, normalizer, train=False)` → `_to_tensor()` (handles albumentations-dict/torchvision-tensor divergence) → forward → `sigmoid(logit)` → `_calibrate()` → `fake_prob_eff`.
-3. No-face fallback: if BlazeFace returns 0 faces, `efficientnet_service` returns `{error:"no_face"}` → ViT-only with `ensemble_method="vit_only_no_face"`.
-4. Ensemble: `fake_prob_final = mean(fake_prob_vit, fake_prob_eff)`.
-5. `authenticity_score = round((1 - fake_prob_final) × 100)`.
+**Step 1 — General AI classification (runs unconditionally):**
+Dual-head blend: `general_fake_prob = general_head * 0.45 + diffusion_head * 0.55`. Temperature scaling applied per head at T configured in settings (1.0 = no scaling). Falls back to whichever head is available if one fails to load.
+
+**Step 2 — Face detection:**
+BlazeFace primary → MediaPipe FaceMesh fallback. If neither detects a face, routes to the no-face path.
+
+**Step 3a — Face-present path (five-signal unified fusion):**
+- Face-stack composite: FFPP-ViT (`FFPP_WEIGHT_FACE=0.55`) + generic ViT (`VIT_WEIGHT_FACE=0.20`) + EfficientNet (`EFFNET_WEIGHT_FACE=0.25`). EfficientNet: BlazeFace face crop → `isplutils.get_transformer()` → `_to_tensor()` → `sigmoid(logit)` → `_calibrate()`. Isotonic calibration applied here only.
+- Five signals fused: `fake_prob = face_stack × 0.40 + general × 0.40 + forensics × 0.10 + exif × 0.05 + vlm × 0.05`.
+- Video-frame detection overrides face-present weights to face_stack=0.70 / general=0.15 / forensics=0.10 / exif=0.05; VLM retains VLM_WEIGHT_FACE=0.05.
+
+**Step 3b — No-face path:**
+`fake_prob = general × 0.60 + forensics × 0.20 + exif × 0.10 + vlm × 0.10`.
+
+**Step 4 — Hard gating (both paths):**
+If `general ≥ 0.80` OR any GAN artifact indicator `≥ 0.70`: floor `fake_prob = max(fake_prob, 0.50)`. `gating_applied` records which condition fired.
+
+**Step 5 — Post-fusion adjustments:**
+`rescore_exif_trust(exif_summary, general_fake_prob)` — suppresses positive EXIF boosts when not already part of fusion. `maybe_clamp_to_uncertain(score, components)` — clamps to 56–69 if stdev of primary signals ≥ 0.25 and score was in a confident band.
+
+**Step 6 — Score:**
+`authenticity_score = round((1 − fake_prob) × 100)` → `get_verdict_label(score)` → response.
 
 ### 10.4 Isotonic Calibration
 
@@ -1174,7 +1309,7 @@ Models downloaded via `transformers.AutoModel*.from_pretrained()` and `transform
 
 ### 11.3 Google Gemini
 
-SDK: `google-genai` (new, replaces `google-generativeai`). Model: `gemini-2.0-flash`. Used for LLM narrative (`llm_explainer.py`) and VLM component scoring (`vlm_breakdown.py`). Each call operates under an **independent 10-second timeout** — separate from the Groq fallback window — ensuring a slow Gemini response does not consume the Groq provider's budget. If Gemini fails, times out, or returns a non-JSON payload, the chain immediately retries on Groq. Free tier: ~10K tokens/day. Configured via `LLM_API_KEY` and `LLM_MODEL`.
+SDK: `google-genai` (new, replaces `google-generativeai`). Model: `gemini-2.0-flash`. Used for LLM narrative (`llm_explainer.py`) and VLM component scoring (`vlm_breakdown.py`). Each call operates under an **independent 7-second timeout** — separate from the Groq fallback window — ensuring a slow Gemini response does not consume the Groq provider's budget. If Gemini fails, times out, or returns a non-JSON payload, the chain immediately retries on Groq. Free tier: ~10K tokens/day. Configured via `LLM_API_KEY` and `LLM_MODEL`.
 
 ### 11.4 Groq (LLM Fallback)
 
@@ -1503,10 +1638,13 @@ Single-process modular monolith. `ModelLoader` singleton is process-bound. SQLit
 
 7. **`image_service.analyze_image()` executes:**
    - PIL.Image → RGB conversion.
-   - ViT forward pass → `fake_prob_vit = 0.82`.
-   - BlazeFace face crop → EfficientNet forward → `sigmoid(logit)` → `_calibrate()` → `fake_prob_eff = 0.71`.
-   - Ensemble: `fake_prob_final = mean(0.82, 0.71) = 0.765`.
-   - `authenticity_score = round((1 - 0.765) × 100) = 24` → "Likely Fake" (danger).
+   - Dual-head general AI detection (unconditional): `general × 0.45 + diffusion × 0.55` → `fake_prob_general = 0.72`.
+   - BlazeFace detects face → face-stack: FFPP-ViT (`0.82`) + generic ViT (`0.79`) + EfficientNet (`_calibrate(0.71)`) → `fake_prob_face_stack = 0.78`.
+   - Forensics: GAN FFT fingerprint HIGH → `forensics_prob = 0.85`.
+   - EXIF: no camera metadata → `exif_contribution = 0.50` (neutral).
+   - Unified fusion: `0.78 × 0.40 + 0.72 × 0.40 + 0.85 × 0.10 + 0.50 × 0.05 = 0.748`.
+   - Hard gating: `general (0.72) < 0.80` — no gate fires.
+   - `authenticity_score = round((1 − 0.748) × 100) = 25` → "Likely Fake" (danger).
 
 8. **Explainability generation (concurrent with graceful fallback):**
    - `_resize_for_vis(pil)` → image capped at 1024px longest side before overlay work begins.

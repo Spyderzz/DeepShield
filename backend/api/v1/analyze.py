@@ -71,7 +71,13 @@ from services.storage import (
 )
 from services.job_queue import registry as job_registry, run_job
 from utils.file_handler import read_upload_bytes, save_upload_to_tempfile
-from utils.scoring import compute_authenticity_score, compute_video_authenticity_score, get_verdict_label, maybe_clamp_to_uncertain
+from utils.scoring import (
+    apply_unverified_news_gate,
+    compute_authenticity_score,
+    compute_video_authenticity_score,
+    get_verdict_label,
+    maybe_clamp_to_uncertain,
+)
 
 router = APIRouter(prefix="/analyze", tags=["analyze"])
 
@@ -261,9 +267,9 @@ def generate_llm_endpoint(
             return {"llm_summary": existing_summary}
         raise HTTPException(status_code=500, detail="LLM generation failed")
 
-def _persist_response_payload(db: Session, record: AnalysisRecord, resp) -> None:
+def _persist_response_payload(db: Session, record: AnalysisRecord, resp, exclude: dict | None = None) -> None:
     """Keep reloaded/history responses aligned with the fresh API response."""
-    record.result_json = json.dumps(resp.model_dump())
+    record.result_json = json.dumps(resp.model_dump(exclude=exclude))
     db.add(record)
     db.commit()
 
@@ -479,7 +485,7 @@ async def analyze_image(
         media_type="image",
         verdict=label,
         authenticity_score=float(score),
-        result_json=json.dumps(resp.model_dump()),
+        result_json=json.dumps(resp.model_dump(exclude=_IMAGE_EXCLUDE)),
         media_hash=media_hash,
         media_path=media_path,
         thumbnail_url=thumbnail_url,
@@ -497,7 +503,7 @@ async def analyze_image(
         stages.append("llm_explanation")
 
     resp.processing_summary.stages_completed = stages
-    _persist_response_payload(db, record, resp)
+    _persist_response_payload(db, record, resp, exclude=_IMAGE_EXCLUDE)
 
     # ── Phase 14: VLM breakdown runs after response is returned ──
     if user is not None and vlm_bd is None:
@@ -795,7 +801,14 @@ async def analyze_text_endpoint(
         weighted = raw_score
 
     score = int(round(max(0.0, min(100.0, weighted))))
-    label, severity = get_verdict_label(score)
+    score, label, severity, news_gate = apply_unverified_news_gate(
+        score,
+        has_trusted_sources=bool(news.trusted_sources),
+        has_contradicting_evidence=bool(news.contradicting_evidence),
+        truth_override_applied=bool(news.truth_override and news.truth_override.applied),
+    )
+    if news_gate:
+        stages.append(news_gate)
     duration_ms = int((time.perf_counter() - start) * 1000)
 
     model_used = (
@@ -850,6 +863,7 @@ async def analyze_text_endpoint(
             total_duration_ms=duration_ms,
             model_used=model_used,
             calibrator_applied=False,
+            gating_applied=news_gate,
         ),
     )
 
@@ -972,7 +986,14 @@ async def analyze_screenshot_endpoint(
     if not full_text.strip():
         weighted = 50
     score = int(round(max(0.0, min(100.0, weighted))))
-    label, severity = get_verdict_label(score)
+    score, label, severity, news_gate = apply_unverified_news_gate(
+        score,
+        has_trusted_sources=bool(news.trusted_sources),
+        has_contradicting_evidence=bool(news.contradicting_evidence),
+        truth_override_applied=bool(news.truth_override and news.truth_override.applied),
+    )
+    if news_gate:
+        stages.append(news_gate)
     duration_ms = int((time.perf_counter() - start) * 1000)
 
     model_used_str = (
@@ -1025,6 +1046,7 @@ async def analyze_screenshot_endpoint(
             total_duration_ms=duration_ms,
             model_used=model_used_str,
             calibrator_applied=False,
+            gating_applied=news_gate,
         ),
     )
 

@@ -15,6 +15,7 @@ TRUST_SCALE = [
 # Score range for forced disagreement clamp
 UNCERTAIN_SCORE_LO = 56
 UNCERTAIN_SCORE_HI = 69
+UNVERIFIED_NEWS_SCORE_CAP = 55
 
 
 def _validate_weight_total(weights: list[float], context: str) -> None:
@@ -39,6 +40,31 @@ def get_verdict_label(score: int) -> Tuple[str, str]:
         if lo <= score <= hi:
             return label, severity
     return "Unknown", "warning"
+
+
+def apply_unverified_news_gate(
+    score: int,
+    *,
+    has_trusted_sources: bool,
+    has_contradicting_evidence: bool,
+    truth_override_applied: bool,
+) -> Tuple[int, str, str, str | None]:
+    """Prevent unverifiable news claims from receiving a real verdict.
+
+    The text classifier can judge writing style, but a news claim with no
+    corroborating trusted source should stay in the suspicious/verification band.
+    Already-fake scores remain fake; the gate only caps overly-real scores.
+    """
+    if has_trusted_sources or has_contradicting_evidence or truth_override_applied:
+        label, severity = get_verdict_label(score)
+        return score, label, severity, None
+
+    gated_score = min(score, UNVERIFIED_NEWS_SCORE_CAP)
+    if gated_score > 40:
+        return gated_score, "Suspicious", "warning", "no_trusted_source"
+
+    label, severity = get_verdict_label(gated_score)
+    return gated_score, label, severity, "no_trusted_source"
 
 
 def compute_video_authenticity_score(

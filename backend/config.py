@@ -156,7 +156,13 @@ class Settings(BaseSettings):
 
     # News API
     NEWS_API_KEY: str = ""
-    NEWS_API_BASE_URL: str = "https://newsdata.io/api/1/news"
+    NEWS_API_BASE_URL: str = "https://newsdata.io/api/1/latest"
+    NEWS_API_ARCHIVE_BASE_URL: str = "https://newsdata.io/api/1/archive"
+    NEWS_API_LANGUAGES: str = "en,hi"
+    NEWS_API_RECENT_TIMEFRAME: str = "1"
+    NEWS_API_OLDER_DAYS: int = 7
+    NEWS_API_PAGE_SIZE: int = 10
+    NEWS_API_PRIMARY_COUNTRY: str = "in"
 
     # Reports
     REPORT_DIR: str = "/data/reports"
@@ -229,6 +235,13 @@ class Settings(BaseSettings):
     GENERAL_FAKE_GATING_THRESHOLD: float = 0.80
     GAN_ARTIFACT_GATING_THRESHOLD: float = 0.70
     GATING_FAKE_FLOOR: float = 0.50
+    # Synthetic still-image overrides. FaceForensics/DFDC models are trained for
+    # manipulated video faces, so they should not veto a strong still-image AI
+    # detector on generated portraits.
+    SYNTHETIC_STILL_HIGH_THRESHOLD: float = 0.80
+    SYNTHETIC_STILL_HIGH_FLOOR: float = 0.80
+    SYNTHETIC_STILL_VERY_HIGH_THRESHOLD: float = 0.90
+    SYNTHETIC_STILL_VERY_HIGH_FLOOR: float = 0.90
 
     # Video-frame weight overrides. When an image is detected as a low-res
     # video frame (face-swap deepfakes are extracted from video), the general
@@ -239,6 +252,10 @@ class Settings(BaseSettings):
     VIDEO_FRAME_GENERAL_WEIGHT: float = 0.15
     VIDEO_FRAME_FORENSICS_WEIGHT: float = 0.10
     VIDEO_FRAME_EXIF_WEIGHT: float = 0.05
+    # Per-frame video detector blend. FFPP ViT is trained on FaceForensics++
+    # face forgery frames, so it is the dominant signal for video analysis.
+    VIDEO_FFPP_WEIGHT: float = 0.70
+    VIDEO_EFFNET_WEIGHT: float = 0.30
     VIDEO_SAMPLE_FRAMES: int = 16  # frames to sample per video for inference
     EXIFTOOL_PATH: str = ""  # full path to ExifTool binary; empty = metadata write disabled
 

@@ -200,11 +200,18 @@ def _classify_no_face(
     models_used = [general.model_used if general else "no-face-forensic-fusion"]
 
     # Apply hard gating (Phase A4) on the no-face path too.
+    is_video_frame = _looks_like_video_frame(pil_img)
     gated_prob, gating_reason = _apply_hard_gating(
         fake_prob=fused.fake_probability,
         general_fake_prob=general.fake_probability if general else None,
         artifacts=artifact_indicators or [],
     )
+    gated_prob, synthetic_reason = _apply_synthetic_still_overrides(
+        fake_prob=gated_prob,
+        general_fake_prob=general.fake_probability if general else None,
+        is_video_frame=is_video_frame,
+    )
+    final_gating_reason = synthetic_reason or gating_reason
     final_label = "Fake" if gated_prob >= 0.5 else fused.label
 
     return ImageClassification(
@@ -219,8 +226,9 @@ def _classify_no_face(
             "weights": fused.weights,
             "method": fused.method,
             "pre_gating": fused.fake_probability,
+            "is_video_frame": is_video_frame,
         },
-        gating_applied=gating_reason,
+        gating_applied=final_gating_reason,
     )
 
 
@@ -262,6 +270,34 @@ def _apply_hard_gating(
     if _has_gan_artifact(artifacts):
         if fake_prob < floor:
             return floor, "gan_artifact_high"
+    return fake_prob, None
+
+
+def _apply_synthetic_still_overrides(
+    *,
+    fake_prob: float,
+    general_fake_prob: Optional[float],
+    is_video_frame: bool,
+) -> Tuple[float, Optional[str]]:
+    """Keep still-image AI-generation evidence from being diluted by FFPP/DFDC.
+
+    FaceForensics/DFDC models are trained for manipulated real/video faces. They
+    are useful evidence, but they should not veto a high-confidence whole-image
+    AI detector on generated still portraits.
+    """
+    if is_video_frame or general_fake_prob is None:
+        return fake_prob, None
+
+    general = max(0.0, min(1.0, float(general_fake_prob)))
+    if general >= settings.SYNTHETIC_STILL_VERY_HIGH_THRESHOLD:
+        adjusted = max(fake_prob, settings.SYNTHETIC_STILL_VERY_HIGH_FLOOR)
+        if adjusted != fake_prob:
+            return adjusted, f"general_detector_very_high({general:.2f})"
+    elif general >= settings.SYNTHETIC_STILL_HIGH_THRESHOLD:
+        adjusted = max(fake_prob, settings.SYNTHETIC_STILL_HIGH_FLOOR)
+        if adjusted != fake_prob:
+            return adjusted, f"general_detector_high({general:.2f})"
+
     return fake_prob, None
 
 
@@ -409,6 +445,12 @@ def classify_image(
         general_fake_prob=general_fake_prob,
         artifacts=artifacts_list,
     )
+    ensemble_prob, synthetic_reason = _apply_synthetic_still_overrides(
+        fake_prob=ensemble_prob,
+        general_fake_prob=general_fake_prob,
+        is_video_frame=is_video_frame,
+    )
+    final_gating_reason = synthetic_reason or gating_reason
 
     method = f"unified_evidence_{face_stack_method}"
     label = "Fake" if ensemble_prob >= 0.5 else "Real"
@@ -417,7 +459,7 @@ def classify_image(
         f"face_stack={face_stack_prob:.3f} general={general_fake_prob if general_fake_prob is not None else 'n/a'} "
         f"forensics={components.get('forensics', 'n/a')} exif={components.get('exif', 'n/a')} "
         f"vlm={components.get('vlm', 'n/a')} -> {pre_gating_prob:.3f} "
-        f"(gated:{gating_reason or 'none'} -> {ensemble_prob:.3f})"
+        f"(gated:{final_gating_reason or 'none'} -> {ensemble_prob:.3f})"
     )
     return ImageClassification(
         label=label,
@@ -434,7 +476,7 @@ def classify_image(
             "pre_gating": pre_gating_prob,
             "is_video_frame": is_video_frame,
         },
-        gating_applied=gating_reason,
+        gating_applied=final_gating_reason,
     )
 
 

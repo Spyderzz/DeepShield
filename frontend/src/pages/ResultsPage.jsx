@@ -406,11 +406,10 @@ const OVERLAY_DESC = {
 };
 
 function HeatmapCard({ src, heatmapData, elaData, boxesData, heatmapMode, setHeatmapMode, alpha, setAlpha, status }) {
-  // The backend composites overlays onto the original image already.
-  // We swap the visible image based on mode, and use alpha to blend with the original.
   const overlayMap = { heatmap: heatmapData, ela: elaData, boxes: boxesData, off: null };
   const activeOverlay = overlayMap[heatmapMode] ?? null;
   const unavailable = heatmapMode !== 'off' && !activeOverlay;
+  const directImage = heatmapMode === 'ela' || heatmapMode === 'boxes';
 
   return (
     <div className="card heatmap-card">
@@ -424,12 +423,21 @@ function HeatmapCard({ src, heatmapData, elaData, boxesData, heatmapMode, setHea
       </div>
       <div className="heatmap-stage">
         {/* Base original — always shown */}
-        {src
-          ? <img src={src} alt="" className="heatmap-base" onError={(e) => { e.target.style.display = 'none'; }} />
-          : <div className="heatmap-base" style={{ background: '#0A0D18' }} />}
+        {directImage && activeOverlay ? (
+          <img
+            src={activeOverlay}
+            className="heatmap-base"
+            alt=""
+            onError={(e) => { e.target.style.display = 'none'; }}
+          />
+        ) : (
+          <>
+            {src
+              ? <img src={src} alt="" className="heatmap-base" onError={(e) => { e.target.style.display = 'none'; }} />
+              : <div className="heatmap-base" style={{ background: '#0A0D18' }} />}
         {/* Overlay: the backend already blends these with the original, so we just
             fade them in over the base image. alpha=1 → full overlay, alpha=0 → original. */}
-        {activeOverlay && (
+            {activeOverlay && (
           <img
             src={activeOverlay}
             className="heatmap-layer"
@@ -438,6 +446,8 @@ function HeatmapCard({ src, heatmapData, elaData, boxesData, heatmapMode, setHea
               opacity: alpha,
             }}
           />
+            )}
+          </>
         )}
         {unavailable && (
           <div className="overlay-unavailable">
@@ -446,7 +456,7 @@ function HeatmapCard({ src, heatmapData, elaData, boxesData, heatmapMode, setHea
         )}
       </div>
       <div className="heatmap-foot">
-        {heatmapMode !== 'off' && (
+        {heatmapMode === 'heatmap' && (
           <>
             <span className="mono">α {alpha.toFixed(2)}</span>
             <input type="range" min="0" max="1" step="0.01" value={alpha} onChange={e => setAlpha(+e.target.value)} />
