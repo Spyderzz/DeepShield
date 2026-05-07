@@ -33,7 +33,7 @@ from db.models import AnalysisRecord, Report
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 BACKEND_ROOT = Path(__file__).resolve().parents[1]
-LOGO_PATH = REPO_ROOT / "frontend" / "src" / "assets" / "logo.png"
+LOGO_PATH = BACKEND_ROOT / "static" / "logo.png"
 IST = ZoneInfo("Asia/Kolkata")
 
 # Typography & Spacing Grid (base unit: 6pt)
@@ -225,6 +225,28 @@ def _image_from_base64(data: Any, max_width: float, max_height: float) -> Image 
         return _scaled_image(stream, width, height, max_width, max_height)
     except Exception as exc:  # noqa: BLE001
         logger.warning(f"Base64 image decode failed: {exc}")
+        return None
+
+
+import urllib.request
+
+def _image_from_url(url: str | None, max_width: float, max_height: float) -> Image | None:
+    """Download image from HTTP/HTTPS URL and embed in PDF."""
+    if not url or not str(url).startswith("http"):
+        return None
+    try:
+        req = urllib.request.Request(url, headers={'User-Agent': 'Mozilla/5.0'})
+        with urllib.request.urlopen(req, timeout=10) as response:
+            image_bytes = response.read()
+            
+        with PILImage.open(BytesIO(image_bytes)) as pil:
+            width, height = pil.size
+            
+        stream = BytesIO(image_bytes)
+        stream.seek(0)
+        return _scaled_image(stream, width, height, max_width, max_height)
+    except Exception as exc:
+        logger.warning(f"Failed to fetch image from URL {url}: {exc}")
         return None
 
 
@@ -582,15 +604,15 @@ def _media_context(analysis_json: dict[str, Any], record: AnalysisRecord, styles
         return story
 
     if media_type in {"image", "screenshot", "video"}:
-        thumb = _image_from_path(
-            _resolve_media_path(analysis_json.get("thumbnail_url") or record.thumbnail_url),
-            72 * mm,
-            48 * mm,
+        thumb_url = analysis_json.get("thumbnail_url") or record.thumbnail_url
+        thumb = (
+            _image_from_url(thumb_url, 72 * mm, 48 * mm)
+            or _image_from_path(_resolve_media_path(thumb_url), 72 * mm, 48 * mm)
         )
-        original = _image_from_path(
-            _resolve_media_path(analysis_json.get("media_path") or record.media_path),
-            72 * mm,
-            48 * mm,
+        media_url = analysis_json.get("media_path") or record.media_path
+        original = (
+            _image_from_url(media_url, 72 * mm, 48 * mm)
+            or _image_from_path(_resolve_media_path(media_url), 72 * mm, 48 * mm)
         )
         image_cell: Any = thumb or original or Paragraph("Original thumbnail unavailable", styles["small"])
         text_value, was_truncated = _shorten(expl.get("extracted_text") or expl.get("transcript"), 800)
@@ -804,6 +826,7 @@ def _forensic_visuals(analysis_json: dict[str, Any], styles: dict[str, Paragraph
     for title, caption, b64_data, url_data in candidates:
         img = (
             _image_from_base64(b64_data, 78 * mm, 58 * mm)
+            or _image_from_url(url_data, 78 * mm, 58 * mm)
             or _image_from_path(_resolve_media_path(url_data), 78 * mm, 58 * mm)
             or _placeholder_image(78 * mm, 58 * mm)
         )
