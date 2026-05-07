@@ -296,14 +296,13 @@ export default function AnalyzePage() {
                     </svg>
                   </div>
                   <h2 className="display">Drop {mode} here</h2>
-                  <p className="hint">{mode === 'image' ? 'PNG · JPEG · WebP · 20MB' : mode === 'video' ? 'MP4 · WebM · MOV · 100MB' : 'PNG · JPEG · 20MB'}</p>
+                  <p className="hint">{mode === 'image' ? 'PNG · JPEG · WebP · 20MB' : mode === 'video' ? 'MP4 · WebM · MOV · 100MB' : mode === 'audio' ? 'WAV · MP3 · FLAC · 20MB' : 'PDF · 20MB'}</p>
                   <p className="or-paste">or paste a URL · or click to browse</p>
                   <button className="btn btn-glass btn-sm" onClick={(e) => { e.stopPropagation(); useSample(); }}>Use sample</button>
                   {error && <p style={{ color: 'var(--ds-danger)', marginTop: 12, fontSize: 13 }}>{error}</p>}
                 </div>
                 <div className="options-row">
                   <label className="opt"><input type="checkbox" checked={cache} onChange={e => setCache(e.target.checked)} /> Cache result</label>
-                  <input type="text" placeholder={mode === 'image' ? '…or paste image URL' : '…or paste media URL'} value={urlVal} onChange={e => setUrlVal(e.target.value)} />
                   <div className="grow" />
                   <select value={lang} onChange={e => setLang(e.target.value)}>
                     <option value="en">English</option>
@@ -323,7 +322,7 @@ export default function AnalyzePage() {
                     <span className="ta-meta">{textVal.length} / 10000 chars · min 50</span>
                   </div>
                   <textarea
-                    placeholder="Paste a news headline and article body. DeepShield runs XLM-RoBERTa, NER-anchored source lookup, and truth-override against trusted Indian + international domains."
+                    placeholder="Paste a news headline or article body."
                     value={textVal}
                     onChange={e => setTextVal(e.target.value.slice(0, 10000))}
                   />

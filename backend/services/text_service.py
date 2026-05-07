@@ -226,6 +226,20 @@ def extract_entities(text: str, max_k: int = 6) -> List[str]:
         seen: set[str] = set()
 
         numeric: List[str] = []
+        
+        # Extract meaningful multi-word noun chunks first
+        for chunk in doc.noun_chunks:
+            parts = chunk.text.strip().split()
+            if len(parts) > 1 and parts[0].lower() in {"a", "an", "the", "some", "several", "many", "these", "those", "this", "that", "their", "our", "my", "your", "its"}:
+                parts = parts[1:]
+            chunk_text = " ".join(parts)
+            if len(parts) > 1 and len(chunk_text) > 4:
+                if not all(p.lower() in {"i", "you", "he", "she", "it", "we", "they", "them", "us", "him", "her"} for p in parts):
+                    norm_lower = chunk_text.lower()
+                    if norm_lower not in seen:
+                        preferred.append(chunk_text)
+                        seen.add(norm_lower)
+
         for ent in doc.ents:
             norm = ent.text.strip()
             norm_lower = norm.lower()
@@ -241,13 +255,16 @@ def extract_entities(text: str, max_k: int = 6) -> List[str]:
                 other.append(norm)
 
         entities = preferred + numeric + other
-        if len(entities) >= 2:
-            logger.info(f"NER extracted {len(entities)} entities: {entities[:max_k]}")
-            return entities[:max_k]
+        if len(entities) < max_k:
+            freq_kws = _extract_keywords_freq(text, max_k * 2)
+            for k in freq_kws:
+                if k.lower() not in seen:
+                    entities.append(k)
+                    seen.add(k.lower())
 
-        freq_kws = _extract_keywords_freq(text, max_k)
-        combined = entities + [k for k in freq_kws if k.lower() not in seen]
-        return combined[:max_k]
+        result = entities[:max_k]
+        logger.info(f"NER extracted {len(result)} entities: {result}")
+        return result
     except Exception as e:
         logger.warning(f"spaCy NER failed: {e} - falling back to frequency extraction")
         return _extract_keywords_freq(text, max_k)
@@ -259,6 +276,9 @@ def _extract_keywords_freq(text: str, max_k: int = 6) -> List[str]:
         "in", "on", "at", "for", "with", "by", "from", "as", "that", "this", "it", "its", "has", "have", "had",
         "will", "would", "can", "could", "should", "may", "might", "do", "does", "did", "not", "no", "so",
         "than", "then", "there", "their", "they", "them", "we", "our", "you", "your", "he", "she", "his", "her",
+        "during", "several", "also", "about", "which", "who", "whom", "what", "where", "when", "why", "how",
+        "all", "any", "both", "each", "few", "more", "most", "other", "some", "such", "only", "own", "same", "very",
+        "these", "those", "into", "through", "after", "before", "over", "under", "between", "out", "against", "during"
     }
     words = re.findall(r"[A-Za-z][A-Za-z\-']{2,}|\b\d{1,5}\b", text or "")
     freq: dict[str, int] = {}
