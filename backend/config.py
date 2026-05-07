@@ -265,8 +265,8 @@ class Settings(BaseSettings):
     # AI-image detector is unreliable (it's trained on synthesised stills, not
     # video face-swaps). We shift weight strongly toward the face-swap-trained
     # models (FFPP / EfficientNet) in that case.
-    VIDEO_FRAME_FACE_STACK_WEIGHT: float = 0.70
-    VIDEO_FRAME_GENERAL_WEIGHT: float = 0.15
+    VIDEO_FRAME_FACE_STACK_WEIGHT: float = 0.55
+    VIDEO_FRAME_GENERAL_WEIGHT: float = 0.30
     VIDEO_FRAME_FORENSICS_WEIGHT: float = 0.10
     VIDEO_FRAME_EXIF_WEIGHT: float = 0.05
     # Per-frame video detector blend. FFPP ViT is trained on FaceForensics++

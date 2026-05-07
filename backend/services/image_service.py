@@ -253,19 +253,20 @@ def _classify_no_face(
 
 
 def _looks_like_video_frame(pil_img: Image.Image) -> bool:
-    """Return True when the image is likely a frame extracted from video.
+    """Return True when the image is very likely a frame extracted from video.
 
-    Video frames: low resolution, common video aspect ratios, no EXIF, heavy
-    compression. Face-swap deepfakes almost always come from video, so we use
-    this to shift weight away from the AI-image detector (trained on generated
-    stills) and toward the face-swap-trained models (FFPP/EfficientNet).
+    Requires BOTH a low resolution (≤720px long side, typical for extracted
+    deepfake frames) AND a tight aspect-ratio match (±0.03) to a standard video
+    ratio. 1:1 and 4:3 are excluded because they overlap heavily with common
+    photo formats and cause too many false positives.
     """
     w, h = pil_img.size
-    if max(w, h) > 1080:
+    if max(w, h) > 720:
         return False
     aspect = w / h
-    video_ratios = [16 / 9, 4 / 3, 9 / 16, 3 / 4, 1.0]
-    return any(abs(aspect - r) < 0.10 for r in video_ratios)
+    # Exclude 1:1 and 4:3 — too common in photos to be a reliable video signal
+    video_ratios = [16 / 9, 9 / 16, 3 / 4]
+    return any(abs(aspect - r) < 0.03 for r in video_ratios)
 
 
 def _has_gan_artifact(artifacts: list[ArtifactIndicator]) -> bool:
@@ -412,7 +413,7 @@ def classify_image(
     # ── Face-stack composite (DenseNet + FFPP + ViT + EffNet) ──────────────
     # Video-frame path shifts weight to FFPP/EffNet; still-image path gives
     # DenseNet the lead (trained specifically on GAN still-face portraits).
-    is_video_frame_early = _looks_like_video_frame(pil_img)
+    is_video_frame = _looks_like_video_frame(pil_img)
 
     def _weighted(probs: dict[str, float]) -> float:
         total = sum(probs.values())
@@ -420,16 +421,16 @@ def classify_image(
 
     available: dict[str, float] = {}
     if densenet_fake_prob is not None:
-        w_dn = settings.DENSENET_VIDEO_WEIGHT if is_video_frame_early else settings.DENSENET_WEIGHT_FACE
+        w_dn = settings.DENSENET_VIDEO_WEIGHT if is_video_frame else settings.DENSENET_WEIGHT_FACE
         available["densenet"] = w_dn
     if ffpp_fake_prob is not None:
-        w_ffpp = settings.VIDEO_FFPP_WEIGHT_FACE if is_video_frame_early else settings.FFPP_WEIGHT_FACE
+        w_ffpp = settings.VIDEO_FFPP_WEIGHT_FACE if is_video_frame else settings.FFPP_WEIGHT_FACE
         available["ffpp"] = w_ffpp
     if eff_fake_prob is not None and face_present:
-        w_eff = settings.VIDEO_EFFNET_WEIGHT_FACE if is_video_frame_early else settings.EFFNET_WEIGHT_FACE
+        w_eff = settings.VIDEO_EFFNET_WEIGHT_FACE if is_video_frame else settings.EFFNET_WEIGHT_FACE
         available["eff"] = w_eff
     # ViT always present
-    w_vit = settings.VIDEO_VIT_WEIGHT_FACE if is_video_frame_early else settings.VIT_WEIGHT_FACE
+    w_vit = settings.VIDEO_VIT_WEIGHT_FACE if is_video_frame else settings.VIT_WEIGHT_FACE
     available["vit"] = w_vit
 
     prob_map: dict[str, float] = {}
@@ -448,11 +449,6 @@ def classify_image(
     face_stack_method = "_".join(active)
 
     # ── Phase A2/A3: unified evidence fusion (face-stack + general + forensics + EXIF + VLM) ──
-    # Video-frame detection: face-swap deepfakes come from video. The AI-image
-    # detectors (trained on synthesised stills) are unreliable for this class,
-    # so we shift weight toward the face-swap-trained models when the input
-    # looks like a compressed video frame.
-    is_video_frame = _looks_like_video_frame(pil_img)
     w_face_stack = settings.VIDEO_FRAME_FACE_STACK_WEIGHT if is_video_frame else settings.FACE_STACK_WEIGHT_FACE
     w_general    = settings.VIDEO_FRAME_GENERAL_WEIGHT    if is_video_frame else settings.GENERAL_WEIGHT_FACE
     w_forensics  = settings.VIDEO_FRAME_FORENSICS_WEIGHT  if is_video_frame else settings.FORENSICS_WEIGHT_FACE
