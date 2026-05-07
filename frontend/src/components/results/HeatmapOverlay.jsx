@@ -9,6 +9,7 @@ const MODES = [
 export default function HeatmapOverlay({ originalUrl, heatmapBase64, elaBase64, boxesBase64 }) {
   const [opacity, setOpacity] = useState(0.6);
   const [mode, setMode] = useState('heatmap');
+  const [baseImageLoaded, setBaseImageLoaded] = useState(false);
 
   const overlayMap = {
     heatmap: heatmapBase64,
@@ -92,9 +93,15 @@ export default function HeatmapOverlay({ originalUrl, heatmapBase64, elaBase64, 
               /* Heatmap mode: overlay with opacity control */
               <>
                 {originalUrl && (
-                  <img src={originalUrl} alt="orig-bg" style={{ width: '100%', borderRadius: 'var(--radius-md)', display: 'block' }} />
+                  <img
+                    src={originalUrl}
+                    alt="orig-bg"
+                    fetchPriority="high"
+                    onLoad={() => setBaseImageLoaded(true)}
+                    style={{ width: '100%', borderRadius: 'var(--radius-md)', display: 'block' }}
+                  />
                 )}
-                {currentOverlay && (
+                {baseImageLoaded && currentOverlay && (
                   <img
                     src={currentOverlay}
                     alt="heatmap"

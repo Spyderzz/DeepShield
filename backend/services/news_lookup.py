@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 from typing import List, Optional
@@ -64,6 +65,24 @@ def _configured_languages() -> str:
 
 def _page_size() -> int:
     return max(1, min(int(settings.NEWS_API_PAGE_SIZE or 10), 50))
+
+
+def _sanitize_keywords(keywords: List[str]) -> List[str]:
+    """Remove non-ASCII garbage from keywords.
+    
+    Filters out:
+    - Non-ASCII characters (e.g., Devanagari numerals '13२')
+    - Leaves ASCII alphanumeric and spaces intact
+    
+    Returns: List of cleaned keywords
+    """
+    cleaned = []
+    for kw in keywords:
+        # Remove non-ASCII characters, keep only ASCII printable
+        ascii_only = ''.join(c for c in kw if ord(c) < 128 and c.isprintable())
+        if ascii_only.strip():  # Only add if something remains after cleaning
+            cleaned.append(ascii_only.strip())
+    return cleaned
 
 
 def _archive_window() -> tuple[str, str]:
@@ -296,6 +315,24 @@ async def search_news(
     return result.trusted_sources
 
 
+async def _search_by_country(q: str, country: Optional[str]) -> tuple[List[TrustedSource], List[ContradictingEvidence], int]:
+    """Search news for a specific country.
+    
+    Returns: (trusted_sources, contradicting_evidence, total_articles_count)
+    """
+    seen: set[str] = set()
+    trusted: List[TrustedSource] = []
+    contradictions: List[ContradictingEvidence] = []
+    total_articles = 0
+    
+    for params in _query_attempts(q, country):
+        articles = await _fetch(params)
+        total_articles += len(articles)
+        _collect_news_evidence(articles, seen=seen, trusted=trusted, contradictions=contradictions)
+    
+    return trusted, contradictions, total_articles
+
+
 async def search_news_full(
     keywords: List[str],
     limit: int = 6,
@@ -304,50 +341,94 @@ async def search_news_full(
     current_fake_prob: float = 0.5,
 ) -> NewsLookupResult:
     """Full news lookup with truth-override support.
+    
+    Performs parallel India + Global search strategy:
+    - Always searches India (country='in') for prioritized coverage
+    - Always searches globally (no country filter) to catch international stories
+    - Merges results with India sources prioritized but global trusted sources ranked high
 
     Args:
         keywords: NER-extracted or frequency-extracted keywords to search.
         limit: Max sources to return.
-        country: Country code for newsdata.io.
+        country: Country code override for newsdata.io (if specified, still does parallel search).
         original_text: Input text to compare against headlines for truth-override.
         current_fake_prob: Current fake probability — may be adjusted by truth-override.
     """
     if not settings.NEWS_API_KEY or not keywords:
         return NewsLookupResult([], [], 0)
 
-    q = " ".join(keywords[:4])
-    total_articles = 0
+    # Fix 2: Remove non-ASCII garbage from keywords
+    cleaned_keywords = _sanitize_keywords(keywords)
+    if not cleaned_keywords:
+        return NewsLookupResult([], [], 0)
+    
+    q = " ".join(cleaned_keywords[:4])
+    logger.info(f"News lookup query (after sanitization): {q!r}")
+    
+    # Fix 1: Parallel India + Global search
+    # Run both searches concurrently to catch both India-focused and global stories
+    india_search = _search_by_country(q, country="in")
+    global_search = _search_by_country(q, country=None)
+    
+    (trusted_india, contradictions_india, total_india), \
+    (trusted_global, contradictions_global, total_global) = await asyncio.gather(india_search, global_search)
+    
+    # Merge results: deduplicate by URL, combine contradicting evidence
     seen: set[str] = set()
-    trusted: List[TrustedSource] = []
-    contradictions: List[ContradictingEvidence] = []
-
-    for params in _query_attempts(q, country):
-        articles = await _fetch(params)
-        total_articles += len(articles)
-        _collect_news_evidence(articles, seen=seen, trusted=trusted, contradictions=contradictions)
-        if trusted or contradictions:
-            break
-
-    trusted.sort(key=lambda s: -s.relevance_score)
-    trusted = trusted[:limit]
+    trusted_merged: List[TrustedSource] = []
+    contradictions_merged: List[ContradictingEvidence] = []
+    
+    # Add India results first (prioritized)
+    for source in trusted_india:
+        if source.url not in seen:
+            seen.add(source.url)
+            trusted_merged.append(source)
+    
+    for contra in contradictions_india:
+        if contra.url not in seen:
+            seen.add(contra.url)
+            contradictions_merged.append(contra)
+    
+    # Add global results (but skip duplicates)
+    for source in trusted_global:
+        if source.url not in seen:
+            seen.add(source.url)
+            trusted_merged.append(source)
+    
+    for contra in contradictions_global:
+        if contra.url not in seen:
+            seen.add(contra.url)
+            contradictions_merged.append(contra)
+    
+    # Sort by relevance score (global high-trust sources like Reuters rank high)
+    trusted_merged.sort(key=lambda s: -s.relevance_score)
+    trusted_final = trusted_merged[:limit]
+    
+    total_articles = total_india + total_global
+    
+    logger.info(
+        f"News lookup: India={len(trusted_india)} sources, "
+        f"Global={len(trusted_global)} sources, "
+        f"Merged={len(trusted_final)} (deduplicated & ranked)"
+    )
 
     # ── Phase 13.2: Truth-override ──
     truth_override = None
-    if original_text and trusted:
-        truth_override = _compute_truth_override(original_text, trusted, current_fake_prob)
+    if original_text and trusted_final:
+        truth_override = _compute_truth_override(original_text, trusted_final, current_fake_prob)
 
     # ── No-source penalty: API key is configured but yielded 0 results.
     # Unverifiable claims should raise fake probability slightly.
     no_source_penalty = 0.0
-    if settings.NEWS_API_KEY and not trusted and not contradictions:
+    if settings.NEWS_API_KEY and not trusted_final and not contradictions_merged:
         no_source_penalty = 0.08
         logger.info(
             f"No trusted sources found for query — applying no_source_penalty={no_source_penalty}"
         )
 
     return NewsLookupResult(
-        trusted_sources=trusted,
-        contradicting_evidence=contradictions[:limit],
+        trusted_sources=trusted_final,
+        contradicting_evidence=contradictions_merged[:limit],
         total_articles=total_articles,
         truth_override=truth_override,
         no_source_penalty=no_source_penalty,

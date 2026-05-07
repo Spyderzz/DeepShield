@@ -406,6 +406,7 @@ const OVERLAY_DESC = {
 };
 
 function HeatmapCard({ src, heatmapData, elaData, boxesData, heatmapMode, setHeatmapMode, alpha, setAlpha, status }) {
+  const [baseImageLoaded, setBaseImageLoaded] = React.useState(false);
   const overlayMap = { heatmap: heatmapData, ela: elaData, boxes: boxesData, off: null };
   const activeOverlay = overlayMap[heatmapMode] ?? null;
   const unavailable = heatmapMode !== 'off' && !activeOverlay;
@@ -428,16 +429,26 @@ function HeatmapCard({ src, heatmapData, elaData, boxesData, heatmapMode, setHea
             src={activeOverlay}
             className="heatmap-base"
             alt=""
+            fetchPriority="high"
+            onLoad={() => setBaseImageLoaded(true)}
             onError={(e) => { e.target.style.display = 'none'; }}
           />
         ) : (
           <>
             {src
-              ? <img src={src} alt="" className="heatmap-base" onError={(e) => { e.target.style.display = 'none'; }} />
+              ? <img
+                  src={src}
+                  alt=""
+                  className="heatmap-base"
+                  fetchPriority="high"
+                  onLoad={() => setBaseImageLoaded(true)}
+                  onError={(e) => { e.target.style.display = 'none'; }}
+                />
               : <div className="heatmap-base" style={{ background: '#0A0D18' }} />}
-        {/* Overlay: the backend already blends these with the original, so we just
-            fade them in over the base image. alpha=1 → full overlay, alpha=0 → original. */}
-            {activeOverlay && (
+        {/* Overlay: render only after base image is loaded to prevent visual reflow.
+            The backend already blends these with the original, so we fade them in.
+            alpha=1 → full overlay, alpha=0 → original. */}
+            {baseImageLoaded && activeOverlay && (
           <img
             src={activeOverlay}
             className="heatmap-layer"

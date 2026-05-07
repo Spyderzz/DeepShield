@@ -319,7 +319,13 @@ def get_history_asset(
     if path is None or not path.exists() or not path.is_file():
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Asset not found")
 
-    return FileResponse(path)
+    ttl = max(60, int(settings.MEDIA_SIGNED_URL_TTL_SECONDS))
+    remaining = max(0, exp - int(datetime.now().timestamp()))
+    cache_seconds = min(remaining, ttl)
+    return FileResponse(
+        path,
+        headers={"Cache-Control": f"private, max-age={cache_seconds}, immutable"},
+    )
 
 
 @router.delete("/{record_id}", status_code=status.HTTP_204_NO_CONTENT)
