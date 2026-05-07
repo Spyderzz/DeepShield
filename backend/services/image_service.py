@@ -525,6 +525,77 @@ def classify_image(
     )
 
 
+def apply_vlm_to_classification(
+    clf: ImageClassification,
+    vlm_breakdown: "VLMBreakdown",
+) -> ImageClassification:
+    """Fold VLM evidence into an already-computed ImageClassification.
+
+    Recomputes only the fusion math — no model inference is repeated.
+    Returns clf unchanged if evidence_fusion is absent or VLM yields no signal.
+    """
+    if clf.evidence_fusion is None:
+        return clf
+
+    vlm_prob = _vlm_fake_probability(vlm_breakdown)
+    if vlm_prob is None:
+        return clf
+
+    components = dict(clf.evidence_fusion["components"])
+    weights = dict(clf.evidence_fusion["weights"])
+    is_video_frame = clf.evidence_fusion.get("is_video_frame", False)
+
+    components["vlm"] = vlm_prob
+    weights["vlm"] = settings.VLM_WEIGHT_FACE
+
+    total_w = sum(weights.values())
+    pre_gating_prob = (
+        sum(components[k] * weights[k] for k in weights) / total_w if total_w else 0.0
+    )
+    pre_gating_prob = max(0.0, min(1.0, pre_gating_prob))
+
+    general_fake_prob = components.get("general")
+    ensemble_prob, gating_reason = _apply_hard_gating(
+        fake_prob=pre_gating_prob,
+        general_fake_prob=general_fake_prob,
+        artifacts=[],
+    )
+    ensemble_prob, synthetic_reason = _apply_synthetic_still_overrides(
+        fake_prob=ensemble_prob,
+        general_fake_prob=general_fake_prob,
+        is_video_frame=is_video_frame,
+    )
+
+    # Preserve artifact-based gating floor from the original classification
+    if clf.gating_applied and "gan_artifact" in clf.gating_applied:
+        ensemble_prob = max(ensemble_prob, settings.GATING_FAKE_FLOOR)
+
+    final_gating_reason = synthetic_reason or gating_reason or clf.gating_applied
+    label = "Fake" if ensemble_prob >= 0.5 else "Real"
+
+    logger.info(
+        f"VLM fusion applied: vlm_prob={vlm_prob:.3f} "
+        f"pre_gating={pre_gating_prob:.3f} -> {ensemble_prob:.3f} ({label})"
+    )
+
+    return ImageClassification(
+        label=label,
+        confidence=ensemble_prob,
+        all_scores={**clf.all_scores, "vlm_fake_prob": vlm_prob},
+        models_used=clf.models_used,
+        ensemble_method=clf.ensemble_method,
+        calibrator_applied=clf.calibrator_applied,
+        no_face_analysis=clf.no_face_analysis,
+        evidence_fusion={
+            **clf.evidence_fusion,
+            "components": components,
+            "weights": weights,
+            "pre_gating": pre_gating_prob,
+        },
+        gating_applied=final_gating_reason,
+    )
+
+
 def preprocess_and_classify(raw_bytes: bytes) -> Tuple[Image.Image, ImageClassification]:
     """Convenience: decode bytes → PIL → classify. Returns the PIL image too so
     downstream steps (heatmap, artifact scan) can reuse it.

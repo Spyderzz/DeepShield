@@ -39,6 +39,7 @@ class ModelLoader:
                     cls._instance._efficientnet_detector = None
                     cls._instance._ffpp_model = None
                     cls._instance._ffpp_processor = None
+                    cls._instance._ffpp_unavailable = False
                     cls._instance._densenet_model = None
                     cls._instance._densenet_meta = None
                     cls._instance._densenet_unavailable = False
@@ -289,6 +290,8 @@ class ModelLoader:
             return None
         if self._ffpp_model is not None:
             return self._ffpp_model, self._ffpp_processor
+        if self._ffpp_unavailable:
+            return None
 
         configured_path = Path(settings.FFPP_MODEL_PATH)
         repo_root = Path(__file__).resolve().parent.parent.parent
@@ -306,6 +309,7 @@ class ModelLoader:
             else:
                 tried = ", ".join(str(p) for p in candidates)
                 logger.warning(f"FFPP ViT checkpoint not found. Tried: {tried} — skipping")
+                self._ffpp_unavailable = True
                 return None
 
         try:
@@ -322,6 +326,7 @@ class ModelLoader:
             return self._ffpp_model, self._ffpp_processor
         except Exception as e:
             logger.warning(f"FFPP ViT load failed (continuing without it): {e}")
+            self._ffpp_unavailable = True
             return None
 
     # ---------- DenseNet121 face-GAN specialist ----------

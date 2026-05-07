@@ -42,7 +42,7 @@ from services.screenshot_service import (
 )
 from services.ela_service import generate_ela_base64
 from services.exif_service import extract_exif, rescore_exif_trust
-from services.image_service import classify_image, load_image_from_bytes
+from services.image_service import classify_image, load_image_from_bytes, apply_vlm_to_classification
 from services.llm_explainer import generate_llm_summary
 from schemas.common import ProcessingSummary, Verdict
 from services.artifact_detector import scan_artifacts
@@ -396,12 +396,7 @@ async def analyze_image(
         try:
             vlm_bd = generate_vlm_breakdown(pil, record_id=analysis_id)
             if vlm_bd:
-                clf = classify_image(
-                    pil,
-                    artifact_indicators=indicators,
-                    exif=exif_summary,
-                    vlm_breakdown=vlm_bd,
-                )
+                clf = apply_vlm_to_classification(clf, vlm_bd)
                 stages.append("vlm_evidence_fusion")
         except Exception as e:  # noqa: BLE001
             logger.warning(f"VLM evidence fusion failed, continuing: {e}")
