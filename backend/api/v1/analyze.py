@@ -97,7 +97,6 @@ def _resize_for_vis(pil) -> "Image.Image":
     scale = _VIS_MAX_PX / max(w, h)
     return pil.resize((int(w * scale), int(h * scale)), Image.LANCZOS)
 VIDEO_MAX_MB = 100
-VIDEO_NUM_FRAMES = 16
 
 _IMAGE_EXCLUDE = {"explainability": {"heatmap_base64", "ela_base64", "boxes_base64"}}
 
@@ -575,7 +574,7 @@ async def analyze_video_endpoint(
             return VideoAnalysisResponse.model_validate(payload)
 
     try:
-        agg = analyze_video(path, num_frames=VIDEO_NUM_FRAMES)
+        agg = analyze_video(path, num_frames=settings.VIDEO_SAMPLE_FRAMES)
         stages.append("frame_extraction")
         stages.append("frame_classification")
         stages.append("aggregation")
@@ -600,6 +599,8 @@ async def analyze_video_endpoint(
     # Phase 17.3 — combined verdict formula
     score, label, severity = compute_video_authenticity_score(
         mean_suspicious_prob=agg.mean_suspicious_prob,
+        max_suspicious_prob=agg.max_suspicious_prob,
+        suspicious_ratio=agg.suspicious_ratio,
         insufficient_faces=agg.insufficient_faces,
         temporal_score=agg.temporal.temporal_score if agg.temporal else None,
         audio_authenticity_score=audio_result.audio_authenticity_score if audio_result else None,
@@ -1139,7 +1140,7 @@ async def analyze_video_async(
         local_db = SessionLocal()
         try:
             progress("frame_extraction", 15)
-            agg = analyze_video(path, num_frames=VIDEO_NUM_FRAMES)
+            agg = analyze_video(path, num_frames=settings.VIDEO_SAMPLE_FRAMES)
             progress("aggregation", 60)
 
             audio_result = None
@@ -1151,6 +1152,8 @@ async def analyze_video_async(
 
             score_val, label_val, sev = compute_video_authenticity_score(
                 mean_suspicious_prob=agg.mean_suspicious_prob,
+                max_suspicious_prob=agg.max_suspicious_prob,
+                suspicious_ratio=agg.suspicious_ratio,
                 insufficient_faces=agg.insufficient_faces,
                 temporal_score=agg.temporal.temporal_score if agg.temporal else None,
                 audio_authenticity_score=audio_result.audio_authenticity_score if audio_result else None,

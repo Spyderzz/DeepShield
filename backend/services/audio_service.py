@@ -50,7 +50,11 @@ def _extract_audio_wav(video_path: str, out_path: str) -> bool:
             capture_output=True,
             timeout=60,
         )
-        return result.returncode == 0 and os.path.getsize(out_path) > 0
+        if result.returncode != 0 or not os.path.exists(out_path) or os.path.getsize(out_path) == 0:
+            stderr_tail = result.stderr.decode(errors="replace")[-400:].strip()
+            logger.warning(f"ffmpeg exited {result.returncode} — {stderr_tail or '(no stderr)'}")
+            return False
+        return True
     except (FileNotFoundError, subprocess.TimeoutExpired, OSError) as exc:
         logger.warning(f"ffmpeg audio extraction failed: {exc}")
         return False

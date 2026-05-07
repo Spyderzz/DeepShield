@@ -188,7 +188,7 @@ def _analyze_with_efficientnet(
                 label=label,
                 confidence=fake_prob,
                 suspicious_prob=fake_prob,
-                is_suspicious=(fake_prob >= 0.5) and has_face,
+                is_suspicious=(fake_prob >= 0.40) and has_face,
                 has_face=has_face,
                 scored=bool(has_face and faces),
             )
@@ -212,7 +212,7 @@ def _analyze_with_vit(
                 label=vit_label,
                 confidence=vit_fake_prob,
                 suspicious_prob=vit_fake_prob,
-                is_suspicious=(vit_fake_prob >= 0.5) and face,
+                is_suspicious=(vit_fake_prob >= 0.40) and face,
                 has_face=face,
                 scored=face,
             )

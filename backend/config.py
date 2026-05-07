@@ -273,7 +273,7 @@ class Settings(BaseSettings):
     # face forgery frames, so it is the dominant signal for video analysis.
     VIDEO_FFPP_WEIGHT: float = 0.70
     VIDEO_EFFNET_WEIGHT: float = 0.30
-    VIDEO_SAMPLE_FRAMES: int = 16  # frames to sample per video for inference
+    VIDEO_SAMPLE_FRAMES: int = 32  # frames to sample per video for inference
     EXIFTOOL_PATH: str = ""  # full path to ExifTool binary; empty = metadata write disabled
 
     # Auth

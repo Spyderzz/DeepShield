@@ -70,6 +70,8 @@ def apply_unverified_news_gate(
 def compute_video_authenticity_score(
     *,
     mean_suspicious_prob: float,
+    max_suspicious_prob: float = 0.0,
+    suspicious_ratio: float = 0.0,
     insufficient_faces: bool,
     temporal_score: float | None = None,
     audio_authenticity_score: float | None = None,
@@ -80,6 +82,14 @@ def compute_video_authenticity_score(
     Face-model evidence is authoritative only when enough face frames were
     scored. If face content is insufficient, use temporal/audio evidence when
     available instead of forcing a neutral result.
+
+    The effective visual fake probability blends the per-frame mean with the
+    per-frame maximum (65/35 split). This prevents a deepfake from hiding
+    behind many clean frames: even a cluster of highly-suspicious frames
+    raises the combined score meaningfully.
+
+    A suspicious_ratio cap prevents a misleadingly high authenticity score when
+    a significant fraction of frames are flagged regardless of the mean.
     """
     if insufficient_faces:
         evidence: list[tuple[float, float]] = []
@@ -97,7 +107,12 @@ def compute_video_authenticity_score(
         label, severity = get_verdict_label(score)
         return score, label, severity
 
-    visual_score = (1.0 - float(mean_suspicious_prob)) * 100.0
+    # Blend mean and max: mean alone is easily diluted by clean frames.
+    # 65% mean keeps the overall distribution; 35% max ensures a cluster of
+    # highly-suspicious frames cannot be hidden by majority-clean frames.
+    effective_prob = 0.65 * float(mean_suspicious_prob) + 0.35 * float(max_suspicious_prob)
+    visual_score = (1.0 - effective_prob) * 100.0
+
     temporal_sc = float(temporal_score) if temporal_score is not None else visual_score
     if has_audio and audio_authenticity_score is not None:
         _validate_weight_total([0.50, 0.30, 0.20], "video audio+temporal fusion")
@@ -106,6 +121,16 @@ def compute_video_authenticity_score(
         _validate_weight_total([0.70, 0.30], "video visual+temporal fusion")
         combined = 0.70 * visual_score + 0.30 * temporal_sc
     score = int(round(max(0.0, min(100.0, combined))))
+
+    # Suspicious-ratio caps: when a meaningful fraction of frames are flagged,
+    # prevent the score from landing in a confident "Likely Real" band.
+    # ≥40% suspicious → cap at 35 (Likely Fake zone).
+    # ≥20% suspicious → cap at 50 (Uncertain/Suspicious zone).
+    if suspicious_ratio >= 0.40:
+        score = min(score, 35)
+    elif suspicious_ratio >= 0.20:
+        score = min(score, 50)
+
     label, severity = get_verdict_label(score)
     return score, label, severity
 
