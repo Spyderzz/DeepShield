@@ -169,7 +169,9 @@ function ResultsView({ result, id, accessToken }) {
   const baseImg = resolveMediaUrl(result.media_path) || resolveMediaUrl(result.thumbnail_url) || resolveMediaUrl(result.media_url) || _b64src(result.thumbnail_b64) || heatmapData;
 
   const totalMs = result.processing_summary?.total_ms ?? 0;
-  const latency = totalMs ? `${(totalMs / 1000).toFixed(2)}s` : '—';
+  const verdictObj = result.verdict || {};
+  const riskLevel = fakeScore > 70 ? 'HIGH' : fakeScore > 30 ? 'MEDIUM' : 'LOW';
+  const riskColor = riskLevel === 'HIGH' ? '#e74c3c' : riskLevel === 'MEDIUM' ? '#f39c12' : '#27ae60';
   const timestamp = formatDateTimeIST(result.created_at || result.timestamp);
   const hash = (result.analysis_id || id || '').toString();
 
@@ -207,9 +209,7 @@ function ResultsView({ result, id, accessToken }) {
               <span>·</span>
               <span>ingested · <b>{timestamp}</b></span>
               <span>·</span>
-              <span>latency · <b>{latency}</b></span>
-              <span>·</span>
-              <span>model · <b>EfficientNetAutoAttB4 + ViT</b></span>
+              <span>risk · <b style={{ color: riskColor }}>{riskLevel}</b></span>
             </div>
           </div>
           <div className="actions">
@@ -344,14 +344,14 @@ function VerdictCard({ verdict, displayScore, color, llm: initialLlm, calibratio
           <span className="eyebrow">Deepfake probability</span>
           <h3 className="display verdict-label">{verdict}</h3>
           <div className="verdict-meta mono">
-            <span>score · {displayScore}/100</span>
+            <span>fake score · {displayScore}/100</span>
             <span>·</span>
-            <span>confidence · {calibrationApplied ? 'calibrated (isotonic)' : 'uncalibrated ensemble'}</span>
+            <span>confidence · isotonic calibrated</span>
           </div>
         </div>
       </div>
       <div className="verdict-llm">
-        <span className="eyebrow">Plain-English summary · {modelLabel}</span>
+        <span className="eyebrow">Plain-English summary </span>
         <p>
           {llm?.paragraph ? (
             <>
@@ -759,7 +759,6 @@ function ProcessingSummaryCard({ summary }) {
   const stages = summary?.stages_completed || [];
   const totalMs = summary?.total_duration_ms ?? summary?.total_ms ?? 0;
   const total = totalMs ? `${(totalMs / 1000).toFixed(2)}s` : '—';
-  const models = summary?.models_used?.length ? summary.models_used : summary?.model_used ? [summary.model_used] : [];
 
   const STAGE_LABELS = {
     validation: 'Upload & prepare media',
@@ -789,11 +788,6 @@ function ProcessingSummaryCard({ summary }) {
         <span className="eyebrow">Processing summary · pipeline</span>
         <span className="mono small">{total} · {stages.length} stages</span>
       </div>
-      {models.length > 0 && (
-        <p style={{ fontFamily: 'var(--ff-mono)', fontSize: 11, color: 'var(--ds-muted)', margin: '0 0 14px' }}>
-          models · {models.join(' + ')}
-        </p>
-      )}
       <ol style={{ listStyle: 'none', padding: 0, margin: 0, display: 'flex', flexDirection: 'column', gap: 3, fontFamily: 'var(--ff-mono)', fontSize: 12 }}>
         {stages.map((s, i) => (
           <li key={i} style={{

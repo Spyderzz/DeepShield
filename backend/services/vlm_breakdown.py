@@ -45,20 +45,32 @@ def _parse_response(raw: str) -> dict[str, Any]:
     if text.startswith("```"):
         lines = [ln for ln in text.split("\n") if not ln.strip().startswith("```")]
         text = "\n".join(lines).strip()
-    return json.loads(text)
+    try:
+        result = json.loads(text)
+        logger.debug(f"VLM response parsed successfully: {result}")
+        return result
+    except json.JSONDecodeError as e:
+        logger.error(f"VLM response parse failed: {e}. Raw text: {text[:500]}")
+        raise
 
 
 def _to_component(d: Any) -> VLMComponentScore:
     if isinstance(d, dict):
+        try:
+            score = int(d.get("score", 75))
+            score = max(0, min(100, score))
+        except (TypeError, ValueError):
+            score = 75
         return VLMComponentScore(
-            score=max(0, min(100, int(d.get("score", 75)))),
+            score=score,
             notes=str(d.get("notes", ""))[:200],
         )
+    logger.debug(f"_to_component: unexpected data type {type(d)}, using defaults")
     return VLMComponentScore()
 
 
 def _build_breakdown(data: dict[str, Any]) -> VLMBreakdown:
-    return VLMBreakdown(
+    breakdown = VLMBreakdown(
         facial_symmetry=_to_component(data.get("facial_symmetry")),
         skin_texture=_to_component(data.get("skin_texture")),
         lighting_consistency=_to_component(data.get("lighting_consistency")),
@@ -66,6 +78,16 @@ def _build_breakdown(data: dict[str, Any]) -> VLMBreakdown:
         anatomy_hands_eyes=_to_component(data.get("anatomy_hands_eyes")),
         context_objects=_to_component(data.get("context_objects")),
     )
+    scores = [
+        breakdown.facial_symmetry.score,
+        breakdown.skin_texture.score,
+        breakdown.lighting_consistency.score,
+        breakdown.background_coherence.score,
+        breakdown.anatomy_hands_eyes.score,
+        breakdown.context_objects.score,
+    ]
+    logger.debug(f"VLM breakdown built with scores: {scores}")
+    return breakdown
 
 
 def generate_vlm_breakdown(
@@ -101,6 +123,7 @@ def generate_vlm_breakdown(
             _cache[record_id] = breakdown
 
         logger.info(f"VLM breakdown generated via {provider}/{model_id}")
+        logger.debug(f"Breakdown scores: {breakdown}")
         return breakdown
 
     except json.JSONDecodeError as e:

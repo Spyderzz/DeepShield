@@ -37,7 +37,7 @@ LOGO_PATH = REPO_ROOT / "frontend" / "src" / "assets" / "logo.png"
 IST = ZoneInfo("Asia/Kolkata")
 
 # Typography & Spacing Grid (base unit: 6pt)
-BASE_SPACING = 6
+BASE_SPACING = 4
 
 # Font constants (ReportLab uses these exact names; fallbacks handled by OS)
 FONT_SANS = "Helvetica"      # Primary: available on all systems
@@ -206,7 +206,7 @@ def _resolve_media_path(value: Any) -> Path | None:
 
 
 def _image_from_base64(data: Any, max_width: float, max_height: float) -> Image:
-    """Decode base64 image or return placeholder with error logging."""
+    """Decode base64 image, embed as bytes in PDF, or return placeholder with error logging."""
     raw = _clean(data)
     if not raw:
         logger.debug("No base64 image data provided")
@@ -214,9 +214,14 @@ def _image_from_base64(data: Any, max_width: float, max_height: float) -> Image:
     try:
         encoded = raw.split(",", 1)[1] if "," in raw else raw
         blob = base64.b64decode(encoded)
-        stream = BytesIO(blob)
+        
+        # Get dimensions from PIL
         with PILImage.open(BytesIO(blob)) as pil:
             width, height = pil.size
+        
+        # Create stream and ensure it's at position 0 for ReportLab to read
+        stream = BytesIO(blob)
+        stream.seek(0)
         return _scaled_image(stream, width, height, max_width, max_height)
     except Exception as exc:  # noqa: BLE001
         logger.warning(f"Base64 image decode failed: {exc} — using placeholder")
@@ -224,14 +229,23 @@ def _image_from_base64(data: Any, max_width: float, max_height: float) -> Image:
 
 
 def _image_from_path(path: Path | None, max_width: float, max_height: float) -> Image:
-    """Load image from path or return placeholder with error logging."""
+    """Load image from path, embed as bytes in PDF, or return placeholder with error logging."""
     if path is None:
         logger.debug("No image path provided")
         return _placeholder_image(max_width, max_height)
     try:
-        with PILImage.open(path) as pil:
+        # Read the file as bytes and wrap in BytesIO for embedding in PDF
+        with open(path, 'rb') as f:
+            image_bytes = f.read()
+        
+        # Get dimensions from PIL
+        with PILImage.open(BytesIO(image_bytes)) as pil:
             width, height = pil.size
-        return _scaled_image(str(path), width, height, max_width, max_height)
+        
+        # Create stream and ensure it's at position 0 for ReportLab to read
+        stream = BytesIO(image_bytes)
+        stream.seek(0)
+        return _scaled_image(stream, width, height, max_width, max_height)
     except Exception as exc:  # noqa: BLE001
         logger.warning(f"Image not found at {path}: {exc} — using placeholder")
         return _placeholder_image(max_width, max_height)
@@ -257,7 +271,7 @@ def _styles() -> dict[str, ParagraphStyle]:
             leading=24,  # 1.2x leading for titles
             textColor=SLATE,
             alignment=TA_LEFT,
-            spaceAfter=BASE_SPACING * 2,  # 12pt after
+            spaceAfter=BASE_SPACING,  # 4pt after (reduced from 12pt)
         ),
         "section": ParagraphStyle(
             "DeepShieldSection",
@@ -266,8 +280,8 @@ def _styles() -> dict[str, ParagraphStyle]:
             fontSize=13,
             leading=16,  # 1.23x leading
             textColor=SLATE,
-            spaceBefore=BASE_SPACING * 2,  # 12pt before section
-            spaceAfter=BASE_SPACING + 1,  # 7pt after
+            spaceBefore=BASE_SPACING,  # 4pt before section (reduced from 12pt)
+            spaceAfter=BASE_SPACING,  # 4pt after (reduced from 7pt)
             keepWithNext=True,
         ),
         "body": ParagraphStyle(
@@ -448,10 +462,10 @@ def _panel(rows: list[list[Any]], col_widths: list[float] | None = None) -> Tabl
                 ("BOX", (0, 0), (-1, -1), 0.5, LINE),
                 ("INNERGRID", (0, 0), (-1, -1), 0.25, colors.HexColor("#D9DFE8")),  # Darker grid
                 ("VALIGN", (0, 0), (-1, -1), "TOP"),
-                ("LEFTPADDING", (0, 0), (-1, -1), 10),  # Increased from 8
-                ("RIGHTPADDING", (0, 0), (-1, -1), 10),
-                ("TOPPADDING", (0, 0), (-1, -1), 10),  # Increased from 7
-                ("BOTTOMPADDING", (0, 0), (-1, -1), 10),
+                ("LEFTPADDING", (0, 0), (-1, -1), 6),  # Reduced from 10
+                ("RIGHTPADDING", (0, 0), (-1, -1), 6),
+                ("TOPPADDING", (0, 0), (-1, -1), 6),  # Reduced from 10
+                ("BOTTOMPADDING", (0, 0), (-1, -1), 6),  # Reduced from 10
             ]
         )
     )
@@ -479,11 +493,11 @@ def _header(analysis_json: dict[str, Any], generated_at: str, styles: dict[str, 
             [
                 ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
                 ("LINEBELOW", (0, 0), (-1, -1), 1.1, SLATE),
-                ("BOTTOMPADDING", (0, 0), (-1, -1), 8),
+                ("BOTTOMPADDING", (0, 0), (-1, -1), 4),  # Reduced from 8
             ]
         )
     )
-    return [table, Spacer(1, 8)]
+    return [table, Spacer(1, 4)]
 
 
 def _badge(text: str, color, styles: dict[str, ParagraphStyle]) -> Table:
@@ -541,10 +555,10 @@ def _executive_summary(analysis_json: dict[str, Any], styles: dict[str, Paragrap
                 ("BACKGROUND", (0, 0), (-1, -1), PANEL),
                 ("BOX", (0, 0), (-1, -1), 0.6, LINE),
                 ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
-                ("LEFTPADDING", (0, 0), (-1, -1), 10),
-                ("RIGHTPADDING", (0, 0), (-1, -1), 10),
-                ("TOPPADDING", (0, 0), (-1, -1), 10),
-                ("BOTTOMPADDING", (0, 0), (-1, -1), 10),
+                ("LEFTPADDING", (0, 0), (-1, -1), 6),  # Reduced from 10
+                ("RIGHTPADDING", (0, 0), (-1, -1), 6),
+                ("TOPPADDING", (0, 0), (-1, -1), 6),  # Reduced from 10
+                ("BOTTOMPADDING", (0, 0), (-1, -1), 6),  # Reduced from 10
             ]
         )
     )
@@ -593,10 +607,10 @@ def _media_context(analysis_json: dict[str, Any], record: AnalysisRecord, styles
                     ("BACKGROUND", (0, 0), (-1, -1), PANEL),
                     ("BOX", (0, 0), (-1, -1), 0.5, LINE),
                     ("VALIGN", (0, 0), (-1, -1), "TOP"),
-                    ("LEFTPADDING", (0, 0), (-1, -1), 8),
-                    ("RIGHTPADDING", (0, 0), (-1, -1), 8),
-                    ("TOPPADDING", (0, 0), (-1, -1), 8),
-                    ("BOTTOMPADDING", (0, 0), (-1, -1), 8),
+                    ("LEFTPADDING", (0, 0), (-1, -1), 6),
+                    ("RIGHTPADDING", (0, 0), (-1, -1), 6),
+                    ("TOPPADDING", (0, 0), (-1, -1), 6),  # Reduced from 8
+                    ("BOTTOMPADDING", (0, 0), (-1, -1), 6),  # Reduced from 8
                 ]
             )
         )
@@ -749,10 +763,10 @@ def _xai_breakdown(analysis_json: dict[str, Any], styles: dict[str, ParagraphSty
                 ("INNERGRID", (0, 0), (-1, -1), 0.25, colors.HexColor("#D9DFE8")),
                 ("VALIGN", (0, 0), (-1, -1), "TOP"),
                 ("NOSPLIT", (0, 0), (-1, 1)),
-                ("LEFTPADDING", (0, 0), (-1, -1), 8),  # Increased from 7
-                ("RIGHTPADDING", (0, 0), (-1, -1), 8),
-                ("TOPPADDING", (0, 0), (-1, -1), 8),  # Increased from 6
-                ("BOTTOMPADDING", (0, 0), (-1, -1), 8),  # Increased from 6
+                ("LEFTPADDING", (0, 0), (-1, -1), 6),  # Reduced from 8
+                ("RIGHTPADDING", (0, 0), (-1, -1), 6),
+                ("TOPPADDING", (0, 0), (-1, -1), 6),  # Reduced from 8
+                ("BOTTOMPADDING", (0, 0), (-1, -1), 6),  # Reduced from 8
             ]
         )
     )
@@ -795,10 +809,10 @@ def _forensic_visuals(analysis_json: dict[str, Any], styles: dict[str, Paragraph
                 ("BACKGROUND", (0, 0), (-1, -1), PANEL),
                 ("BOX", (0, 0), (-1, -1), 0.5, LINE),
                 ("VALIGN", (0, 0), (-1, -1), "TOP"),
-                ("LEFTPADDING", (0, 0), (-1, -1), 10),  # Increased from 8
-                ("RIGHTPADDING", (0, 0), (-1, -1), 10),
-                ("TOPPADDING", (0, 0), (-1, -1), 10),  # Increased from 8
-                ("BOTTOMPADDING", (0, 0), (-1, -1), 10),
+                ("LEFTPADDING", (0, 0), (-1, -1), 6),  # Reduced from 10
+                ("RIGHTPADDING", (0, 0), (-1, -1), 6),
+                ("TOPPADDING", (0, 0), (-1, -1), 6),  # Reduced from 10
+                ("BOTTOMPADDING", (0, 0), (-1, -1), 6),  # Reduced from 10
             ]
         )
     )
