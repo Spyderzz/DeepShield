@@ -205,12 +205,12 @@ def _resolve_media_path(value: Any) -> Path | None:
     return None
 
 
-def _image_from_base64(data: Any, max_width: float, max_height: float) -> Image:
-    """Decode base64 image, embed as bytes in PDF, or return placeholder with error logging."""
+def _image_from_base64(data: Any, max_width: float, max_height: float) -> Image | None:
+    """Decode base64 image, embed as bytes in PDF, or return None with error logging."""
     raw = _clean(data)
     if not raw:
         logger.debug("No base64 image data provided")
-        return _placeholder_image(max_width, max_height)
+        return None
     try:
         encoded = raw.split(",", 1)[1] if "," in raw else raw
         blob = base64.b64decode(encoded)
@@ -224,15 +224,15 @@ def _image_from_base64(data: Any, max_width: float, max_height: float) -> Image:
         stream.seek(0)
         return _scaled_image(stream, width, height, max_width, max_height)
     except Exception as exc:  # noqa: BLE001
-        logger.warning(f"Base64 image decode failed: {exc} — using placeholder")
-        return _placeholder_image(max_width, max_height)
+        logger.warning(f"Base64 image decode failed: {exc}")
+        return None
 
 
-def _image_from_path(path: Path | None, max_width: float, max_height: float) -> Image:
-    """Load image from path, embed as bytes in PDF, or return placeholder with error logging."""
+def _image_from_path(path: Path | None, max_width: float, max_height: float) -> Image | None:
+    """Load image from path, embed as bytes in PDF, or return None with error logging."""
     if path is None:
         logger.debug("No image path provided")
-        return _placeholder_image(max_width, max_height)
+        return None
     try:
         # Read the file as bytes and wrap in BytesIO for embedding in PDF
         with open(path, 'rb') as f:
@@ -247,8 +247,8 @@ def _image_from_path(path: Path | None, max_width: float, max_height: float) -> 
         stream.seek(0)
         return _scaled_image(stream, width, height, max_width, max_height)
     except Exception as exc:  # noqa: BLE001
-        logger.warning(f"Image not found at {path}: {exc} — using placeholder")
-        return _placeholder_image(max_width, max_height)
+        logger.warning(f"Image not found at {path}: {exc}")
+        return None
 
 
 def _scaled_image(source: Any, width: int, height: int, max_width: float, max_height: float) -> Image:
@@ -778,41 +778,64 @@ def _forensic_visuals(analysis_json: dict[str, Any], styles: dict[str, Paragraph
     if media_type not in {"image", "screenshot", "video"}:
         return []
     expl = _as_dict(analysis_json.get("explainability"))
-    visuals: list[tuple[str, str, Image | None]] = [
+    
+    candidates = [
+        (
+            "AI Activation Heatmap",
+            "Grad-CAM++ activation showing regions the AI model focused on when making its decision.",
+            expl.get("heatmap_base64"),
+            expl.get("heatmap_url"),
+        ),
         (
             "Error Level Analysis (ELA)",
             "Heatmap indicating areas of high compression loss, often associated with digital splicing.",
-            _image_from_base64(expl.get("ela_base64"), 78 * mm, 58 * mm)
-            or _image_from_path(_resolve_media_path(expl.get("ela_url")), 78 * mm, 58 * mm),
+            expl.get("ela_base64"),
+            expl.get("ela_url"),
         ),
         (
             "Manipulation Region Overlay",
             "Bounding boxes highlight regions the visual model treated as suspicious or manipulated.",
-            _image_from_base64(expl.get("boxes_base64"), 78 * mm, 58 * mm)
-            or _image_from_path(_resolve_media_path(expl.get("boxes_url")), 78 * mm, 58 * mm),
+            expl.get("boxes_base64"),
+            expl.get("boxes_url"),
         ),
     ]
-    cells: list[Any] = []
-    for title, caption, image in visuals:
-        # Images are never None now (placeholder returned if unavailable)
-        cells.append(
-            [
-                Paragraph(f"<b>{_xml(title)}</b>", styles["body"]),
-                image,
-                Paragraph(_xml(caption), styles["caption"]),
-            ]
+
+    visuals: list[tuple[str, str, Image]] = []
+    for title, caption, b64_data, url_data in candidates:
+        img = (
+            _image_from_base64(b64_data, 78 * mm, 58 * mm)
+            or _image_from_path(_resolve_media_path(url_data), 78 * mm, 58 * mm)
+            or _placeholder_image(78 * mm, 58 * mm)
         )
-    table = Table([cells], colWidths=[88 * mm, 88 * mm])
+        visuals.append((title, caption, img))
+
+    rows = []
+    current_row = []
+    for title, caption, image in visuals:
+        current_row.append([
+            Paragraph(f"<b>{_xml(title)}</b>", styles["body"]),
+            image,
+            Paragraph(_xml(caption), styles["caption"]),
+        ])
+        if len(current_row) == 2:
+            rows.append(current_row)
+            current_row = []
+
+    if current_row:
+        current_row.append([])
+        rows.append(current_row)
+
+    table = Table(rows, colWidths=[88 * mm, 88 * mm])
     table.setStyle(
         TableStyle(
             [
                 ("BACKGROUND", (0, 0), (-1, -1), PANEL),
                 ("BOX", (0, 0), (-1, -1), 0.5, LINE),
                 ("VALIGN", (0, 0), (-1, -1), "TOP"),
-                ("LEFTPADDING", (0, 0), (-1, -1), 6),  # Reduced from 10
+                ("LEFTPADDING", (0, 0), (-1, -1), 6),
                 ("RIGHTPADDING", (0, 0), (-1, -1), 6),
-                ("TOPPADDING", (0, 0), (-1, -1), 6),  # Reduced from 10
-                ("BOTTOMPADDING", (0, 0), (-1, -1), 6),  # Reduced from 10
+                ("TOPPADDING", (0, 0), (-1, -1), 6),
+                ("BOTTOMPADDING", (0, 0), (-1, -1), 6),
             ]
         )
     )
