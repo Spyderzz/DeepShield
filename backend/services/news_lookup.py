@@ -103,21 +103,8 @@ def _query_attempts(q: str, country: Optional[str]) -> list[dict]:
             latest_params["_url"] = settings.NEWS_API_BASE_URL
             if country_code:
                 latest_params["country"] = country_code
-            if recent_window:
-                latest_params["timeframe"] = recent_window
+            # timeframe is a paid-plan feature; omit to avoid 422 on free plans
             attempts.append(latest_params)
-
-        archive_key = (country_code, "archive")
-        if archive_key not in seen:
-            seen.add(archive_key)
-            archive_params = dict(base)
-            archive_params["_endpoint"] = "archive"
-            archive_params["_url"] = settings.NEWS_API_ARCHIVE_BASE_URL
-            archive_params["from_date"] = archive_from
-            archive_params["to_date"] = archive_to
-            if country_code:
-                archive_params["country"] = country_code
-            attempts.append(archive_params)
 
     return attempts
 

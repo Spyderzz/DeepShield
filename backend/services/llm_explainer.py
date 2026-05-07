@@ -330,7 +330,7 @@ class _GeminiProvider(_LLMProvider):
         self.model = settings.LLM_MODEL
         self._config = types.GenerateContentConfig(
             temperature=0.3,
-            max_output_tokens=600,
+            max_output_tokens=1024,
             response_mime_type="application/json",
         )
 
@@ -352,7 +352,7 @@ class _OpenAIProvider(_LLMProvider):
             model=self.model,
             messages=[{"role": "user", "content": prompt}],
             temperature=0.3,
-            max_tokens=600,
+            max_tokens=1024,
             response_format={"type": "json_object"},
         )
         return response.choices[0].message.content or ""
@@ -372,7 +372,7 @@ class _GroqProvider(_LLMProvider):
             model=self.model,
             messages=[{"role": "user", "content": prompt}],
             temperature=0.3,
-            max_tokens=600,
+            max_tokens=1024,
             response_format={"type": "json_object"},
         )
         return response.choices[0].message.content or ""
@@ -458,6 +458,33 @@ def _get_provider() -> _ProviderChain:
     return _provider_instance
 
 
+def _repair_truncated_json(text: str) -> str:
+    """Close unclosed braces/brackets so a truncated JSON string becomes parseable."""
+    stack = []
+    in_string = False
+    escape = False
+    for ch in text:
+        if escape:
+            escape = False
+            continue
+        if ch == "\\" and in_string:
+            escape = True
+            continue
+        if ch == '"':
+            in_string = not in_string
+            continue
+        if in_string:
+            continue
+        if ch in "{[":
+            stack.append("}" if ch == "{" else "]")
+        elif ch in "}]" and stack:
+            stack.pop()
+    # If we're mid-string, close it first
+    suffix = '"' if in_string else ""
+    suffix += "".join(reversed(stack))
+    return text + suffix
+
+
 def _parse_llm_response(raw: str) -> tuple[str, list[SignalObservation], list[str]]:
     """Parse the LLM's JSON response into (paragraph, signals, bullets).
     Handles cases where the LLM wraps output in markdown fences.
@@ -468,7 +495,12 @@ def _parse_llm_response(raw: str) -> tuple[str, list[SignalObservation], list[st
         lines = [l for l in lines if not l.strip().startswith("```")]
         text = "\n".join(lines).strip()
 
-    parsed = json.loads(text)
+    try:
+        parsed = json.loads(text)
+    except json.JSONDecodeError:
+        # Truncated JSON — try to recover by closing unclosed braces/brackets
+        repaired = _repair_truncated_json(text)
+        parsed = json.loads(repaired)
     paragraph = parsed.get("paragraph", "")
 
     raw_signals = parsed.get("signals", [])

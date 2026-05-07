@@ -15,7 +15,9 @@
 
 1. [Project Overview](#1-project-overview)
 2. [Directory Architecture](#2-directory-architecture)
+   - 2.1 Repository Root · 2.2 Backend Tree · 2.3 Frontend Tree · 2.4 File-Level Responsibilities — Backend · **2.5 File-Level Responsibilities — Frontend**
 3. [Feature-Level Functional Breakdown](#3-feature-level-functional-breakdown)
+   - 3.1–3.7 Modalities · 3.8 Auth/History · 3.9 Dedup Cache · **3.10 Async Video Job Queue** · 3.11 Share/Copy · 3.12 Accessibility · 3.13 Privacy · 3.14 Sanitization · 3.15 OAuth · 3.16 CRUD
 4. [Service Architecture](#4-service-architecture)
 5. [Backend Deep Analysis](#5-backend-deep-analysis)
 6. [Frontend Deep Analysis](#6-frontend-deep-analysis)
@@ -32,7 +34,8 @@
 17. [Unique Engineering Contributions](#17-unique-engineering-contributions)
 18. [End-to-End System Workflow](#18-end-to-end-system-workflow)
 19. [Limitations and Tradeoffs](#19-limitations-and-tradeoffs)
-20. [Future Roadmap](#20-future-roadmap)
+20. [Future Roadmap](#20-future-roadmap) — includes **§20.0 Phase Status table**
+21. [Phase 9.1 Verification Gates](#21-phase-91-verification-gates)
 
 ---
 
@@ -89,13 +92,30 @@ DeepShield addresses all three failures through a multimodal unified pipeline, e
 
 ```
 DeepShield/
-├── .env.example             # 35 config keys, fully documented
+├── .env.example             # Config keys, fully documented
 ├── BUILD_PLAN.md            # Phases 0–10 (MVP)
-├── BUILD_PLAN2.md           # Phases 11–22 (hardening)
 ├── MERGE_PLAN.md            # EfficientNet + BlazeFace integration
 ├── ISSUES.md                # 25+ documented defects and resolutions
-├── design_plan.md           # Full UI/UX redesign specification
+├── README.md                # Project overview
+├── SETUP_GUIDE.md           # Local setup instructions
+├── LICENSE
 ├── prd.md                   # Product Requirements Document
+├── CLAUDE.md                # AI assistant project rules (graphify)
+├── skills-lock.json         # Locked AI assistant skills manifest
+├── FakeFaceDetection_DenseNet.ipynb               # In-house DenseNet training notebook
+├── fake-face-detection-with-keras-accuracy-0-987.ipynb  # Baseline Kaggle kernel
+├── deepfake_densenet121_high_acc.keras            # Best Keras checkpoint
+├── deepfake_densenet121_latest.keras              # Most recent Keras checkpoint
+├── deepfake_densenet121_threshold.json            # Youden's J threshold (0.7597)
+├── densenet_cells.txt                             # Cell-by-cell extraction of training notebook
+├── trained_models/                                # ViT FFPP C40 fine-tune (top-level mirror used by some scripts)
+├── media/                                         # Top-level runtime media output (thumbs/)
+├── docs/
+│   ├── API_REFERENCE.md
+│   ├── MODEL_CARDS.md
+│   ├── datasets.md
+│   └── superpowers/
+├── design_ref/              # Reference UI designs and brand assets
 ├── backend/
 └── frontend/
 ```
@@ -108,12 +128,14 @@ backend/
 ├── config.py
 ├── requirements.txt
 ├── Dockerfile
+├── README.md
+├── serve_media.py              # Config-driven media FileResponse helper (reads MEDIA_DIR from settings)
 │
 ├── api/
 │   ├── router.py
 │   ├── deps.py
 │   └── v1/
-│       ├── analyze.py
+│       ├── analyze.py          # Also defines the /jobs/{id} sub-router
 │       ├── auth.py
 │       ├── health.py
 │       ├── history.py
@@ -122,29 +144,41 @@ backend/
 │
 ├── db/
 │   ├── database.py
-│   └── models.py
+│   ├── models.py
+│   └── migrations/
+│       └── versions/           # Alembic-style migration scripts (reserved; in-place DDL handled by database.py)
 │
 ├── models/
 │   ├── model_loader.py
 │   ├── heatmap_generator.py
-│   ├── icpr2020dfdc/           # git clone bbd6411, .gitignored
-│   │   ├── architectures/      # fornet.py, weights.py
-│   │   ├── isplutils/          # get_transformer() preprocessing
-│   │   ├── blazeface/          # blazeface.pth + anchors.npy
-│   │   └── notebook/           # sys.path injection target
-│   ├── trained_models/         # ViT fine-tuned on FFPP C40
-│   │   ├── config.json
-│   │   └── model.safetensors
-│   └── calibrator.pkl          # Pickled isotonic regression
+│   ├── efficientnet_calibrator.pkl   # Pickled isotonic regression (only present after fit_calibrator.py runs)
+│   └── icpr2020dfdc/                 # git clone bbd6411, .gitignored
+│       ├── architectures/            # fornet.py (EfficientNetAutoAttB4), weights.py
+│       ├── isplutils/                # get_transformer() preprocessing
+│       ├── blazeface/                # blazeface.pth + anchors.npy + blazeface.py
+│       └── notebook/                 # sys.path injection target
+│
+├── trained_models/             # ViT fine-tuned on FFPP C40 + DenseNet121 PyTorch checkpoint
+│   ├── config.json                       # ViT model config
+│   ├── model.safetensors                 # ViT weights
+│   ├── training_args.bin
+│   ├── densenet121_faces.pt              # TF-free PyTorch DenseNet121 checkpoint
+│   ├── densenet121_faces_meta.json       # Threshold + training metadata
+│   ├── deepfake_densenet121_high_acc.keras   # Source Keras checkpoint (mirror)
+│   ├── deepfake_densenet121_latest.keras
+│   ├── deepfake_densenet121_threshold.json
+│   └── Colab_ViT_Training.ipynb          # Colab notebook used to fine-tune ViT
 │
 ├── services/
 │   ├── auth_service.py
 │   ├── image_service.py
 │   ├── video_service.py
+│   ├── video_temporal.py            # Temporal consistency (optical flow, EAR, lip-sync)
 │   ├── text_service.py
 │   ├── screenshot_service.py
 │   ├── audio_service.py
 │   ├── audio_ml_service.py
+│   ├── densenet_service.py          # In-house DenseNet121 face-GAN specialist (TF-free PyTorch)
 │   ├── efficientnet_service.py
 │   ├── ela_service.py
 │   ├── exif_service.py
@@ -170,16 +204,17 @@ backend/
 │   └── scoring.py
 │
 ├── scripts/
-│   ├── fit_calibrator.py
-│   ├── export_onnx.py
+│   ├── fit_calibrator.py                  # Fits IsotonicRegression → models/efficientnet_calibrator.pkl
+│   ├── calibrate_temperatures.py          # Grid-search for GENERAL_MODEL_TEMPERATURE × DIFFUSION_MODEL_TEMPERATURE
+│   ├── convert_densenet_keras_to_pt.py    # Converts the .keras DenseNet checkpoint → .pt (TF-free at runtime)
+│   ├── export_onnx.py                     # Exports ViT to ONNX for future INT8 deployment
 │   ├── download_ffpp.py
+│   ├── run_image_eval.py                  # Full eval harness: per-image scoring, per-family F1, signal breakdown, gating log
 │   ├── test_efficientnet_load.py
 │   ├── test_image_classify.py
 │   ├── test_news_api.py
 │   ├── test_phase5.py
-│   ├── test_text_analysis.py
-│   ├── run_image_eval.py           # Full eval harness: per-image scoring, per-family F1, signal breakdown, gating log
-│   └── calibrate_temperatures.py  # Grid-search for GENERAL_MODEL_TEMPERATURE × DIFFUSION_MODEL_TEMPERATURE
+│   └── test_text_analysis.py
 │
 ├── tests/
 │   ├── test_accuracy_regressions.py
@@ -187,29 +222,30 @@ backend/
 │   ├── test_efficientnet_regression.py
 │   ├── test_report_service.py      # Regression: active hyperlinks, required sections, pipeline context
 │   └── eval/
-│       └── MANIFEST.csv            # 25-row manifest covering 5 image families (camera-real, face-swap, gan-portrait, diffusion-portrait, diffusion-noface)
+│       ├── MANIFEST.csv            # 25-row manifest covering 5 image families
+│       └── images/                 # Eval image fixtures
 │
-├── docs/                     # Documentation and architecture guides
-├── design_ref/               # Reference UI designs and brand assets
+├── training/
+│   ├── Colab_ViT_Training.ipynb    # Authoritative training notebook
+│   ├── generate_colab_nb.py        # Generates a Colab-ready .ipynb from the training pipeline
+│   ├── README.md                   # Training pipeline overview and step-by-step instructions
+│   └── datasets/                   # Dataset procurement helpers
+│       ├── build_manifest.py
+│       ├── download_dfdc_sample.py
+│       ├── download_ffhq.py
+│       ├── extract_frames.py
+│       ├── procure_all.sh
+│       └── procure_all.ps1
+│
 ├── templates/
-│   └── report.html               # Jinja2 HTML template (DEPRECATED — ReportLab is canonical)
-├── static/                     # Report logo and CSS
-├── serve_media.py              # Config-driven media FileResponse helper (reads MEDIA_DIR from settings)
-├── training/                   # Model training and fine-tuning scripts
-│   ├── datasets/               # Dataset procurement helpers
-│   │   ├── build_manifest.py       # Reads downloaded frames and writes CSV manifest (path, label)
-│   │   ├── download_dfdc_sample.py # Downloads DFDC sample subset from Kaggle/HF
-│   │   ├── download_ffhq.py        # Downloads FFHQ real faces for negative examples
-│   │   ├── extract_frames.py       # Extracts key frames from video files into labeled subdirs
-│   │   ├── procure_all.sh          # Shell orchestrator: runs all download + extract steps
-│   │   └── procure_all.ps1         # PowerShell equivalent for Windows
-│   ├── generate_colab_nb.py    # Generates a Colab-ready .ipynb notebook from the training pipeline
-│   └── README.md               # Training pipeline overview and step-by-step instructions
-├── media/                      # Content-addressed storage (runtime)
+│   └── report.html                 # Jinja2 HTML template (DEPRECATED — ReportLab is canonical)
+├── static/                         # Reserved for report logo and CSS (currently empty)
+├── media/                          # Content-addressed runtime storage
 │   ├── {sha[:2]}/{sha}.{ext}
 │   ├── thumbs/{sha}_400.jpg
 │   └── overlays/{sha}_*.png
-└── temp_reports/               # Expiring PDFs
+├── logs/
+└── temp_reports/                   # Expiring PDFs
 ```
 
 ### 2.3 Frontend Tree
@@ -218,20 +254,27 @@ backend/
 frontend/
 ├── index.html                  # SPA entry, OG/Twitter meta tags; three.min.js loaded with defer attribute
 ├── package.json
+├── package-lock.json
 ├── vite.config.js              # /api proxy → :8000, esbuild
+├── vercel.json                 # Vercel SPA rewrite rules
+├── public/
+├── dist/                       # Vite production build output
+├── image-scan-demo/            # Standalone demo HTML
 │
 └── src/
     ├── main.jsx                # ErrorBoundary → BrowserRouter → AuthProvider → ToastProvider
     ├── App.jsx                 # Route tree, ProtectedRoute; React.lazy() + Suspense; /privacy route registered; skip-nav link rendered at root
     ├── index.css               # Design tokens: light + dark theme, glass system; :focus-visible global rings (brand-purple #7f8fff + glow shadow)
+    ├── assets/
     │
     ├── components/
     │   ├── layout/
-    │   │   ├── LayerStack.jsx        # 3D layer visualization component
+    │   │   ├── LayerStack.jsx        # 3D layer visualization component (used on Hero)
     │   │   └── SharedNav.jsx         # Glass sticky nav, auth avatar, theme toggle; top-level share/copy handlers; /privacy footer link
     │   ├── common/
     │   │   ├── PipelineVisualizer.jsx    # Stage stepper
     │   │   ├── ConsentModal.jsx          # First-upload privacy consent modal; focus-trapped, Escape-dismissable
+    │   │   ├── consent-modal.css
     │   │   ├── ErrorBoundary.jsx         # getDerivedStateFromError, recovery UI
     │   │   ├── ScrollReveal.jsx          # IntersectionObserver reveal
     │   │   └── ResponsibleAIBanner.jsx   # AI disclaimer banner
@@ -257,17 +300,18 @@ frontend/
     │   │   └── VerdictCard.jsx           # Verdict + ScoreMeter + LLM paragraph
     │   ├── auth/
     │   │   └── DeepShieldAuth.jsx        # Shared login/register form; Google + GitHub OAuth buttons
+    │   ├── upload/                       # Reserved for future upload-specific components (currently empty)
     │   ├── ImageScanPreview.jsx          # Upload preview with scanning effect
     │   ├── PixelatedCanvas.jsx           # Canvas animation component
     │   └── StackedPanels.jsx             # Results panel container
     │
     ├── pages/
-    │   ├── HomePage.jsx
-    │   ├── AnalyzePage.jsx       # Upload → Pipeline → Results state machine
+    │   ├── HomePage.jsx          # Hero, TrustStrip, PipelineGrid, ImpactMarquee, ComparisonGrid, FAQAccordion (all inlined as JSX subtrees, not separate files)
+    │   ├── AnalyzePage.jsx       # Upload → Pipeline → Results state machine; inlines upload zone, processing animation, media-type switcher
     │   ├── ResultsPage.jsx       # Always fetches backend detail for signed asset URLs
     │   ├── HistoryPage.jsx       # Paginated grid + search + filter + sort + clear-all
-    │   ├── LoginPage.jsx
-    │   ├── RegisterPage.jsx
+    │   ├── LoginPage.jsx         # Wraps DeepShieldAuth in login mode
+    │   ├── RegisterPage.jsx      # Wraps DeepShieldAuth in register mode
     │   ├── AboutPage.jsx
     │   ├── ContactPage.jsx
     │   ├── ModelsPage.jsx        # Model architecture documentation page
@@ -280,11 +324,11 @@ frontend/
     │   └── privacy-page.css
     │
     ├── hooks/
-    │   └── useDottedSurface.js   # Canvas animation background
+    │   └── useDottedSurface.js   # Canvas animation background hook
     │
     ├── services/
     │   ├── api.js                # Axios: baseURL=import.meta.env.VITE_API_BASE_URL || '/api/v1', timeout=300000 (5 minutes)
-    │   ├── analyzeApi.js         # analyzeImage/Video/Text/Screenshot/Audio, submitVideoJob, pollVideoJob
+    │   ├── analyzeApi.js         # analyzeImage/Video/Text/Screenshot/Audio, submitVideoJob, pollVideoJob, requestLlmRetry
     │   ├── authApi.js            # login, register, fetchMe, setAuth, clearAuth, oauthStart
     │   ├── historyApi.js         # listHistory, getHistoryDetail, deleteHistory, clearHistory
     │   └── reportApi.js          # generateReport, downloadReportBlob (blob), saveReport
@@ -292,12 +336,15 @@ frontend/
     ├── contexts/
     │   ├── AuthContext.jsx       # user, token, authReady, login(), logout(), register()
     │   └── ToastContext.jsx      # addToast(), removeToast(), 4s auto-dismiss
+    ├── context/                  # Empty placeholder (legacy single-folder name; active providers live in contexts/)
     │
     └── utils/
         ├── constants.js          # Score ranges, severity colors, 6-band TRUST_SCALE labels (incl. Uncertain 56–69)
         ├── dateTime.js           # Date and time formatting helpers
         └── sanitize-text.js      # 4 functions: sanitizeText, sanitizeHtml (allowlist), sanitizeUrl (blocks javascript:/data:), escapeAttr
 ```
+
+> **Note on terminology.** The names `Hero`, `TrustStrip`, `PipelineGrid`, `ImpactMarquee`, `ComparisonGrid`, `FAQAccordion`, `MeshBackdrop`, `Shell`, `Skeleton`, `UploadZone`, `TextInput`, `MediaTypeSwitcher`, `ProcessingAnimation`, `Navbar`, and `AuthForm` appear in narrative descriptions throughout this document but **are not separate `.jsx` files**. They identify JSX subtrees inlined inside the page components [HomePage.jsx](frontend/src/pages/HomePage.jsx), [AnalyzePage.jsx](frontend/src/pages/AnalyzePage.jsx), [LoginPage.jsx](frontend/src/pages/LoginPage.jsx), [RegisterPage.jsx](frontend/src/pages/RegisterPage.jsx) — or, in the case of `Navbar`/`AuthForm`, refer to the actual files [SharedNav.jsx](frontend/src/components/layout/SharedNav.jsx) and [DeepShieldAuth.jsx](frontend/src/components/auth/DeepShieldAuth.jsx). The data-flow names `useFileUpload` / `useAnalysis` / `useJob` are similarly conceptual: the AnalyzePage state machine uses inline `useState`/`useEffect` plus direct service-layer calls; the only real custom hook in [hooks/](frontend/src/hooks/) is `useDottedSurface.js`.
 
 ### 2.4 File-Level Responsibilities — Backend
 
@@ -355,9 +402,13 @@ All `thumbnail_url`, `media_path`, and overlay URLs returned by `GET /history` a
 
 **`models/icpr2020dfdc/`** — Cloned from `polimi-ispl/icpr2020dfdc` at commit `bbd6411`. Inference-only. Key sub-modules: `architectures/fornet.py` (defines `EfficientNetAutoAttB4`, `EfficientNetB4`, `Xception`), `architectures/weights.py` (URL registry for `torch.utils.model_zoo.load_url()`), `isplutils/utils.py` (`get_transformer()` returning `albumentations.Compose`), `blazeface/` (BlazeFace implementation, `blazeface.pth`, `anchors.npy`). Excluded from version control.
 
-**`models/trained_models/`** — ViT checkpoint fine-tuned on FaceForensics++ C40 via Google Colab. `config.json` + `model.safetensors`. Loaded via `AutoModelForImageClassification.from_pretrained("./trained_models")`.
+**`trained_models/`** — Top-level directory (sibling of `models/`, not inside it) holding both the ViT FFPP C40 fine-tune (`config.json` + `model.safetensors` + `training_args.bin`) and the in-house DenseNet121 face-GAN specialist (`densenet121_faces.pt` + `densenet121_faces_meta.json` + the source `.keras` checkpoints + `deepfake_densenet121_threshold.json`). Loaded via `AutoModelForImageClassification.from_pretrained("./trained_models")` and `densenet_service.load_densenet()` respectively. Keras files are kept alongside the PyTorch checkpoint for provenance — runtime never imports TensorFlow. A mirror copy of the ViT-only artifacts also exists at the repository root `trained_models/` for scripts that resolve a top-level path.
 
-**`models/calibrator.pkl`** — Pickled `sklearn.isotonic.IsotonicRegression(out_of_bounds='clip')`. Fitted offline by `scripts/fit_calibrator.py` on FFPP C40 validation split using raw sigmoid outputs from EfficientNetAutoAttB4 as X and ground-truth labels as y. Applied inside `efficientnet_service._calibrate()`.
+**`models/efficientnet_calibrator.pkl`** — Pickled `sklearn.isotonic.IsotonicRegression(out_of_bounds='clip')`. Fitted offline by `scripts/fit_calibrator.py` on FFPP C40 validation split using raw sigmoid outputs from EfficientNetAutoAttB4 as X and ground-truth labels as y. Applied inside `efficientnet_service._calibrate()` via the path constant `_CALIBRATOR_PATH = backend/models/efficientnet_calibrator.pkl`. Optional — when absent, calibration is skipped and raw sigmoid is used.
+
+**`services/densenet_service.py`** — In-house DenseNet121 face-GAN specialist. Loads the TF-free PyTorch checkpoint at `trained_models/densenet121_faces.pt` (no TensorFlow runtime dependency — weights were transferred layer-by-layer from the original `.keras` file via `scripts/convert_densenet_keras_to_pt.py`). Forward pass returns a sigmoid `real_probability ∈ [0, 1]`. The Youden's J threshold (`0.7597`, persisted in `densenet121_faces_meta.json` and the standalone `deepfake_densenet121_threshold.json`) anchors a piecewise-linear calibration curve mapping `real_probability` to `fake_probability`: `score=threshold → 0.5`, `score=1 → 0`, `score=0 → 1`. The service exposes `detect_face_image(pil)` returning `{fake_probability, real_probability, score, threshold, model_used: "densenet121"}` and is consumed inside `image_service.py` as the **lead** member of the face-stack ensemble (weight 0.45 for stills, 0.10 for video frames). Loads lazily under the `model_loader` singleton lock; gracefully returns `None` when the checkpoint is missing so the rest of the face-stack continues to work.
+
+**`services/video_temporal.py`** — Phase 17.1 temporal consistency module. Three independent signals — optical flow variance via `cv2.calcOpticalFlowFarneback()` between consecutive sampled frames, eye-aspect-ratio (EAR) blink-rate analysis from MediaPipe FaceMesh landmarks, and lip-sync mismatch via correlation of mouth-region landmark velocity against the audio energy envelope. Returns `{temporal_score, optical_flow_variance, blink_anomaly_score, lip_sync_score}`. Called by `video_service.py` after frame-level classification; its output enters the final video score at the 0.30 weight (`0.5 × visual + 0.3 × temporal + 0.2 × audio`).
 
 **`services/general_image_service.py`** — Dual-head AI-image detector used by `image_service.py` on every image regardless of face detection outcome. Runs two classifier heads in parallel: the general detector (`umm-maybe/AI-image-detector`, `GENERAL_AI_WEIGHT=0.45`) and a diffusion-specialized second head (`haywoodsloan/ai-image-detector-deploy`, `DIFFUSION_AI_WEIGHT=0.55`). When both heads are available, blends their outputs as `general * 0.45 + diffusion * 0.55` into a single `fake_probability`. Falls back gracefully to whichever head is loaded when one is unavailable.
 
@@ -460,11 +511,11 @@ Idempotency check → generate → save to `temp_reports/deepshield_report_{id}.
 
 `maybe_clamp_to_uncertain(score, components)` — if `compute_signal_disagreement` returns a stdev ≥ `DISAGREEMENT_THRESHOLD=0.25` and the raw score would otherwise land in a confident verdict band, the score is clamped into the 56–69 Uncertain band. Specifically: scores above 69 are clamped down to 69; scores in 21–55 are clamped up to 56. Very Likely Fake scores (≤20) are **never** clamped upward — a result where nearly all signals agree on synthetic is kept regardless of one outlier signal. Returns `(final_score, disagreement_reason)` where `reason` is None when no clamping occurred. `get_score_color(score)`: interpolates `#E53935 → #FFA726 → #43A047`.
 
-**`scripts/fit_calibrator.py`** — Fits `IsotonicRegression(out_of_bounds='clip')` on FFPP C40 val split. Raw sigmoid outputs as X, ground-truth binary labels as y. Pickles to `models/calibrator.pkl`. One-time offline job.
+**`scripts/fit_calibrator.py`** — Fits `IsotonicRegression(out_of_bounds='clip')` on FFPP C40 val split. Raw sigmoid outputs as X, ground-truth binary labels as y. Pickles to `backend/models/efficientnet_calibrator.pkl`. One-time offline job.
 
 **`scripts/export_onnx.py`** — Exports ViT to ONNX for future CPU-optimized deployment and INT8 quantization.
 
-**`scripts/benchmark_ff.py` / `benchmark_dff.py`** — Offline evaluation runners. `benchmark_ff.py` runs against FaceForensics++ C23; `benchmark_dff.py` against DeepFakeFace (Stable Diffusion v1.5, InsightFace). Output: per-class accuracy, AUC, and false-positive rate on the camera-photo anchor set.
+**`scripts/convert_densenet_keras_to_pt.py`** — One-time converter that reads the in-house DenseNet121 `.keras` checkpoint via `h5py` and writes a TF-free PyTorch state dict to `trained_models/densenet121_faces.pt`. Walks the Keras config in declaration order, transfers weights layer-by-layer (Conv2D, DepthwiseConv2D, BatchNorm, Dense), and verifies output parity within `1e-4` of the original Keras forward pass on a fixed random tensor. Runtime depends only on `h5py`, `numpy`, `torch`, `torchvision` — no TensorFlow. Run once after training, then check the resulting `.pt` into `trained_models/`.
 
 **`scripts/run_image_eval.py`** — Full end-to-end evaluation harness for the image pipeline. Reads images listed in `tests/eval/MANIFEST.csv`, runs each through the full `classify_image()` pipeline, and produces: per-image score + verdict, per-family confusion matrix and F1 score (one table per image family: camera-real, face-swap, gan-portrait, diffusion-portrait, diffusion-noface), a component signal breakdown table showing how each of the five fusion signals contributed per image, and a gating event log listing every image where `_apply_hard_gating()` fired and why. Exits with code 0 (all families pass F1 ≥ threshold) or 1 (at least one family fails), making it suitable as a CI gate.
 
@@ -477,6 +528,82 @@ Idempotency check → generate → save to `temp_reports/deepshield_report_{id}.
 **`serve_media.py`** — Dedicated media-serving module that reads the `MEDIA_DIR` path from `settings` (config-driven) and provides the `FileResponse` logic consumed by the signed asset endpoint in `history.py`. Previously the asset path was constructed inline; extracting it to `serve_media.py` centralises path resolution and makes the `MEDIA_DIR` override point explicit across all consumers (`storage.py`, `serve_media.py`, `file_handler.py`, `report_service.py` all read from `settings` rather than computing their own paths).
 
 **`templates/report.html`** — Jinja2 HTML report template marked as **deprecated**. The ReportLab programmatic renderer in `report_service.py` is the canonical PDF generation path. The HTML template is retained as a reference artifact and fallback but is no longer used in any live code path.
+
+---
+
+### 2.5 File-Level Responsibilities — Frontend
+
+**`index.html`** — SPA entry. Loads `three.min.js` with the `defer` attribute (see §14.7), registers the OG/Twitter meta tags, and mounts the React root at `#root`. The deferred 3D engine is consumed only by the inline processing animation in `AnalyzePage.jsx`.
+
+**`vite.config.js`** — Vite + esbuild build config. Dev server proxies `/api → http://localhost:8000` so the frontend makes same-origin calls in development (eliminates CORS noise). Production reads `VITE_API_BASE_URL` from the environment at build time.
+
+**`vercel.json`** — SPA rewrite rules so deep links (`/analyze`, `/results/123`, `/oauth-callback`) resolve to `index.html` in Vercel's edge.
+
+**`src/main.jsx`** — Composes the provider tree: `ErrorBoundary → BrowserRouter → AuthProvider → ToastProvider → App`. ErrorBoundary catches render-time exceptions across the entire tree.
+
+**`src/App.jsx`** — Defines the React Router route table, `ProtectedRoute` wrapper, the inlined `<main id="main-content">` layout container, and the skip-nav anchor at the very top. All page imports go through `React.lazy()` + `<Suspense>` for code-splitting (see §6.8). Renders the inlined Suspense shimmer fallback (no separate `Skeleton.jsx` file).
+
+**`src/index.css`** — Global stylesheet. Defines all design tokens for light + dark themes (see §6.1), the `.glass-panel` system, the `:focus-visible` ring system (brand-purple `#7f8fff` + glow shadow), and the `prefers-reduced-motion` overrides. Backward-compatibility aliases (`--color-*` → `--ds-*`) keep older un-rewritten components working.
+
+**`src/contexts/AuthContext.jsx`** — Provides `user`, `token`, `authReady`, `isAuthed`, `login()`, `logout()`, `register()`, `fetchMe()`. `authReady` starts `false` and flips to `true` only after the stored token is validated against `GET /auth/me`, preventing `ProtectedRoute` from flashing a redirect on cold load.
+
+**`src/contexts/ToastContext.jsx`** — Notification queue. `addToast(message, type)` enqueues a toast (info/success/warning/error). Each toast auto-dismisses after 4 s. Rendered by a fixed-position overlay outside the main layout. The Toast container has `aria-live="polite"`.
+
+**`src/hooks/useDottedSurface.js`** — Canvas animation hook used by the landing-page background. Renders a grid of animated dots driven by `requestAnimationFrame`. The only custom hook in the project.
+
+**`src/services/api.js`** — Base Axios instance (see §6.2.1). Request interceptor injects `Authorization: Bearer` from `localStorage` if the JWT is unexpired; response interceptor clears stored auth on HTTP 401.
+
+**`src/services/analyzeApi.js`** — Per-modality dispatch functions: `analyzeImage`, `analyzeVideo`, `analyzeText`, `analyzeScreenshot`, `analyzeAudio`, `submitVideoJob`, `pollVideoJob`, `requestLlmRetry`. Constructs `FormData` for file endpoints; sends JSON for text. `pollVideoJob` polls `GET /jobs/{id}` every 800 ms until `done` or `error`.
+
+**`src/services/authApi.js`** — `login`, `register`, `fetchMe`, `setAuth`, `clearAuth`, `oauthStart(provider)`. The OAuth start function performs a full-page browser redirect to `GET /auth/oauth/{provider}/start`.
+
+**`src/services/historyApi.js`** — `listHistory({limit, offset, media_type})`, `getHistoryDetail(id)`, `deleteHistory(id)`, `clearHistory()`. All require an auth token; the request interceptor injects it.
+
+**`src/services/reportApi.js`** — `generateReport(record_id)` (`POST /report/{id}`, idempotent), `downloadReportBlob(record_id)` (`GET /report/{id}/download` with `responseType: 'blob'`). The blob is converted via `URL.createObjectURL()` and clicked programmatically.
+
+**`src/utils/constants.js`** — 6-band `TRUST_SCALE` (mirrors the backend `scoring.py` table including the 56–69 Uncertain band), severity colour hex values, MIME type allowlists.
+
+**`src/utils/dateTime.js`** — Date/time helpers (ISO-8601 → IST-adjusted human-readable labels) used across history cards, report timestamps, and source dates.
+
+**`src/utils/sanitize-text.js`** — Four pure XSS-defence utilities (see §3.14): `sanitizeText`, `sanitizeHtml`, `sanitizeUrl`, `escapeAttr`. Applied at every point where API-derived content reaches the DOM.
+
+**`src/components/layout/SharedNav.jsx`** — Glass sticky nav. Auth avatar, theme toggle, top-level share/copy handlers, footer link cluster including `/privacy`. Top-of-page share/copy buttons wire to the same handlers as `StickyActionBar`.
+
+**`src/components/layout/LayerStack.jsx`** — 3D CSS layer stack used in the Hero region (see §6.2 entry).
+
+**`src/components/common/PipelineVisualizer.jsx`** — Stage stepper. Reads `stages_completed` and `progress` from `ProcessingSummary` (or live `JobStatus` for async video). Pulses on the active stage. `role="status"` for accessibility.
+
+**`src/components/common/ConsentModal.jsx`** — First-upload consent dialog (see §3.13). Focus-trapped; Escape-dismissable; persists `ds_consent_v1=true` in `localStorage` on accept.
+
+**`src/components/common/ErrorBoundary.jsx`** — Implements `getDerivedStateFromError`. Renders a recovery UI (reload + report) instead of a blank page when a render-time exception escapes a route.
+
+**`src/components/common/ScrollReveal.jsx`** — IntersectionObserver-based reveal-on-scroll wrapper used on landing-page sections.
+
+**`src/components/common/ResponsibleAIBanner.jsx`** — AI disclaimer banner, used in result and PDF report headers.
+
+**`src/components/auth/DeepShieldAuth.jsx`** — Shared login/register form (formerly referenced as `AuthForm.jsx`). Inline password-strength meter, Google + GitHub OAuth buttons. The mode prop selects between login and register behaviour.
+
+**`src/components/results/*`** — All result-card components. Each is a focused display component; see §6.2 for per-component descriptions of `VerdictCard`, `ScoreMeter`, `LLMExplainCard`, `EXIFCard`, `IndicatorCards`, `HeatmapOverlay`, `DetailedBreakdownCards`, `FrameTimeline`, `ScreenshotOverlay`, `SourcePanel`, `SourceCard`, `ContradictionPanel`, `AudioCard`, `ReportDownload`, `StickyActionBar`, `TextHighlighter`, `LanguageBadge`, `SensationalismMeter`, `ProcessingSummary`.
+
+**`src/components/ImageScanPreview.jsx`** — Upload preview with scanning effect; consumed by the upload region in `AnalyzePage.jsx`.
+
+**`src/components/PixelatedCanvas.jsx`** — Decorative canvas animation used as a backdrop accent.
+
+**`src/components/StackedPanels.jsx`** — Container that renders the result-card stack (`VerdictCard` → `LLMExplainCard` → `DetailedBreakdownCards` → `HeatmapOverlay` → `EXIFCard` → `IndicatorCards` → `SourcePanel`).
+
+**`src/pages/HomePage.jsx`** — See §6.5. Inlines all landing sections (Hero, TrustStrip, PipelineGrid, ImpactMarquee, ComparisonGrid, FAQ, CTA) as JSX subtrees.
+
+**`src/pages/AnalyzePage.jsx`** — Four-state machine (idle/processing/results/error). Inlines the media-type switcher, upload zone (react-dropzone), text input region, and 3D processing animation. For async video, enters `processing` on submit and stays there until `pollVideoJob` resolves. Shows recent history cards on idle, falling back through `thumbnail_b64 → thumbnail_url → media_path → type icon`.
+
+**`src/pages/ResultsPage.jsx`** — See §6.5. Always re-fetches `GET /history/{id}` to ensure freshly signed asset URLs. Polls for the async LLM summary (5-second wait-and-upgrade with typewriter reveal).
+
+**`src/pages/HistoryPage.jsx`** — Authenticated grid + table view with stats row, debounced search, media-type filter, sort selector, per-card delete, clear-all toolbar action.
+
+**`src/pages/LoginPage.jsx` / `RegisterPage.jsx`** — Thin wrappers around `DeepShieldAuth.jsx` with the animated mesh backdrop inlined as JSX.
+
+**`src/pages/AboutPage.jsx`, `ContactPage.jsx`, `ModelsPage.jsx`, `PrivacyPage.jsx`, `NotFoundPage.jsx`** — Static and semi-static information pages. `ModelsPage` documents every model in the stack with architecture and training-data details (linked from `ProcessingSummary.models_used`).
+
+**`src/pages/OAuthCallbackPage.jsx`** — Receives `?token=<jwt>` from the backend OAuth callback redirect. Calls `AuthContext.login(token)` then navigates to `/analyze`.
 
 ---
 
@@ -610,11 +737,25 @@ Hash computed in 64KB streaming chunks before any model inference. Lookup: `WHER
 
 ---
 
+### 3.10 Async Video Job Queue
+
+**Purpose:** Decouple long video analyses from the request/response thread so the browser is never blocked or timed out. CPU video analysis can take 30–60 seconds; the synchronous endpoint is reserved for clips that fit comfortably under that budget. Long clips submit through the async endpoint instead.
+
+**Submission:** `POST /api/v1/analyze/video/async` validates and persists the upload exactly like the sync endpoint, generates a `job_id`, and returns `{job_id, status:"queued"}` with HTTP 202 immediately. A FastAPI `BackgroundTask` schedules `services/video_service.run_video_job()` against the in-process `JobRegistry` defined in `services/job_queue.py`.
+
+**Polling:** The frontend `analyzeApi.pollVideoJob(job_id)` calls `GET /api/v1/jobs/{job_id}` every 800 ms. Each poll returns the live `JobStatus`: `{id, status: queued|running|done|error, stage, progress: 0–100, error, result}`. `PipelineVisualizer` renders `stage` and `progress` directly from the response — progress values are backend-sourced, not client-extrapolated.
+
+**Stage timeline:** queued (0%) → frame_extraction (15%) → classification (40%) → aggregation (60%) → audio_analysis (75%) → storage (85%) → persist (95%) → done (100%). On `status === "done"` the polling loop reads `job.result` (the full `VideoAnalysisResponse`) and the page transitions to results. On `status === "error"`, `error` carries a human-readable message and the UI shows a retry button.
+
+**Trade-off and migration path:** `JobRegistry` is a Python dict in-process — state is lost on server restart. This is acceptable for a single-instance deployment (HF Spaces, Railway, single VPS). Migrating to Celery + Redis is a documented Phase-21 step; the frontend polling contract does not change because `GET /jobs/{id}` is the integration boundary.
+
+---
+
 ### 3.11 Share and Copy Link
 
 **Purpose:** Allow users to share analysis results via the OS native share sheet or clipboard, directly from the results view.
 
-**Implementation:** Two sharing actions are available in both the top-header action row (`Navbar.jsx`) and the bottom `StickyActionBar.jsx`:
+**Implementation:** Two sharing actions are available in both the top-header action row (`SharedNav.jsx`) and the bottom `StickyActionBar.jsx`:
 
 - **Copy Link:** Calls `navigator.clipboard.writeText(window.location.href)` to write the current `/results/{id}` URL to the clipboard. On success, the button label changes to "✓ Copied!" for 2 seconds via a local `copied` state flag and `setTimeout`, then reverts. Provides unambiguous feedback that the action succeeded.
 
@@ -655,7 +796,7 @@ Hash computed in 64KB streaming chunks before any model inference. Lookup: `WHER
 
 ### 3.15 OAuth Authentication (Google and GitHub)
 
-Users can authenticate via Google or GitHub OAuth in addition to email/password registration. Clicking a provider button in `AuthForm.jsx` calls `authApi.oauthStart(provider)`, which triggers a full-page browser redirect to `GET /api/v1/auth/oauth/{provider}/start`. The backend constructs the OAuth authorization URL with `client_id`, `redirect_uri`, `scope`, and `state` parameters and issues a redirect response.
+Users can authenticate via Google or GitHub OAuth in addition to email/password registration. Clicking a provider button in `DeepShieldAuth.jsx` calls `authApi.oauthStart(provider)`, which triggers a full-page browser redirect to `GET /api/v1/auth/oauth/{provider}/start`. The backend constructs the OAuth authorization URL with `client_id`, `redirect_uri`, `scope`, and `state` parameters and issues a redirect response.
 
 After the user grants access in the provider's UI, the provider redirects to `GET /api/v1/auth/oauth/{provider}/callback?code=...`. The backend exchanges the authorization code for a provider access token, fetches the user's email from the provider's userinfo endpoint, then either creates a new `User` record (if the email is new to the system) or retrieves the existing one. A standard DeepShield JWT is issued and the browser is redirected to `/oauth-callback?token=<jwt>`.
 
@@ -722,7 +863,7 @@ Natural extraction order if distributed architecture is required:
 
 ## 5. Backend Deep Analysis
 
-### 5.5 Routing Architecture Map
+### 5.1 Routing Architecture Map
 
 The full versioned route tree as mounted in `api/router.py`:
 
@@ -788,7 +929,7 @@ All schemas use `model_config = ConfigDict(protected_namespaces=())` to suppress
 
 **Dual Theme:** Light (forensic lab, cool neutrals, `#F7F8FB` background) and Dark (graphite + indigo, `#0A0D14` background). Applied via `data-theme` attribute on `<html>`, persisted to `localStorage`, defaults to `prefers-color-scheme`.
 
-**Dark theme design tokens (committed in FRONTEND_REDESIGN.md):**
+**Dark theme design tokens (defined in [frontend/src/index.css](frontend/src/index.css)):**
 
 | Token | Value | Role |
 |---|---|---|
@@ -817,7 +958,7 @@ All schemas use `model_config = ConfigDict(protected_namespaces=())` to suppress
 
 **`StickyActionBar.jsx`** — Floating glass pill component that appears after analysis completes, containing four actions: "Analyze Another" (resets AnalyzePage state), "Download PDF" (calls `reportApi`), "Share", and "Copy Link". **Copy Link** writes the current `/results/{id}` URL to the clipboard via `navigator.clipboard.writeText()` and shows "✓ Copied!" for 2 seconds before reverting — managed via a local `copied` state flag and `setTimeout`. **Share** invokes `navigator.share({title, text, url})` Web Share API when available (mobile, Safari, Edge), surfacing the OS-level share sheet pre-populated with the analysis score and link. Falls back to clipboard copy on unsupported browsers. Both the top-header (Navbar) share/copy controls and this bottom panel share the same handler functions — no logic duplication.
 
-**`ProcessingAnimation.jsx`:** Parent CSS `perspective:1400px; transform-style:preserve-3d; transform:rotateX(58deg) rotateZ(-42deg)`. Six semi-transparent clones of the uploaded image stacked at 28px `translateZ` gap. Framer-motion staggered spring entrance (`delay: 80ms × i`). Per-layer CSS filters: L1 grayscale+contrast (artifact pass), L2 hue-rotate 180°+blur(2px) (heatmap pass), L3 invert+overlay blend (ELA pass), L4 red channel isolate (face mesh), L5 identity, L6 ghost outline. Horizontal scanning laser sweeps top-to-bottom on 2.4s loop. Reduced-motion fallback: static stack, no sweep.
+**Processing animation (inlined in `AnalyzePage.jsx`):** Parent CSS `perspective:1400px; transform-style:preserve-3d; transform:rotateX(58deg) rotateZ(-42deg)`. Six semi-transparent clones of the uploaded image stacked at 28px `translateZ` gap. Framer-motion staggered spring entrance (`delay: 80ms × i`). Per-layer CSS filters: L1 grayscale+contrast (artifact pass), L2 hue-rotate 180°+blur(2px) (heatmap pass), L3 invert+overlay blend (ELA pass), L4 red channel isolate (face mesh), L5 identity, L6 ghost outline. Horizontal scanning laser sweeps top-to-bottom on 2.4s loop. Reduced-motion fallback: static stack, no sweep. Guards every `THREE.*` reference with `typeof THREE !== 'undefined'` so the deferred 3D engine load (see §14.7) never throws.
 
 **`ScoreMeter.jsx`:** SVG 270° circular arc. `stroke-dashoffset` animated via `requestAnimationFrame` from circumference to `circumference × (1 - score/100)` over 900ms `ease-out-expo`. Numeric count-up synchronized. Color interpolated by `getScoreColor(score)`.
 
@@ -843,7 +984,7 @@ All schemas use `model_config = ConfigDict(protected_namespaces=())` to suppress
 
 **`ConsentModal.jsx`** — First-upload privacy consent dialog. Rendered when `localStorage.getItem('ds_consent_v1')` is absent. Focus-trapped (Tab cycles within the modal) and Escape-dismissable. Explains three data uses: media processed locally, keywords sent to NewsData.io, authenticated analyses stored for history. On acceptance, sets `localStorage.setItem('ds_consent_v1', 'true')` and continues the upload. Links to `/privacy` for full detail.
 
-**`LayerStack.jsx`** — 3D CSS layer stack used on the landing page `Hero` section as a visual demonstration of the multi-layer analysis pipeline. Six translucent layers stacked in 3D using `transform-style: preserve-3d` and `translateZ` offsets, each representing a forensic layer (heatmap, ELA, EXIF, artifacts, VLM, LLM). Framer-motion entrance animation staggers the layers' appearance on page load.
+**`LayerStack.jsx`** — 3D CSS layer stack used in the landing-page Hero region as a visual demonstration of the multi-layer analysis pipeline. Six translucent layers stacked in 3D using `transform-style: preserve-3d` and `translateZ` offsets, each representing a forensic layer (heatmap, ELA, EXIF, artifacts, VLM, LLM). Framer-motion entrance animation staggers the layers' appearance on page load.
 
 **`PipelineVisualizer.jsx`** — Stage stepper rendered during and after analysis. Shows a numbered list of pipeline stages with checkmarks (`stages_completed` from `ProcessingSummary`) and a pulsing indicator on the active stage. Used in `AnalyzePage` during processing and rendered collapsed in the results view under `ProcessingSummary`.
 
@@ -853,7 +994,7 @@ All schemas use `model_config = ConfigDict(protected_namespaces=())` to suppress
 
 ### 6.2.1 Frontend Service Layer
 
-**`api.js`** — Base Axios instance. `baseURL: '/api'` (Vite proxy to `:8000` in dev; direct path in production). `timeout: 25000 ms` — sized to cover the full Gemini→Groq failover (7s + 8s) plus network overhead. Request interceptor reads `localStorage.getItem('deepshield_token')`, checks `isJwtExpired(token)`, and injects `Authorization: Bearer` if valid. Response interceptor clears stored auth on HTTP 401.
+**`api.js`** — Base Axios instance. `baseURL: import.meta.env.VITE_API_BASE_URL || '/api/v1'` (Vite dev proxies `/api → :8000`; production reads the env override). `timeout: 300000 ms` (5 minutes) — wide enough to cover the worst-case sync video analysis path (CPU video at ~45–60s) and the full Gemini→Groq failover plus network overhead. Specific calls override locally where appropriate (the warm-up readiness probe uses `8000` ms, the LLM retry endpoint uses `25000` ms). Request interceptor reads `localStorage.getItem('deepshield_token')`, checks `isJwtExpired(token)`, and injects `Authorization: Bearer` if valid. Response interceptor clears stored auth on HTTP 401.
 
 **`analyzeApi.js`** — All five analysis dispatch functions: `analyzeImage`, `analyzeVideo`, `analyzeText`, `analyzeScreenshot`, `analyzeAudio`. Constructs `FormData` for file-based endpoints; sends JSON for text. Also exports `submitVideoJob` and `pollVideoJob` — the latter calls `GET /jobs/{job_id}` on a 800ms `setTimeout` loop until `status === "done"` or `"error"`.
 
@@ -877,9 +1018,9 @@ All schemas use `model_config = ConfigDict(protected_namespaces=())` to suppress
 
 **`dateTime.js`** — Date/time formatting helpers used across history cards, report timestamps, and source article dates. Formats ISO-8601 strings into human-readable IST-adjusted labels.
 
-### 6.5 Page-Level Descriptions
+### 6.3 Page-Level Descriptions
 
-**`HomePage.jsx`** — Landing page orchestrator rendering seven sections in order: `Hero` (headline + LayerStack 3D demo), `TrustStrip` (live 24h counter + trust badge row), `PipelineGrid` (4 modality cards with micro-lottie animations), `ImpactMarquee` (infinite marquee of real-world deepfake incidents), `ComparisonGrid` (DeepShield vs Reality Defender vs Deepware vs Manual fact-checking), `FAQAccordion` (8 Q&A with height-animated expansion), bottom CTA section.
+**`HomePage.jsx`** — Landing page orchestrator rendering seven inlined section regions (each is a JSX subtree inside the page, not a separate component file): a Hero region (headline + the [LayerStack.jsx](frontend/src/components/layout/LayerStack.jsx) 3D demo), a trust strip (live 24h counter + trust badge row, fed by `GET /api/v1/stats/recent`), a pipeline grid (4 modality cards with micro-animations), an impact marquee (infinite scroller of real-world deepfake incidents), a comparison grid (DeepShield vs Reality Defender vs Deepware vs Manual fact-checking), an FAQ accordion (8 Q&A with height-animated expansion), and a bottom CTA section.
 
 **`AnalyzePage.jsx`** — Four-state machine: `idle` (upload zone visible), `processing` (ProcessingAnimation + PipelineVisualizer), `results` (AnalysisResultView + StickyActionBar), `error` (toast + retry button). Coordinates `useFileUpload`, `useAnalysis`, and `analyzeApi`. For async video, enters `processing` on submit and remains there until `pollVideoJob` resolves. Recent history cards shown on the page use `r.thumbnail_b64` as the primary image `src` (inline base64, always available from the API response), falling back to the signed `thumbnail_url`, then the raw `media_path`. Records without any image thumbnail (text, audio, video, screenshot types where the image file is absent) display a centred type icon in the blank thumbnail slot — `¶` for text, `▭` for screenshot, `▶` for video, `🎙` for audio — instead of an empty black square.
 
@@ -897,7 +1038,7 @@ Each grid card carries a per-card delete action (trash icon, visible on hover). 
 
 The toolbar additionally exposes a **"Clear history"** button that calls `clearHistory()` → `DELETE /history` after a confirmation dialog. On success, the entire list is emptied client-side and the stats row resets to zero. The `clearHistory` service call is implemented in `historyApi.js`.
 
-**`LoginPage.jsx` / `RegisterPage.jsx`** — Thin wrappers around `AuthForm.jsx` with `MeshBackdrop.jsx` animated background. On success: `AuthContext.login()` stores token + user → redirects to the route stored in `location.state.from` (ProtectedRoute saves it) or falls back to `/analyze`.
+**`LoginPage.jsx` / `RegisterPage.jsx`** — Thin wrappers around `DeepShieldAuth.jsx`. The animated mesh/gradient backdrop is rendered inline as JSX inside the page rather than as a standalone `MeshBackdrop` component. On success: `AuthContext.login()` stores token + user → redirects to the route stored in `location.state.from` (ProtectedRoute saves it) or falls back to `/analyze`.
 
 **`AboutPage.jsx`** — Static. Manifesto section, 8-signal explainability methodology grid, tech stack badges, responsible AI statement.
 
@@ -909,22 +1050,22 @@ The toolbar additionally exposes a **"Clear history"** button that calls `clearH
 
 **`NotFoundPage.jsx`** — CSS glitch effect on "404", scan-line background, terminal-style readout, back-home CTA.
 
-### 6.6 Rendering Strategy
+### 6.4 Rendering Strategy
 
 DeepShield is a **client-side rendered (CSR) Single Page Application**. No server-side rendering or static site generation is used. The `index.html` includes comprehensive Open Graph and Twitter Card meta tags (`og:type`, `og:title`, `og:description`, `og:image`, `twitter:card`) so shared links render rich previews without SSR. React Router handles all navigation client-side with `history.pushState`. All data fetching happens client-side via Axios after the JS bundle loads.
 
 **Why CSR:** The platform requires per-user authentication state for all meaningful views. Server-side rendering would add complexity without meaningful SEO benefit (analysis results are private and behind auth). The landing page is the only public SEO surface and its static nature makes CSR sufficient.
 
-### 6.8 Performance — Code Splitting and Script Loading
+### 6.5 Performance — Code Splitting and Script Loading
 
-**Route-Based Code Splitting (`App.jsx`):** All page-level imports use `React.lazy()` wrapped in a single top-level `<Suspense fallback={<Skeleton />}>`. This instructs Vite to emit a separate JS chunk per route — a user visiting the landing page downloads only the homepage bundle and defers loading the forensic results dashboard, history view, and auth pages until first navigation. This reduced the initial load payload from a single monolithic bundle to a fraction of its original size. `<Suspense>` renders the `Skeleton` shimmer component during chunk fetch, providing a smooth loading state rather than a blank screen.
+**Route-Based Code Splitting (`App.jsx`):** All page-level imports use `React.lazy()` wrapped in a single top-level `<Suspense fallback={...}>`. This instructs Vite to emit a separate JS chunk per route — a user visiting the landing page downloads only the homepage bundle and defers loading the forensic results dashboard, history view, and auth pages until first navigation. This reduced the initial load payload from a single monolithic bundle to a fraction of its original size. The Suspense fallback is an inline shimmer placeholder (rendered as JSX inside `App.jsx`, not a separate component file) and shows during chunk fetch, providing a smooth loading state rather than a blank screen.
 
-**Deferred 3D Script Loading (`index.html`):** The `three.min.js` script tag (approximately 600 KB) in `index.html` carries the `defer` attribute. Without `defer`, the browser pauses HTML parsing and blocks React from booting until the entire 3D engine downloads and executes — directly harming First Contentful Paint (FCP). With `defer`, the browser parses and paints the UI immediately, loads the 3D engine in the background, and executes it only after the document is ready. The `ProcessingAnimation` component guards against the script not yet being available via a `typeof THREE !== 'undefined'` check before instantiating any Three.js objects.
+**Deferred 3D Script Loading (`index.html`):** The `three.min.js` script tag (approximately 600 KB) in `index.html` carries the `defer` attribute. Without `defer`, the browser pauses HTML parsing and blocks React from booting until the entire 3D engine downloads and executes — directly harming First Contentful Paint (FCP). With `defer`, the browser parses and paints the UI immediately, loads the 3D engine in the background, and executes it only after the document is ready. The processing animation inside `AnalyzePage.jsx` guards against the script not yet being available via a `typeof THREE !== 'undefined'` check before instantiating any Three.js objects.
 
-The frontend communicates with the backend exclusively through the service layer (`src/services/`). Direct Axios calls from components are not permitted — components use hooks (`useAnalysis`, `useAuth`, `useJob`) which consume service functions. This enforces a one-way data flow:
+The frontend communicates with the backend exclusively through the service layer ([src/services/](frontend/src/services/)). Direct Axios calls from components are not permitted — pages and components consume the typed service functions exported from `analyzeApi.js`, `authApi.js`, `historyApi.js`, and `reportApi.js`. Auth-related state is exposed via the `AuthContext` provider rather than a separate hook file. This enforces a one-way data flow:
 
 ```
-Component → Hook → Service function → Axios → FastAPI route → Service layer → Response
+Component → AuthContext / page-local useState → Service function → Axios → FastAPI route → Backend service layer → Response
 ```
 
 For file uploads, `FormData` is constructed in `analyzeApi.js` and sent with `Content-Type: multipart/form-data`. For PDF downloads, `responseType: 'blob'` is set and the blob is converted via `URL.createObjectURL()`. For polling, `analyzeApi.js` `pollVideoJob` uses `setTimeout` in a loop (800ms).
@@ -933,21 +1074,21 @@ The Vite dev-server proxy at `/api → http://localhost:8000` allows the fronten
 
 No Redux or Zustand. State via: `useState` for local UI state, `AuthContext` (JWT token, user, `authReady`, `login()`, `logout()`, `register()`, `fetchMe()`), `ToastContext` (notification queue, 4s auto-dismiss, `info/success/warning/error` variants). `authReady` prevents ProtectedRoute flash — routes render only after rehydration completes.
 
-### 6.4 API Communication
+### 6.6 API Communication
 
-`api.js` creates an Axios instance with `baseURL: '/api'` (Vite proxy to `:8000`) and `timeout: 25000` (25 seconds). The timeout is sized to cover the full Gemini→Groq failover sequence (7s + 8s) plus network overhead, preventing the browser from abandoning a valid in-progress analysis. Request interceptor: reads `localStorage.getItem('deepshield_token')`, checks `isJwtExpired(token)`, injects `Authorization: Bearer` if valid. Response interceptor: clears stored auth on HTTP 401. `reportApi.js` uses `responseType:'blob'` + `URL.createObjectURL()` for PDF programmatic download.
+`api.js` creates an Axios instance with `baseURL: import.meta.env.VITE_API_BASE_URL || '/api/v1'` (Vite dev proxy to `:8000`) and `timeout: 300000` (5 minutes). The timeout is sized to cover the worst-case sync video analysis (45–60 seconds on CPU) plus the full Gemini→Groq failover sequence and network overhead, preventing the browser from abandoning a valid in-progress analysis. The warm-up `/health/ready` probe uses a tighter `8000` ms timeout, and the LLM-retry endpoint uses `25000` ms — sized to exactly the Gemini→Groq failover budget. Request interceptor: reads `localStorage.getItem('deepshield_token')`, checks `isJwtExpired(token)`, injects `Authorization: Bearer` if valid. Response interceptor: clears stored auth on HTTP 401. `reportApi.js` uses `responseType:'blob'` + `URL.createObjectURL()` for PDF programmatic download.
 
 **Wait and Upgrade pattern:** After core detection finishes on the backend, the frontend waits up to 5 seconds for the LLM summary. If the LLM responds within that window, the full results (including narrative) are displayed immediately. If it takes longer than 5 seconds, the core forensic results are shown at once with a `"◎ Generating LLM Summary..."` placeholder card carrying a `llm-generating` CSS spin animation. Once the background task completes and `GET /history/{id}` returns a populated `llm_summary`, the summary "types" itself into the page — replacing the placeholder with a typewriter-style character-by-character reveal. This ensures users are never blocked on LLM generation while still receiving the narrative as soon as it is ready.
 
-### 6.5 Accessibility Implementation
+### 6.7 Accessibility Implementation
 
-**Skip-nav link:** Rendered at the root of `App.jsx` above the router. Positioned off-screen (`position:absolute; left:-9999px`) and brought into the viewport on `:focus` via `left:1rem; top:1rem; z-index:9999`. Links to `#main-content` — the `id` on the `<main>` element inside `Shell.jsx`. Satisfies WCAG 2.1 AA Success Criterion 2.4.1.
+**Skip-nav link:** Rendered at the root of `App.jsx` above the router. Positioned off-screen (`position:absolute; left:-9999px`) and brought into the viewport on `:focus` via `left:1rem; top:1rem; z-index:9999`. Links to `#main-content` — the `id` on the `<main>` element rendered by `App.jsx` itself (the layout wrapper is inlined inside `App.jsx`, not a separate `Shell.jsx`). Satisfies WCAG 2.1 AA Success Criterion 2.4.1.
 
 **Focus ring system:** `:focus-visible` defined globally in `index.css` — `outline: 2px solid #7f8fff`, `box-shadow: 0 0 0 3px rgba(127,143,255,0.35)`. Element overrides: `border-radius: 50%` for circular controls, `border-radius: 999px` for pills. `:focus:not(:focus-visible)` suppresses rings for pointer interactions. `prefers-reduced-motion` keeps outlines visible while disabling transforms.
 
-**Additional ARIA coverage:** `aria-live="polite"` on the Toast container. `role="status"` on `PipelineVisualizer`. `<title>` on SVG meters for screen reader compatibility. `aria-expanded` on all accordion triggers (`FAQAccordion`, `ProcessingSummary`). `aria-label` on all `StickyActionBar` icon buttons.
+**Additional ARIA coverage:** `aria-live="polite"` on the Toast container. `role="status"` on `PipelineVisualizer`. `<title>` on SVG meters for screen reader compatibility. `aria-expanded` on all accordion triggers (the FAQ region inside `HomePage`/`PrivacyPage` and the `ProcessingSummary` collapsible). `aria-label` on all `StickyActionBar` icon buttons.
 
-### 6.6 Input Sanitization Layer
+### 6.8 Input Sanitization Layer
 
 `sanitize-text.js` is the frontend XSS defence boundary. `sanitizeHtml` is applied to all fields rendered via `dangerouslySetInnerHTML` — the LLM `paragraph` field in `LLMExplainCard` and the `notes` field in VLM breakdown cards. `sanitizeUrl` is applied to all `href` and `src` attributes derived from API responses — trusted source URLs in `SourceCard`, overlay image URLs in `HeatmapOverlay` and `ScreenshotOverlay`, report download links. `sanitizeText` is applied to OCR-extracted text before rendering in `TextHighlighter`. `escapeAttr` is used where attribute strings are constructed outside JSX. No third-party sanitization library is used — the four functions cover the full attack surface of this application.
 
@@ -1181,7 +1322,7 @@ slowapi with `request_key()` function (decodes JWT for user_id extraction withou
 
 `POST /report/{id}` and `GET /report/{id}/download` require `Depends(get_current_user)`. Ownership check: `record.user_id == user.id`. Anonymous analyses (user_id=NULL) accessible via `?token=analysis_id` query parameter.
 
-### 9.8 Signed Media Asset Delivery
+### 9.7 Signed Media Asset Delivery
 
 Raw media files are not publicly accessible. The `StaticFiles` mount that previously exposed the entire `MEDIA_ROOT` directory has been removed from `main.py`. All asset delivery — thumbnails, original uploads, heatmap overlays, ELA images, bounding box overlays — passes exclusively through the signed asset endpoint `GET /history/{record_id}/asset/{kind}`.
 
@@ -1195,14 +1336,14 @@ Raw media files are not publicly accessible. The `StaticFiles` mount that previo
 
 **TTL:** `MEDIA_SIGNED_URL_TTL_SECONDS` (default 3600 — 1 hour). History list and detail responses re-sign URLs on every fetch, so actively browsing users always receive valid links. Bookmarked or scraped asset URLs expire, preventing long-lived media exposure.
 
-### 9.9 Additional Controls
+### 9.8 Additional Controls
 
 - SQL injection: SQLAlchemy ORM — all queries parameterized.
 - XSS: React auto-escaping on all JSX interpolations. `sanitize-text.js` provides four dedicated functions (`sanitizeText`, `sanitizeHtml`, `sanitizeUrl`, `escapeAttr`) applied at every point where API-derived content reaches the DOM — LLM output, OCR text, source URLs, and overlay image paths. No `dangerouslySetInnerHTML` is used without `sanitizeHtml` pre-processing.
 - Loguru email scrubber: replaces identifiable emails with `***@domain` in all logs.
 - HTTPS/HSTS enforced in production via `HTTPSRedirectAndHSTSMiddleware`.
 
-### 9.10 Security Maturity Summary
+### 9.9 Security Maturity Summary
 
 | Domain | Status |
 |---|---|
@@ -1241,7 +1382,7 @@ Raw media files are not publicly accessible. The `StaticFiles` mount that previo
 | BlazeFace | Lightweight SSD | Face data | ICPR2020 (`blazeface.pth`) | <1 MB | Primary face detection |
 | MediaPipe FaceMesh | BlazeFace + mesh | — | Google MediaPipe | ~10 MB | Fallback face detection + artifact |
 | WavLM / wav2vec2 | Transformer audio | ASVspoof 2019 | HuggingFace Hub | ~300 MB | Audio deepfake classifier |
-| `IsotonicRegression` | Non-parametric | FFPP C40 val split | `calibrator.pkl` | <1 MB | EfficientNet confidence calibration |
+| `IsotonicRegression` | Non-parametric | FFPP C40 val split | `models/efficientnet_calibrator.pkl` | <1 MB | EfficientNet confidence calibration |
 
 **Total preloaded RAM:** ~2.1–3.1 GB (DenseNet121 adds ~45 MB, no TF runtime). Minimum recommended deployment: 4 GB.
 
@@ -1374,15 +1515,17 @@ SDK: `groq`. Model: `llama-3.3-70b-versatile`. Independent **8-second timeout** 
 
 Git clone at `bbd6411`. Provides: `fornet.EfficientNetAutoAttB4` architecture, `weights.weight_url` registry, `isplutils.get_transformer()`, `BlazeFace` detector. Required dependency: `efficientnet-pytorch==0.7.1` (imported by `fornet.py`). `albumentations>=1.3.0,<1.5` (pinned to avoid 1.5+ API break).
 
-### 11.7 Sentence Transformers (`all-MiniLM-L6-v2`)
+### 11.6 Sentence Transformers (`all-MiniLM-L6-v2`)
 
 Downloaded via HuggingFace Hub and loaded through `sentence-transformers` library. Used exclusively in `news_lookup.py` to compute cosine similarity between the analyzed text (or OCR-extracted screenshot text) and retrieved news article bodies. The model produces 384-dimensional dense embeddings. Similarity is computed as `dot(v1, v2) / (|v1| × |v2|)`. This drives the truth-override rule and the `similarity_score` field on each `TrustedSourceMatch` record. Model size: ~90 MB RAM. Loaded lazily (only when a news lookup is triggered).
 
-### 11.8 wavesurfer.js
+### 11.7 wavesurfer.js
 
 JavaScript audio waveform library loaded client-side in `AudioCard.jsx`. Renders the uploaded audio waveform as an interactive SVG visualization. Users can play/pause and scrub through the audio alongside the `audio_authenticity_score` ring and spectral metadata. Version 7.x. No backend dependency — purely a frontend visualization tool for the audio analysis results.
 
-CLI subprocess integration in `metadata_writer.py`. When `EXIFTOOL_PATH` configured, embeds verdict and `analysis_id` into analyzed file EXIF fields. File-level provenance tracking. Silent skip when not configured.
+### 11.8 ExifTool (Optional)
+
+CLI subprocess integration in `metadata_writer.py`. When `EXIFTOOL_PATH` is configured, embeds verdict and `analysis_id` into analyzed file EXIF fields. File-level provenance tracking. Silent skip when not configured.
 
 ---
 
@@ -1446,7 +1589,7 @@ server {
 | `EXIFTOOL_PATH` | ExifTool CLI path for verdict metadata write | Optional |
 | `SENTRY_DSN` | Error tracking (Phase 21) | Optional |
 
-### 12.3 Production Deployment (Hugging Face Spaces)
+### 12.5 Production Deployment (Hugging Face Spaces)
 
 1. Create HF Space (Standard CPU, 16 GB RAM), Docker runtime.
 2. Link GitHub repository. Space auto-builds from `backend/Dockerfile`.
@@ -1454,13 +1597,13 @@ server {
 4. Neon Serverless PostgreSQL for production database.
 5. Frontend deployed to Vercel or HF Static Space from `frontend/dist/`. `VITE_API_BASE_URL` points to HF Spaces URL.
 
-### 12.4 Development Flow
+### 12.6 Development Flow
 
 Backend: Python 3.10+ venv → `pip install -r requirements.txt` → `uvicorn main:app --reload --port 8000`.  
 Frontend: `npm install` → `npm run dev` (Vite on `:5173`, proxies `/api → :8000`).  
 Vite build: 136 modules → 329 KB JS → 102 KB gzipped.
 
-### 12.5 Planned CI (Phase 21)
+### 12.7 Planned CI (Phase 21)
 
 GitHub Actions: `lint (ruff + eslint) → backend pytest (70% coverage target) → frontend vitest + RTL → vite build`. Block merge on red.
 
@@ -1525,9 +1668,9 @@ Frames batched in groups of 4 before EfficientNet/ViT inference. `torch.stack(fa
 
 Vite: tree-shaking, esbuild minification. `React.memo` on expensive result components. `useMemo` on immutable frame timeline data. Off-thread canvas animation via `useDottedSurface`. `loading="lazy"` on heatmap images. Debounced search in HistoryPage.
 
-**Route-based code splitting (`App.jsx`):** All page-level imports use `React.lazy()` wrapped in a single top-level `<Suspense fallback={<Skeleton />}>`. Vite emits a separate JS chunk per route. A user visiting the landing page downloads only the homepage bundle and defers loading the forensic results dashboard, history view, and auth pages until first navigation. Initial load payload reduced from a single monolithic bundle to a small critical chunk, directly improving Time-to-Interactive on first visit.
+**Route-based code splitting (`App.jsx`):** All page-level imports use `React.lazy()` wrapped in a single top-level `<Suspense fallback={...}>` (the fallback is an inline shimmer placeholder, not a separate file). Vite emits a separate JS chunk per route. A user visiting the landing page downloads only the homepage bundle and defers loading the forensic results dashboard, history view, and auth pages until first navigation. Initial load payload reduced from a single monolithic bundle to a small critical chunk, directly improving Time-to-Interactive on first visit.
 
-**Deferred 3D script loading (`index.html`):** `three.min.js` (~600 KB) carries the `defer` attribute in `<head>`. Without it, the browser paused HTML parsing and blocked React from booting until the 3D engine downloaded and executed — directly harming First Contentful Paint. With `defer`, the browser paints the UI immediately and executes the 3D engine only after the document is ready. `ProcessingAnimation.jsx` guards with `typeof THREE !== 'undefined'` before instantiating any Three.js objects.
+**Deferred 3D script loading (`index.html`):** `three.min.js` (~600 KB) carries the `defer` attribute in `<head>`. Without it, the browser paused HTML parsing and blocked React from booting until the 3D engine downloaded and executed — directly harming First Contentful Paint. With `defer`, the browser paints the UI immediately and executes the 3D engine only after the document is ready. The processing animation inside `AnalyzePage.jsx` guards with `typeof THREE !== 'undefined'` before instantiating any Three.js objects.
 
 ### 14.8 Overlay Image Downscaling (`_resize_for_vis`)
 
@@ -1602,7 +1745,7 @@ Single-process modular monolith. `ModelLoader` singleton is process-bound. SQLit
 | sentence-transformers | 2.7.0+ | Embeddings | `news_lookup.py` | Cosine similarity for truth-override |
 | langdetect | 1.0.9 | Language detection | text and screenshot services | BERT vs XLM-RoBERTa routing |
 | scipy | 1.x | Sigmoid | `efficientnet_service.py` | `expit()` for logit → probability |
-| scikit-learn | 1.x | Calibration | `calibrator.pkl`, script | Isotonic regression |
+| scikit-learn | 1.x | Calibration | `models/efficientnet_calibrator.pkl`, `scripts/fit_calibrator.py` | Isotonic regression |
 | NumPy | 1.x | Array operations | FFT artifact detection, video | Numerical computing |
 | httpx | 0.27.2 | Async HTTP | `news_lookup.py` | Async NewsData.io calls |
 | bcrypt | 4.2.0 | Password hashing | `auth_service.py` | Direct use (passlib dropped) |
@@ -1622,9 +1765,9 @@ Single-process modular monolith. `ModelLoader` singleton is process-bound. SQLit
 | Vite | 5.4 | Build tool | `vite.config.js` | Native ESM, esbuild, proxy |
 | React Router | 6.27 | Routing | `App.jsx` | `ProtectedRoute`, `useNavigate` |
 | Axios | 1.7 | HTTP client | `frontend/src/services/` | Interceptors, blob response |
-| Framer Motion | 11 | Animations | `ProcessingAnimation.jsx`, segmented control | Spring physics, `layoutId`, 3D transforms |
+| Framer Motion | 11 | Animations | `AnalyzePage.jsx` processing animation, segmented controls, results entrance | Spring physics, `layoutId`, 3D transforms |
 | Recharts | 2.13 | Data visualization | `FrameTimeline.jsx` | SVG-based, React-native |
-| react-dropzone | 14.x | File upload UX | `UploadZone.jsx` | Drag-and-drop, MIME validation |
+| react-dropzone | 14.x | File upload UX | Inline upload zone in `AnalyzePage.jsx` | Drag-and-drop, MIME validation |
 | wavesurfer.js | 7.x | Audio waveform | `AudioCard.jsx` | Audio visualization |
 | Docker | — | Containerization | `Dockerfile`s | HF Spaces, reproducible deployment |
 
@@ -1676,13 +1819,13 @@ Single-process modular monolith. `ModelLoader` singleton is process-bound. SQLit
 
 1. **User opens app** → `AuthContext` rehydrates token from localStorage → `authReady = true` → `ProtectedRoute` resolves.
 
-2. **User navigates to `/analyze`** → `AnalyzePage` renders `MediaTypeSwitcher` + `UploadZone` (idle state).
+2. **User navigates to `/analyze`** → `AnalyzePage` renders the inlined media-type switcher and upload zone (idle state).
 
-3. **User drops JPEG** → react-dropzone `onDrop` → `useFileUpload` validates MIME (`image/jpeg`) and size (≤20 MB) → thumbnail preview rendered.
+3. **User drops JPEG** → react-dropzone `onDrop` handler inside `AnalyzePage` validates MIME (`image/jpeg`) and size (≤20 MB) → thumbnail preview rendered.
 
-4. **User clicks "Analyze"** → `useAnalysis.submit()` → `analyzeApi.analyzeImage(file)` → Axios `POST /api/v1/analyze/image` (25s timeout, sized for Gemini→Groq failover) → Bearer token injected by request interceptor.
+4. **User clicks "Analyze"** → page-local submit handler calls `analyzeApi.analyzeImage(file)` → Axios `POST /api/v1/analyze/image` (5-minute timeout, sized for the worst-case sync video path) → Bearer token injected by request interceptor.
 
-5. **AnalyzePage transitions to processing state** → `ProcessingAnimation` renders (3D layer stack with scanning laser) → `PipelineVisualizer` begins 700ms stage advancement.
+5. **AnalyzePage transitions to processing state** → the inline 3D processing animation renders (layer stack with scanning laser) → `PipelineVisualizer` begins 700ms stage advancement.
 
 6. **FastAPI receives request:**
    - Middleware stack validates: size → HTTPS → rate limit context → CORS → slowapi rate limit.
@@ -1735,10 +1878,10 @@ Single-process modular monolith. `ModelLoader` singleton is process-bound. SQLit
 
 14. **Background maintenance:** `_report_cleanup_loop()` every 600s → `cleanup_expired()` deletes PDFs where `expires_at < now`.
 
-### 18.3 Text Analysis — Complete Lifecycle
+### 18.2 Text Analysis — Complete Lifecycle
 
-1. User navigates to `/analyze`, selects "Text" tab in `MediaTypeSwitcher`.
-2. `TextInput.jsx` renders: textarea with char counter (50–10,000 chars), paste button, char-limit guard.
+1. User navigates to `/analyze`, selects "Text" tab in the inline media-type switcher rendered by `AnalyzePage.jsx`.
+2. The text-input region renders inline: textarea with char counter (50–10,000 chars), paste button, char-limit guard.
 3. User pastes article text, clicks "Analyze" → `analyzeApi.analyzeText({text, cache:true})` → `POST /api/v1/analyze/text` (JSON body, no file upload).
 4. `PipelineVisualizer` advances through text-specific stages: language_detection → bert_classification → sensationalism_scoring → manipulation_detection → ner_extraction → news_lookup → scoring → done.
 5. **Backend `text_service.analyze_text()` executes:**
@@ -1754,7 +1897,7 @@ Single-process modular monolith. `ModelLoader` singleton is process-bound. SQLit
 6. **Frontend renders:** `LLMExplainCard` (if authed) → `VerdictCard` with `TrustScale` → `TextHighlighter` (inline manipulation indicator highlights at `start_pos`/`end_pos`) → `IndicatorCards` (sensationalism breakdown) → `SourcePanel` → `ContradictionPanel` (if any fact-check articles returned).
 7. `StickyActionBar` renders — PDF button enabled if authenticated. "Copy Link" copies `/results/{id}` shareable URL.
 
-### 18.4 Screenshot Verification — Complete Lifecycle
+### 18.3 Screenshot Verification — Complete Lifecycle
 
 1. User selects "Screenshot" tab, drops a PNG screenshot of a social media post.
 2. `analyzeApi.analyzeScreenshot(file)` → `POST /api/v1/analyze/screenshot` (multipart).
@@ -1772,11 +1915,11 @@ Single-process modular monolith. `ModelLoader` singleton is process-bound. SQLit
 4. **Frontend renders:** `VerdictCard` → `ScreenshotOverlay.jsx` (SVG bbox overlay on screenshot image — scaled to display dimensions) → `TextHighlighter` (on OCR text) → `IndicatorCards` → sources panels.
 5. The `ScreenshotOverlay` component scales bounding box coordinates from original image dimensions to rendered display dimensions using a `scale_x = display_width / original_width` factor.
 
-### 18.5 Authentication and History — Complete Lifecycle
+### 18.4 Authentication and History — Complete Lifecycle
 
 **Registration:**
 1. User clicks "Sign Up" in Navbar → `/register`.
-2. `AuthForm.jsx` in register mode: email, password (inline strength meter — uppercase, lowercase, digit, symbol checks), display name.
+2. `DeepShieldAuth.jsx` in register mode: email, password (inline strength meter — uppercase, lowercase, digit, symbol checks), display name.
 3. `authApi.register({email, password, name})` → `POST /auth/register`.
 4. FastAPI validates `RegisterBody` (Pydantic — all constraints checked before service call).
 5. `register_user()`: `bcrypt.hashpw(password[:72], gensalt())` → `User` INSERT → `db.commit()`.
@@ -1800,7 +1943,7 @@ Same flow with `authenticate(email, password)` → `bcrypt.checkpw()` → JWT is
 5. User clicks a row → navigates to `/results/{id}`.
 6. `ResultsPage` always fetches `GET /history/{id}` from the backend to ensure freshly signed asset URLs, then renders `AnalysisResultView`.
 
-### 18.6 Async Video Job Lifecycle
+### 18.5 Async Video Job Lifecycle
 2. `pollVideoJob(job_id)` starts polling `GET /jobs/{job_id}` every 800ms.
 3. `PipelineVisualizer` renders stages from `job.stage` and `job.progress`.
 4. Background task updates `JobRegistry`: queued → frame_extraction (15%) → classification (40%) → aggregation (60%) → audio_analysis (75%) → storage (85%) → persist (95%) → done (100%).
@@ -1850,6 +1993,33 @@ pytest 70% coverage target, GitHub Actions CI, Prometheus metrics, Sentry error 
 ---
 
 ## 20. Future Roadmap
+
+### 20.0 Phase Status
+
+The system was built in two sequential plans (Build Plan 1: Phases 0–10 MVP; Build Plan 2: Phases 11–22 hardening) plus a parallel `MERGE_PLAN.md` (EfficientNet + BlazeFace integration). The table below summarises status as of May 2026 — anywhere this document references "Phase 21 pending" or "Phase 22 complete," this table is the source of truth.
+
+| Phase | Theme | Status | Source of truth |
+|---|---|---|---|
+| 0–4 | Repo, FastAPI scaffold, basic image/video/text/screenshot pipelines | ✅ Complete | [BUILD_PLAN.md](BUILD_PLAN.md) |
+| 5 | Trusted source verification (NewsData.io, cosine similarity) | ✅ Complete | `services/news_lookup.py` |
+| 6–7 | JWT auth, history persistence | ✅ Complete | `api/v1/auth.py`, `api/v1/history.py` |
+| 8 | PDF report generation (ReportLab) | ✅ Complete | `services/report_service.py` |
+| 9 | EfficientNet + BlazeFace (MERGE_PLAN integration) | ✅ Complete | `models/icpr2020dfdc/`, `services/efficientnet_service.py` |
+| 9.1 | Verification gates (G1–G8) | ✅ G1, G2, G4, G5, G6, G8 pass; G3, G7 partially gated on full FFPP/DFF download | §21 |
+| 10 | Async video job queue, dedup cache, content-addressed storage | ✅ Complete | `services/job_queue.py`, `services/dedup_cache.py`, `services/storage.py` |
+| 11 | Model hardening — isotonic calibration, EXIF rescore, evidence fusion, hard gating | ✅ Complete | `services/image_service.py`, `utils/scoring.py` |
+| 11.1 | DenseNet121 in-house face-GAN specialist + TF-free PyTorch conversion | ✅ Complete | `services/densenet_service.py`, `scripts/convert_densenet_keras_to_pt.py` |
+| 12 | LLM provider chain (Gemini → Groq) + deterministic fallback | ✅ Complete | `services/llm_explainer.py` |
+| 13 | VLM 6-component breakdown (Gemini Vision) | ✅ Complete | `services/vlm_breakdown.py` |
+| 14 | Audio deepfake pipeline | ✅ Complete | `services/audio_service.py`, `services/audio_ml_service.py` |
+| 15 | Performance — concurrent explainability, overlay downscaling, column deferral, BackgroundTasks | ✅ Complete | §14 |
+| 16 | Async dispatch / wait-and-upgrade UX | ✅ Complete | §6.4 |
+| 17 | Video temporal consistency (optical flow, blink, lip-sync) | ✅ Complete | `services/video_temporal.py` |
+| 18 | Signed media URLs (HMAC-SHA256, TTL) — removed static `/media` mount | ✅ Complete | §9.8 |
+| 19 | Security hardening — rate limit, HTTPS/HSTS, magic-byte validation, sanitization | ✅ Complete | §9 |
+| 20 | OAuth (Google, GitHub) | ✅ Complete | §3.15 |
+| 21 | CI/CD + observability — pytest 70%, GitHub Actions, Prometheus, Sentry | ⚠️ **Pending** | §20.6 |
+| 22 | Frontend redesign + accessibility + privacy + sanitization | ✅ Complete | §6, §3.12–3.14 |
 
 ### 20.1 Cloud Database (Immediate)
 
@@ -1916,4 +2086,4 @@ As part of the system validation, the following Go/No-Go gates were executed and
 
 ---
 
-*Document synthesized from: source code analysis at https://github.com/Spyderzz/DeepShield (Phases 0–22 implemented; Phase 21 CI/observability pending), BUILD_PLAN.md, BUILD_PLAN2.md, MERGE_PLAN.md, design_plan.md, FRONTEND_REDESIGN.md, prd.md, and cross-referenced against AI-generated reports from Gemini (structure, executive summary, limitations), ChatGPT (file-level responsibility breakdown, pipeline stage listings), and VSCode Copilot (ensemble architecture, ICPR2020 integration, calibration, async job queue, dedup cache, scalability). All implementation details reflect verified codebase state as of May 2026.*
+*Document synthesized from: source code analysis at https://github.com/Spyderzz/DeepShield (Phases 0–22 implemented; Phase 21 CI/observability pending), [BUILD_PLAN.md](BUILD_PLAN.md), [MERGE_PLAN.md](MERGE_PLAN.md), [ISSUES.md](ISSUES.md), [prd.md](prd.md), [README.md](README.md), [SETUP_GUIDE.md](SETUP_GUIDE.md), and the in-tree references at [docs/API_REFERENCE.md](docs/API_REFERENCE.md) and [docs/MODEL_CARDS.md](docs/MODEL_CARDS.md). All implementation details reflect verified codebase state as of May 2026.*
