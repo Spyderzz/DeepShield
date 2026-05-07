@@ -47,5 +47,5 @@ jobs:
           hf upload ar07xd/deepshield .hf-sync/ . \
             --repo-type=space \
             --token=$HF_TOKEN \
-            --message "Sync from GitHub (Code Only)" \
-            --ignore-patterns "trained_models/*"
+            --commit-message "Sync from GitHub (Code Only)" \
+            --exclude "trained_models/*"
