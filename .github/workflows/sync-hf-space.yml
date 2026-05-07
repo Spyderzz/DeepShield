@@ -41,10 +41,10 @@ jobs:
         env:
           HF_TOKEN: ${{ secrets.HF_TOKEN }}
         run: |
-          # Use huggingface-cli to upload the .hf-sync folder contents to the Space root.
+          # Use hf to upload the .hf-sync folder contents to the Space root.
           # Unlike the previous tool, this is an "Update" operation, not a "Mirror"
           # so it will NOT delete your existing models on HF Space.
-          huggingface-cli upload ar07xd/deepshield .hf-sync/ . \
+          hf upload ar07xd/deepshield .hf-sync/ . \
             --repo-type=space \
             --token=$HF_TOKEN \
             --message "Sync from GitHub (Code Only)" \
