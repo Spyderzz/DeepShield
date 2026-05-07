@@ -21,11 +21,18 @@ const MODELS = [
     param: '~19M',
   },
   {
-    type: 'Audio / Voice',
-    title: 'WavLM / wav2vec2',
-    desc: 'Self-supervised acoustic models trained on ASVspoof. Processes raw waveforms to detect spectral variance, zero-crossing anomalies, and synthesized voiceprints indicative of AI cloning.',
-    acc: '91.3%',
-    param: '316M',
+    type: 'Vision / Artifacts',
+    title: 'DenseNet121',
+    desc: 'Trained on locally curated 140K Real and GaN-Style Generated Indian faces, optimized for face-GAN detection. Highly effective against diffusion-based still portraits by isolating high-frequency spatial and spectral noise.',
+    acc: '89.92%',
+    param: '~140K',
+  },
+  {
+    type: 'Vision / Synthesis',
+    title: 'General ViT / SDXL',
+    desc: 'General-purpose AI image detector trained on broad diffusion distributions (SDXL, Midjourney). Handles full-image synthetic detection when no faces are present, establishing the foundational whole-image deepfake probability.',
+    acc: '94.2%',
+    param: '86M',
   },
   {
     type: 'NLP / Linguistic',
@@ -42,8 +49,22 @@ const MODELS = [
     param: '20M',
   },
   {
+    type: 'Audio / Voice',
+    title: 'WavLM / wav2vec2',
+    desc: 'Self-supervised acoustic models trained on ASVspoof. Processes raw waveforms to detect spectral variance, zero-crossing anomalies, and synthesized voiceprints indicative of AI cloning.',
+    acc: '91.3%',
+    param: '316M',
+  },
+  {
+    type: 'NLP / Entity Extraction',
+    title: 'spaCy NER',
+    desc: 'Industrial-strength natural language processing model that extracts verifiable entities (Persons, Organizations, Geopolitical entities) from claims to anchor our automated fact-checking engine against real-world news.',
+    acc: '97.5%',
+    param: '12M',
+  },
+  {
     type: 'Orchestrator & VLM',
-    title: 'Gemini 1.5 Flash',
+    title: 'Gemini 2.5 Flash',
     desc: 'The multimodal reasoning engine. Synthesizes raw tensors and anomaly maps from specialist models into executive-level, plain-English forensic summaries and granular component scores.',
     acc: '95%',
     param: 'Analysed Data',
@@ -58,7 +79,7 @@ function TiltCard({ model }) {
     const rect = cardRef.current.getBoundingClientRect();
     const x = e.clientX - rect.left;
     const y = e.clientY - rect.top;
-    
+
     // Update CSS vars for the glow effect
     cardRef.current.style.setProperty('--mouse-x', `${x}px`);
     cardRef.current.style.setProperty('--mouse-y', `${y}px`);
@@ -68,7 +89,7 @@ function TiltCard({ model }) {
     const centerY = rect.height / 2;
     const rotateX = ((y - centerY) / centerY) * -8; // Max 8 deg rotation
     const rotateY = ((x - centerX) / centerX) * 8;
-    
+
     cardRef.current.style.transform = `perspective(1500px) rotateX(${rotateX}deg) rotateY(${rotateY}deg)`;
   };
 
@@ -79,7 +100,7 @@ function TiltCard({ model }) {
 
   return (
     <div className="model-card-wrapper">
-      <div 
+      <div
         ref={cardRef}
         className="model-card"
         onMouseMove={handleMouseMove}
@@ -116,7 +137,7 @@ export default function ModelsPage() {
           <span className="eyebrow">Architecture</span>
           <h1 className="display">Ensemble Intelligence.</h1>
           <p className="sub">
-            DeepShield isn't a single monolithic black box. It is a highly specialized ensemble of state-of-the-art 
+            DeepShield isn't a single monolithic black box. It is a highly specialized ensemble of state-of-the-art
             vision, audio, and language models working in concert to tear apart synthetic media.
           </p>
         </div>
@@ -129,10 +150,10 @@ export default function ModelsPage() {
           <span className="eyebrow">Ground Truth</span>
           <h2 className="display italic">FaceForensics++</h2>
           <p className="sub" style={{ maxWidth: 600 }}>
-            To catch the best deepfakes, you have to train on them. Our core visual engine is 
+            To catch the best deepfakes, you have to train on them. Our core visual engine is
             hardened against the state-of-the art FaceForensics++ dataset.
           </p>
-          
+
           <div className="dataset-row">
             <div className="dataset-visual">
               <img src="https://images.unsplash.com/photo-1620641788421-7a1c342ea42e?w=1200&q=80" alt="FaceForensics Visualizer" />
@@ -143,7 +164,7 @@ export default function ModelsPage() {
             <div className="dataset-info">
               <h3>Comprehensive Coverage</h3>
               <p style={{ color: 'var(--ds-ink-2)', lineHeight: 1.6, marginBottom: 20 }}>
-                The dataset includes pristine, unmanipulated source videos alongside identically compressed 
+                The dataset includes pristine, unmanipulated source videos alongside identically compressed
                 fake counterparts generated via four distinct state-of-the-art methods:
               </p>
               <ul style={{ color: 'var(--ds-ink-2)', lineHeight: 1.8, paddingLeft: 20 }}>
