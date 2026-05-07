@@ -25,11 +25,8 @@ jobs:
 
           cp -R backend/. .hf-sync/
 
-          # Exclude trained_models/ from sync — keep models that exist on HF Spaces untouched
-          # (models are uploaded separately via HF CLI to prevent GitHub sync from overwriting them)
-          rm -rf .hf-sync/trained_models/
-          mkdir -p .hf-sync/trained_models/
-          touch .hf-sync/trained_models/.gitkeep
+          # Prevent GitHub sync from deleting models already on HF Space
+          echo "trained_models/" > .hf-sync/.hfignore
 
           # Explicitly clone icpr2020dfdc because it is in .gitignore and missing from the GH runner
           if [ ! -d .hf-sync/models/icpr2020dfdc ]; then

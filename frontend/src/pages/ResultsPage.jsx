@@ -406,7 +406,7 @@ const OVERLAY_DESC = {
 };
 
 function HeatmapCard({ src, heatmapData, elaData, boxesData, heatmapMode, setHeatmapMode, alpha, setAlpha, status }) {
-  const [baseImageLoaded, setBaseImageLoaded] = React.useState(false);
+  const [baseImageLoaded, setBaseImageLoaded] = useState(false);
   const overlayMap = { heatmap: heatmapData, ela: elaData, boxes: boxesData, off: null };
   const activeOverlay = overlayMap[heatmapMode] ?? null;
   const unavailable = heatmapMode !== 'off' && !activeOverlay;
