@@ -227,18 +227,7 @@ def extract_entities(text: str, max_k: int = 6) -> List[str]:
 
         numeric: List[str] = []
         
-        # Extract meaningful multi-word noun chunks first
-        for chunk in doc.noun_chunks:
-            parts = chunk.text.strip().split()
-            if len(parts) > 1 and parts[0].lower() in {"a", "an", "the", "some", "several", "many", "these", "those", "this", "that", "their", "our", "my", "your", "its"}:
-                parts = parts[1:]
-            chunk_text = " ".join(parts)
-            if len(parts) > 1 and len(chunk_text) > 4:
-                if not all(p.lower() in {"i", "you", "he", "she", "it", "we", "they", "them", "us", "him", "her"} for p in parts):
-                    norm_lower = chunk_text.lower()
-                    if norm_lower not in seen:
-                        preferred.append(chunk_text)
-                        seen.add(norm_lower)
+
 
         for ent in doc.ents:
             norm = ent.text.strip()

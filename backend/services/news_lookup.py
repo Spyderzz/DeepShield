@@ -31,8 +31,8 @@ FACTCHECK_DOMAINS = {
     "factly.in", "altnews.in", "boomlive.in", "vishvasnews.com",
 }
 
-# Domains eligible for truth-override (weight >= 0.9 per BUILD_PLAN spec)
-_HIGH_TRUST_DOMAINS = {d for d, w in TRUSTED_DOMAINS.items() if w >= 0.9}
+# Domains eligible for truth-override (weight >= 0.8)
+_HIGH_TRUST_DOMAINS = {d for d, w in TRUSTED_DOMAINS.items() if w >= 0.8}
 
 # Thresholds per BUILD_PLAN §13.2
 _OVERRIDE_SIMILARITY_THRESHOLD = 0.6
@@ -67,21 +67,22 @@ def _page_size() -> int:
     return max(1, min(int(settings.NEWS_API_PAGE_SIZE or 10), 50))
 
 
+import re
+
 def _sanitize_keywords(keywords: List[str]) -> List[str]:
-    """Remove non-ASCII garbage from keywords.
+    """Remove non-ASCII garbage and special characters from keywords.
     
     Filters out:
-    - Non-ASCII characters (e.g., Devanagari numerals '13२')
-    - Leaves ASCII alphanumeric and spaces intact
-    
-    Returns: List of cleaned keywords
+    - Non-ASCII characters (e.g., Devanagari numerals)
+    - Special characters like colons, quotes that break the NewsData API
     """
     cleaned = []
     for kw in keywords:
-        # Remove non-ASCII characters, keep only ASCII printable
         ascii_only = ''.join(c for c in kw if ord(c) < 128 and c.isprintable())
-        if ascii_only.strip():  # Only add if something remains after cleaning
-            cleaned.append(ascii_only.strip())
+        safe_kw = re.sub(r'[^A-Za-z0-9\s]', ' ', ascii_only)
+        safe_kw = " ".join(safe_kw.split())
+        if safe_kw.strip():
+            cleaned.append(safe_kw.strip())
     return cleaned
 
 
@@ -196,7 +197,7 @@ def _compute_truth_override(
         input_cmp = input_text[:512]
         input_terms = {
             t for t in input_cmp.lower().split()
-            if len(t.strip(".,!?;:()[]{}\"'")) >= 5
+            if len(t.strip(".,!?;:()[]{}\"'")) >= 4
             for t in [t.strip(".,!?;:()[]{}\"'")]
         }
         all_texts = [input_cmp] + source_texts
@@ -219,7 +220,7 @@ def _compute_truth_override(
 
         best_terms = {
             t for t in f"{best_source.title} {best_source.description or ''}".lower().split()
-            if len(t.strip(".,!?;:()[]{}\"'")) >= 5
+            if len(t.strip(".,!?;:()[]{}\"'")) >= 4
             for t in [t.strip(".,!?;:()[]{}\"'")]
         }
         lexical_overlap = len(input_terms & best_terms) / max(len(input_terms), 1)
@@ -362,8 +363,16 @@ async def search_news_full(
     if not cleaned_keywords:
         return NewsLookupResult([], [], 0)
     
-    q = " ".join(cleaned_keywords[:4])
-    logger.info(f"News lookup query (after sanitization): {q!r}")
+    seen_words = set()
+    query_words = []
+    for kw in cleaned_keywords[:4]:
+        for word in kw.split():
+            wl = word.lower()
+            if wl not in seen_words:
+                seen_words.add(wl)
+                query_words.append(word)
+    q = " ".join(query_words[:8])
+    logger.info(f"News lookup query (after sanitization & deduplication): {q!r}")
     
     # Fix 1: Parallel India + Global search
     # Run both searches concurrently to catch both India-focused and global stories

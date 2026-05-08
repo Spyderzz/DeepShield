@@ -30,6 +30,14 @@ export default function DeepShieldAuth({ mode: initial = 'login' }) {
 
   const isLogin = mode === 'login';
 
+  const formatError = (err, fallback) => {
+    const detail = err?.response?.data?.detail;
+    if (typeof detail === 'string') return detail;
+    if (Array.isArray(detail)) return detail.map(d => d.msg || JSON.stringify(d)).join(', ');
+    if (detail) return JSON.stringify(detail);
+    return err?.message || fallback;
+  };
+
   const onSubmit = async (e) => {
     e.preventDefault();
     setBusy(true);
@@ -39,7 +47,7 @@ export default function DeepShieldAuth({ mode: initial = 'login' }) {
       else await register(email, pw, name);
       navigate(from, { replace: true });
     } catch (err) {
-      setError(err?.response?.data?.detail || err?.message || 'Authentication failed');
+      setError(formatError(err, 'Authentication failed'));
     } finally {
       setBusy(false);
     }
@@ -52,7 +60,7 @@ export default function DeepShieldAuth({ mode: initial = 'login' }) {
       const { authorization_url } = await beginOAuth(provider, from, remember);
       window.location.assign(authorization_url);
     } catch (err) {
-      setError(err?.response?.data?.detail || err?.message || `${provider} sign-in failed`);
+      setError(formatError(err, `${provider} sign-in failed`));
       setOauthBusy(null);
     }
   };
